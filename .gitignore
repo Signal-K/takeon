@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.next/
+out/
+*.tsbuildinfo
+pb_data/
+pocketbase/takeon
+.env
+.env.local
+.DS_Store
+coverage/

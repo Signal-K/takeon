@@ -1,0 +1,47 @@
+/**
+ * @takeon/engine — isometric voxel rover game engine.
+ *
+ * Standalone usage:
+ *   const game = createRoverGame({ canvas, body: getBody('mars')!, spec });
+ *   game.resize(800, 600, devicePixelRatio);
+ *   game.start();
+ *
+ * Embedding into PixiJS (Landnam etc.): see @takeon/pixi.
+ */
+
+export * from './types.js';
+export { EventBus } from './core/events.js';
+export { RoverGame, createRoverGame, type RoverGameOptions } from './core/game.js';
+
+export { Simulation, TICK_RATE, TICK_DT, DIRS, type SimOptions } from './sim/simulation.js';
+export { STRUCTURES, SOLAR_ARRAY_RANGE } from './sim/structures.js';
+
+export { VoxelWorld } from './world/world.js';
+export { generateTerrain, findLandingSite } from './world/terrain.js';
+export { generateAnomalies } from './world/anomalies.js';
+export { MATERIALS, RESOURCE_NAMES } from './world/materials.js';
+export { BODIES, getBody } from './world/bodies.js';
+
+export { PARTS, getPart } from './parts/catalog.js';
+export { computeStats, canReach, defaultSpec } from './parts/assembly.js';
+
+export { IsoRenderer } from './render/renderer.js';
+export { Camera } from './render/camera.js';
+export { TILE_W, TILE_H, TILE_Z, project } from './render/sprites.js';
+export { Controls, type ControlCallbacks } from './input/controls.js';
+
+export {
+  type SyncAdapter,
+  type TakeonProfile,
+  type MissionSummary,
+  type PocketBaseSyncOptions,
+  LocalSync,
+  PocketBaseSync,
+  missionCredits,
+  RESOURCE_VALUE,
+  DISCOVERY_CREDITS,
+  STARTING_CREDITS,
+} from './net/sync.js';
+
+export { mulberry32, hash2, hash3, makeId } from './util/rng.js';
+export { valueNoise2, fbm2 } from './util/noise.js';

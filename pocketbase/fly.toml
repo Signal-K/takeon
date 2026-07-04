@@ -1,0 +1,21 @@
+# Fly.io deploy for the TakeOn spoke backend.
+# Each Star Sailors backend deploys independently (no shared pipeline).
+app = "signal-k-takeon"
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SHARED_PB_URL = "https://signal-k.fly.dev"
+
+[[mounts]]
+  source = "takeon_data"
+  destination = "/app/pb_data"
+
+[http_service]
+  internal_port = 8094
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0

@@ -1,0 +1,346 @@
+import { describe, expect, it } from 'vitest';
+import {
+  BODIES,
+  computeStats,
+  canReach,
+  defaultSpec,
+  DIRS,
+  EventBus,
+  findLandingSite,
+  generateAnomalies,
+  generateTerrain,
+  getBody,
+  Material,
+  missionCredits,
+  PARTS,
+  Simulation,
+  TICK_RATE,
+} from '../src/index.js';
+import type { MissionState, RoverSpec } from '../src/index.js';
+
+function makeSim(bodyId = 'moon', spec?: Partial<RoverSpec>) {
+  const body = getBody(bodyId)!;
+  return new Simulation({
+    body,
+    spec: { ...defaultSpec(), id: 'r1', ...spec },
+    events: new EventBus(),
+  });
+}
+
+function runTicks(sim: Simulation, n: number) {
+  for (let i = 0; i < n; i++) sim.tick();
+}
+
+describe('terrain generation', () => {
+  it('is deterministic for the same body and seed', () => {
+    const body = getBody('mars')!;
+    const a = generateTerrain(body);
+    const b = generateTerrain(body);
+    for (let i = 0; i < 200; i++) {
+      const x = (i * 37) % body.size;
+      const y = (i * 71) % body.size;
+      expect(a.height(x, y)).toBe(b.height(x, y));
+      expect(a.surfaceMaterial(x, y)).toBe(b.surfaceMaterial(x, y));
+    }
+  });
+
+  it('produces solid ground everywhere on regular bodies', () => {
+    const body = getBody('moon')!;
+    const w = generateTerrain(body);
+    for (let y = 0; y < body.size; y++) {
+      for (let x = 0; x < body.size; x++) {
+        expect(w.height(x, y)).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('produces void columns outside irregular asteroid silhouettes', () => {
+    const body = getBody('bennu')!;
+    const w = generateTerrain(body);
+    expect(w.height(0, 0)).toBe(-1);
+    // Centre must be solid.
+    const c = Math.floor(body.size / 2);
+    expect(w.height(c, c)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('mining removes the top voxel and records an edit', () => {
+    const body = getBody('moon')!;
+    const w = generateTerrain(body);
+    const c = Math.floor(body.size / 2);
+    const before = w.height(c, c);
+    const mat = w.mineTop(c, c);
+    expect(mat).not.toBeNull();
+    expect(w.height(c, c)).toBe(before - 1);
+    expect(Object.keys(w.edits)).toHaveLength(1);
+  });
+
+  it('re-applies edits deterministically after regeneration', () => {
+    const body = getBody('ceres')!;
+    const w1 = generateTerrain(body);
+    const c = findLandingSite(w1);
+    w1.mineTop(c.x, c.y);
+    w1.mineTop(c.x, c.y);
+    const w2 = generateTerrain(body);
+    w2.applyEdits(w1.edits);
+    expect(w2.height(c.x, c.y)).toBe(w1.height(c.x, c.y));
+  });
+});
+
+describe('anomalies', () => {
+  it('places 3-5 seeded anomalies on solid ground, away from landing', () => {
+    for (const body of BODIES) {
+      const w = generateTerrain(body);
+      const a1 = generateAnomalies(body, w);
+      const a2 = generateAnomalies(body, w);
+      expect(a1.length).toBeGreaterThanOrEqual(3);
+      expect(a1.length).toBeLessThanOrEqual(5);
+      expect(a1.map((a) => a.id)).toEqual(a2.map((a) => a.id));
+      for (const a of a1) {
+        expect(w.isSolid(a.pos.x, a.pos.y)).toBe(true);
+      }
+    }
+  });
+});
+
+describe('rover assembly', () => {
+  it('computes valid stats for the default spec', () => {
+    const stats = computeStats({ ...defaultSpec(), id: 'x' });
+    expect(stats.valid).toBe(true);
+    expect(stats.batteryCapacity).toBeGreaterThan(0);
+    expect(stats.speed).toBeGreaterThan(0);
+    expect(stats.cost).toBeGreaterThan(0);
+  });
+
+  it('rejects overfilled module slots', () => {
+    const spec: RoverSpec = {
+      ...defaultSpec(),
+      id: 'x',
+      chassis: 'chassis-scout', // 2 slots
+      modules: ['tool-scoop', 'cam-nav', 'scan-short'],
+    };
+    const stats = computeStats(spec);
+    expect(stats.valid).toBe(false);
+    expect(stats.problems.join(' ')).toMatch(/slots/);
+  });
+
+  it('rejects duplicate module categories and wrong-category parts', () => {
+    const spec: RoverSpec = {
+      ...defaultSpec(),
+      id: 'x',
+      chassis: 'chassis-hauler',
+      modules: ['cam-nav', 'cam-pano'],
+    };
+    expect(computeStats(spec).valid).toBe(false);
+    expect(computeStats({ ...defaultSpec(), id: 'x', wheels: 'cam-nav' }).valid).toBe(false);
+  });
+
+  it('mass slows the rover down', () => {
+    const light = computeStats({ ...defaultSpec(), id: 'x', modules: [] });
+    const heavy = computeStats({
+      ...defaultSpec(),
+      id: 'x',
+      chassis: 'chassis-hauler',
+      battery: 'batt-vault',
+      modules: ['tool-laser', 'cargo-hold', 'fuel-long', 'cam-science'],
+    });
+    expect(heavy.speed).toBeLessThan(light.speed);
+    expect(heavy.moveEnergy).toBeGreaterThan(light.moveEnergy);
+  });
+
+  it('gates destinations on fuel capacity', () => {
+    const noTank = computeStats({ ...defaultSpec(), id: 'x', modules: ['tool-scoop'] });
+    const io = getBody('io')!;
+    expect(canReach(noTank, io.deltaV)).toBe(false);
+    const tanked = computeStats({
+      ...defaultSpec(),
+      id: 'x',
+      chassis: 'chassis-lab',
+      modules: ['tool-scoop', 'fuel-long'],
+    });
+    expect(canReach(tanked, io.deltaV)).toBe(true);
+  });
+
+  it('every catalog part participates in at least one valid build', () => {
+    for (const p of PARTS) {
+      const spec = { ...defaultSpec(), id: 'x' };
+      if (p.category === 'chassis') spec.chassis = p.id;
+      else if (p.category === 'wheels') spec.wheels = p.id;
+      else if (p.category === 'power') spec.power = p.id;
+      else if (p.category === 'battery') spec.battery = p.id;
+      else {
+        spec.chassis = 'chassis-hauler';
+        spec.modules = [p.id];
+      }
+      expect(computeStats(spec).valid, `part ${p.id}`).toBe(true);
+    }
+  });
+});
+
+describe('simulation', () => {
+  it('lands at a flat site with full battery and fuel minus delta-v', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    expect(r.battery).toBe(r.stats.batteryCapacity);
+    expect(r.fuel).toBe(r.stats.fuelCapacity - sim.body.deltaV);
+    expect(sim.world.isSolid(r.pos.x, r.pos.y)).toBe(true);
+  });
+
+  it('moving drains battery and updates position', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    const before = { ...r.pos, battery: r.battery };
+    // Find a direction that works from the landing site.
+    let moved = false;
+    for (const dir of [0, 1, 2, 3] as const) {
+      if (sim.move(dir)) {
+        moved = true;
+        break;
+      }
+    }
+    expect(moved).toBe(true);
+    expect(r.battery).toBeLessThan(before.battery);
+    expect(r.pos.x !== before.x || r.pos.y !== before.y).toBe(true);
+    // Finish the tile transition.
+    runTicks(sim, TICK_RATE * 2);
+    expect(r.moveFrom).toBeNull();
+    expect(r.renderPos).toEqual(r.pos);
+  });
+
+  it('solar charging only happens in daylight', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    r.battery = 10;
+    expect(sim.daylight()).toBe(1);
+    runTicks(sim, TICK_RATE * 5);
+    expect(r.battery).toBeGreaterThan(10);
+    // Jump to night.
+    sim.time = sim.body.dayLength * 0.75;
+    expect(sim.daylight()).toBe(0);
+    const nightBefore = r.battery;
+    runTicks(sim, TICK_RATE * 2);
+    expect(r.battery).toBeCloseTo(nightBefore, 3);
+  });
+
+  it('mining yields cargo and consumes energy', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    const started = tryMineAnyDirection(sim);
+    expect(started).toBe(true);
+    const before = r.cargoUsed;
+    runTicks(sim, TICK_RATE * 30);
+    expect(r.mining).toBeNull();
+    expect(r.cargoUsed).toBeGreaterThan(before);
+  });
+
+  it('scan reveals anomalies within radius', () => {
+    const sim = makeSim('moon', { chassis: 'chassis-lab', modules: ['scan-deep', 'cam-nav'] });
+    // Teleport next to an anomaly to guarantee a hit.
+    const a = sim.anomalies[0];
+    sim.rover.pos = { x: a.pos.x + 2, y: a.pos.y };
+    sim.rover.renderPos = { ...sim.rover.pos };
+    const found = sim.scan();
+    expect(found.some((f) => f.id === a.id)).toBe(true);
+    expect(a.scanned).toBe(true);
+  });
+
+  it('photographing near an anomaly documents it', () => {
+    const sim = makeSim('moon');
+    const a = sim.anomalies[0];
+    sim.rover.pos = { x: a.pos.x + 1, y: a.pos.y };
+    const meta = sim.photo()!;
+    expect(meta.anomalyId).toBe(a.id);
+    expect(a.documented).toBe(true);
+  });
+
+  it('builds a structure when cargo covers the cost', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    r.cargo = { silica: 6, iron: 4 };
+    r.cargoUsed = 10;
+    const s = sim.build('solar-array');
+    expect(s).not.toBeNull();
+    expect(r.cargoUsed).toBe(0);
+    expect(sim.structures).toHaveLength(1);
+    // Can't build twice on the same tile.
+    r.cargo = { silica: 6, iron: 4 };
+    r.cargoUsed = 10;
+    expect(sim.build('solar-array')).toBeNull();
+  });
+
+  it('serialises and resumes a mission faithfully', () => {
+    const sim = makeSim('mars');
+    tryMineAnyDirection(sim);
+    runTicks(sim, TICK_RATE * 30);
+    sim.rover.cargo = { ...sim.rover.cargo, iron: 3, copper: 2 };
+    sim.rover.cargoUsed += 5;
+    const built = sim.build('beacon');
+    expect(built).not.toBeNull();
+    const snap = sim.serialize();
+
+    const resumed = new Simulation({
+      body: getBody('mars')!,
+      spec: snap.rover.spec,
+      events: new EventBus(),
+      resume: snap,
+    });
+    expect(resumed.rover.pos).toEqual(sim.rover.pos);
+    expect(resumed.rover.cargoUsed).toBe(sim.rover.cargoUsed);
+    expect(resumed.structures).toHaveLength(1);
+    expect(resumed.world.height(snap.structures[0].pos.x, snap.structures[0].pos.y)).toBe(
+      sim.world.height(snap.structures[0].pos.x, snap.structures[0].pos.y),
+    );
+    // Mined tile persisted through the resume.
+    for (const key of Object.keys(snap.edits)) {
+      const [x, y, z] = key.split(',').map(Number);
+      expect(resumed.world.get(x, y, z)).toBe(snap.edits[key]);
+    }
+  });
+
+  it('rover with dead battery and no recharge is lost', () => {
+    const sim = makeSim('moon');
+    // Strip its generation and battery.
+    sim.rover.stats = { ...sim.rover.stats, solarRate: 0, rtgRate: 0 };
+    sim.rover.battery = 0;
+    runTicks(sim, 2);
+    expect(sim.status).toBe('lost');
+  });
+});
+
+describe('mission credits', () => {
+  it('pays for banked resources, cargo, documented anomalies and photos', () => {
+    const sim = makeSim('moon');
+    sim.rover.cargo = { crystal: 2 };
+    sim.anomalies[0].documented = true;
+    sim.photos.push({
+      id: 'p1',
+      bodyId: 'moon',
+      pos: { x: 0, y: 0 },
+      quality: 10,
+      timestamp: 1,
+      caption: 'test',
+    });
+    const state: MissionState = sim.serialize();
+    const credits = missionCredits(state, { iron: 4 });
+    // 2*25 crystal + 4*5 iron + 120 discovery + 20 photo
+    expect(credits).toBe(50 + 20 + 120 + 20);
+  });
+});
+
+function tryMineAnyDirection(sim: Simulation): boolean {
+  for (const dir of [0, 1, 2, 3] as const) {
+    sim.rover.facing = dir;
+    if (sim.mine()) return true;
+  }
+  // Mining can fail if all neighbours are bedrock-height; force terrain.
+  const r = sim.rover;
+  const d = DIRS[0];
+  const tx = r.pos.x + d.x;
+  const ty = r.pos.y + d.y;
+  const h = sim.world.height(tx, ty);
+  if (h >= 0) {
+    sim.world.setRaw(tx, ty, Math.min(sim.world.maxHeight - 1, h + 1), Material.Rock);
+    r.facing = 0;
+    return sim.mine();
+  }
+  return false;
+}

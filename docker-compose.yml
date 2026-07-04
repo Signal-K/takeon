@@ -1,0 +1,29 @@
+# Standalone TakeOn stack: spoke backend + web app.
+# The shared identity backend is external — set SHARED_PB_URL to point at it,
+# or leave TAKEON_ALLOW_ANON=true for anonymous play.
+services:
+  takeon-pb:
+    build: ./pocketbase
+    ports:
+      - '8094:8094'
+    environment:
+      TAKEON_ALLOW_ANON: 'true'
+      SHARED_PB_URL: ${SHARED_PB_URL:-http://host.docker.internal:8090}
+      SAILY_PB_URL: ${SAILY_PB_URL:-}
+      SAILY_INTERNAL_API_KEY: ${SAILY_INTERNAL_API_KEY:-}
+    volumes:
+      - takeon_pb_data:/app/pb_data
+
+  takeon-web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        NEXT_PUBLIC_TAKEON_PB_URL: ${NEXT_PUBLIC_TAKEON_PB_URL:-http://localhost:8094}
+    ports:
+      - '3400:3400'
+    depends_on:
+      - takeon-pb
+
+volumes:
+  takeon_pb_data:

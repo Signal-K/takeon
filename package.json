@@ -1,0 +1,17 @@
+{
+  "name": "takeon",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TakeOn — modular isometric voxel rover game for the Star Sailors ecosystem. Standalone or embeddable (PixiJS/Landnam).",
+  "workspaces": [
+    "packages/engine",
+    "packages/pixi-adapter",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run build -w @takeon/engine && npm run build -w @takeon/pixi && npm run build -w takeon-web",
+    "test": "npm run test -w @takeon/engine",
+    "dev": "npm run dev -w takeon-web",
+    "backend": "cd pocketbase && go run . serve --http 0.0.0.0:8094"
+  }
+}
