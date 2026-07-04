@@ -1,5 +1,6 @@
 import {
   Material,
+  type ActiveWeather,
   type Anomaly,
   type BodyDef,
   type MissionState,
@@ -10,6 +11,7 @@ import {
   type Structure,
   type StructureType,
   type Vec2,
+  type WeatherType,
 } from '../types.js';
 import type { EventBus } from '../core/events.js';
 import { MATERIALS } from '../world/materials.js';
@@ -25,6 +27,8 @@ import {
   SOLAR_ARRAY_RATE,
   STRUCTURES,
 } from './structures.js';
+import { WEATHER_INFO } from './weather.js';
+import { mulberry32 } from '../util/rng.js';
 
 export const TICK_RATE = 10; // fixed sim ticks per second
 export const TICK_DT = 1 / TICK_RATE;
@@ -65,8 +69,16 @@ export class Simulation {
   status: 'active' | 'complete' | 'lost' = 'active';
   /** Banked yield deposited into caches. */
   banked: Partial<Record<ResourceKey, number>> = {};
+  /** Active weather event, if any. */
+  weather: ActiveWeather | null = null;
+  /** Recent meteor strikes for the renderer (fade after ~1s). */
+  impacts: { pos: Vec2; t: number }[] = [];
 
   private drillTimers = new Map<string, number>();
+  private weatherRng = mulberry32(0);
+  private weatherCooldown = 20; // grace period after landing / between events
+  private impactTimer = 0;
+  private devilDrift: Vec2 = { x: 1, y: 0 };
 
   constructor(opts: SimOptions) {
     this.body = opts.body;
@@ -75,12 +87,14 @@ export class Simulation {
     this.missionId = opts.resume?.id ?? makeId('msn');
     this.world = generateTerrain(opts.body, this.seed);
     this.anomalies = generateAnomalies(opts.body, this.world, this.seed);
+    this.weatherRng = mulberry32(this.seed ^ 0x77ea);
 
     if (opts.resume) {
       const r = opts.resume;
       this.time = r.time;
       this.world.applyEdits(r.edits);
       this.structures = r.structures.map((s) => ({ ...s, buffer: { ...s.buffer } }));
+      this.weather = r.weather ? { ...r.weather, pos: r.weather.pos ? { ...r.weather.pos } : undefined } : null;
       this.photos = [...r.photos];
       this.status = r.status;
       for (const saved of r.anomalies) {
@@ -134,6 +148,135 @@ export class Simulation {
     return (phase - 0.9) * 10;
   }
 
+  // ── Weather ───────────────────────────────────────────────────────────
+
+  /** Solar-output multiplier from the current weather. */
+  weatherSolarMult(): number {
+    const w = this.weather;
+    if (!w) return 1;
+    if (w.type === 'dust-storm') return 1 - 0.65 * w.intensity;
+    if (w.type === 'cryo-fog') return 1 - 0.55 * w.intensity;
+    if (w.type === 'dust-devil' && w.pos) {
+      const d = Math.hypot(w.pos.x - this.rover.pos.x, w.pos.y - this.rover.pos.y);
+      if (d <= 4) return 0.5;
+    }
+    return 1;
+  }
+
+  /** Drive-cost multiplier from the current weather. */
+  weatherMoveMult(): number {
+    const w = this.weather;
+    return w && w.type === 'dust-storm' ? 1 + 0.3 * w.intensity : 1;
+  }
+
+  /** Instrument (scan/photo) energy multiplier from the current weather. */
+  weatherSensorMult(): number {
+    const w = this.weather;
+    return w && w.type === 'solar-storm' ? 2 : 1;
+  }
+
+  /** Begin a weather event (also the hook the host/tests can force). */
+  startWeather(type: WeatherType, intensity?: number, duration?: number): void {
+    const info = WEATHER_INFO[type];
+    const i = intensity ?? 0.5 + this.weatherRng() * 0.5;
+    const d = duration ?? info.minDuration + this.weatherRng() * (info.maxDuration - info.minDuration);
+    const w: ActiveWeather = { type, intensity: i, duration: d, remaining: d };
+    if (type === 'dust-devil') {
+      // Spawn the vortex 8-14 tiles out, drifting loosely toward the rover.
+      const ang = this.weatherRng() * Math.PI * 2;
+      const dist = 8 + this.weatherRng() * 6;
+      w.pos = {
+        x: Math.round(this.rover.pos.x + Math.cos(ang) * dist),
+        y: Math.round(this.rover.pos.y + Math.sin(ang) * dist),
+      };
+      this.devilDrift = { x: -Math.cos(ang), y: -Math.sin(ang) };
+    }
+    this.weather = w;
+    this.impactTimer = 0;
+    this.events.emit('weather', { type, phase: 'start', intensity: i });
+  }
+
+  private tickWeather(): void {
+    const r = this.rover;
+    // Fade old impact markers.
+    if (this.impacts.length > 0) {
+      this.impacts = this.impacts.filter((i) => this.time - i.t < 1.2);
+    }
+
+    const w = this.weather;
+    if (!w) {
+      if (this.weatherCooldown > 0) {
+        this.weatherCooldown -= TICK_DT;
+        return;
+      }
+      const rates = this.body.weather;
+      if (!rates) return;
+      for (const [type, rate] of Object.entries(rates) as [WeatherType, number][]) {
+        // rate = expected events per ~10 game-minutes.
+        if (this.weatherRng() < (rate * TICK_DT) / 600) {
+          this.startWeather(type);
+          return;
+        }
+      }
+      return;
+    }
+
+    w.remaining -= TICK_DT;
+    if (w.remaining <= 0) {
+      this.events.emit('weather', { type: w.type, phase: 'end', intensity: w.intensity });
+      this.weather = null;
+      this.weatherCooldown = 15 + this.weatherRng() * 30;
+      return;
+    }
+
+    switch (w.type) {
+      case 'dust-devil': {
+        if (!w.pos) break;
+        // Wander: mostly keep drifting, occasionally veer.
+        if (this.weatherRng() < 0.06) {
+          const a = this.weatherRng() * Math.PI * 2;
+          this.devilDrift = { x: Math.cos(a), y: Math.sin(a) };
+        }
+        if (this.weatherRng() < 0.35) {
+          const nx = w.pos.x + Math.round(this.devilDrift.x + (this.weatherRng() - 0.5));
+          const ny = w.pos.y + Math.round(this.devilDrift.y + (this.weatherRng() - 0.5));
+          if (this.world.isSolid(nx, ny)) w.pos = { x: nx, y: ny };
+        }
+        // Up close it batters the chassis.
+        if (Math.hypot(w.pos.x - r.pos.x, w.pos.y - r.pos.y) <= 1.6) {
+          this.damage(0.35 * w.intensity, 'storm');
+        }
+        break;
+      }
+      case 'solar-storm':
+        // Radiation load on the electronics.
+        r.battery = Math.max(0, r.battery - 0.18 * w.intensity * TICK_DT * 10);
+        break;
+      case 'meteor-shower': {
+        this.impactTimer += TICK_DT;
+        const interval = 2.6 - w.intensity;
+        if (this.impactTimer >= interval) {
+          this.impactTimer = 0;
+          const ang = this.weatherRng() * Math.PI * 2;
+          const dist = 2 + this.weatherRng() * 16;
+          const ix = Math.round(r.pos.x + Math.cos(ang) * dist);
+          const iy = Math.round(r.pos.y + Math.sin(ang) * dist);
+          if (this.world.isSolid(ix, iy) && !(ix === r.pos.x && iy === r.pos.y)) {
+            // Small crater: knock the top voxel off (a persisted edit).
+            if (this.world.height(ix, iy) > 1) this.world.mineTop(ix, iy);
+            this.impacts.push({ pos: { x: ix, y: iy }, t: this.time });
+            const d = Math.hypot(ix - r.pos.x, iy - r.pos.y);
+            this.events.emit('meteorImpact', { pos: { x: ix, y: iy }, distance: d });
+            if (d <= 2.5) this.damage(4 + 6 * w.intensity, 'impact');
+          }
+        }
+        break;
+      }
+      default:
+        break; // dust-storm / cryo-fog act via the multipliers only
+    }
+  }
+
   /** Advance the simulation by exactly one fixed tick. */
   tick(): void {
     if (this.status !== 'active') return;
@@ -141,8 +284,11 @@ export class Simulation {
     const r = this.rover;
     const daylight = this.daylight();
 
+    this.tickWeather();
+
     // ── Charging ────────────────────────────────────────────────────────
-    let charge = r.stats.rtgRate + r.stats.solarRate * daylight * this.body.solarFlux;
+    let charge =
+      r.stats.rtgRate + r.stats.solarRate * daylight * this.body.solarFlux * this.weatherSolarMult();
     for (const s of this.structures) {
       if (s.type === 'solar-array' && daylight > 0) {
         if (Math.hypot(s.pos.x - r.pos.x, s.pos.y - r.pos.y) <= SOLAR_ARRAY_RANGE) {
@@ -235,7 +381,7 @@ export class Simulation {
       return false;
     }
     const slopeFactor = 1 + Math.max(0, step) * 0.5;
-    const cost = r.stats.moveEnergy * slopeFactor;
+    const cost = r.stats.moveEnergy * slopeFactor * this.weatherMoveMult();
     if (r.battery < cost) {
       this.events.emit('batteryEmpty', {});
       this.events.emit('blocked', { reason: 'battery' });
@@ -293,11 +439,12 @@ export class Simulation {
   scan(): Anomaly[] {
     const r = this.rover;
     if (this.status !== 'active' || r.stats.scanRadius <= 0) return [];
-    if (r.battery < r.stats.scanEnergy) {
+    const scanCost = r.stats.scanEnergy * this.weatherSensorMult();
+    if (r.battery < scanCost) {
       this.events.emit('blocked', { reason: 'battery' });
       return [];
     }
-    r.battery -= r.stats.scanEnergy;
+    r.battery -= scanCost;
     const found: Anomaly[] = [];
     for (const a of this.anomalies) {
       if (a.scanned) continue;
@@ -306,7 +453,7 @@ export class Simulation {
         found.push(a);
       }
     }
-    this.events.emit('scan', { found, energyUsed: r.stats.scanEnergy });
+    this.events.emit('scan', { found, energyUsed: scanCost });
     return found;
   }
 
@@ -317,11 +464,12 @@ export class Simulation {
   photo(): PhotoMeta | null {
     const r = this.rover;
     if (this.status !== 'active' || r.stats.photoQuality <= 0) return null;
-    if (r.battery < r.stats.photoEnergy) {
+    const photoCost = r.stats.photoEnergy * this.weatherSensorMult();
+    if (r.battery < photoCost) {
       this.events.emit('blocked', { reason: 'battery' });
       return null;
     }
-    r.battery -= r.stats.photoEnergy;
+    r.battery -= photoCost;
     let captured: Anomaly | undefined;
     for (const a of this.anomalies) {
       if (Math.hypot(a.pos.x - r.pos.x, a.pos.y - r.pos.y) <= 6) {
@@ -500,7 +648,7 @@ export class Simulation {
 
   // ── Internals ─────────────────────────────────────────────────────────
 
-  private damage(amount: number, reason: 'fall' | 'terrain'): void {
+  private damage(amount: number, reason: 'fall' | 'terrain' | 'impact' | 'storm'): void {
     if (amount <= 0.01) return;
     const r = this.rover;
     r.durability = Math.max(0, r.durability - amount);
@@ -568,6 +716,9 @@ export class Simulation {
       anomalies: this.anomalies.map((a) => ({ ...a, pos: { ...a.pos } })),
       photos: [...this.photos],
       edits: { ...this.world.edits },
+      weather: this.weather
+        ? { ...this.weather, pos: this.weather.pos ? { ...this.weather.pos } : undefined }
+        : null,
       status: this.status,
     };
   }

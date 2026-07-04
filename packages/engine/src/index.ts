@@ -11,11 +11,12 @@
 
 export * from './types.js';
 export { EventBus } from './core/events.js';
-export { RoverGame, createRoverGame, type RoverGameOptions } from './core/game.js';
+export { RoverGame, createRoverGame, type RoverGameOptions, type RoverOrder } from './core/game.js';
 
 export { Simulation, TICK_RATE, TICK_DT, DIRS, type SimOptions } from './sim/simulation.js';
 export { STRUCTURES, SOLAR_ARRAY_RANGE } from './sim/structures.js';
 export { RECIPES, getRecipe } from './sim/recipes.js';
+export { WEATHER_INFO } from './sim/weather.js';
 
 export { VoxelWorld } from './world/world.js';
 export { generateTerrain, findLandingSite } from './world/terrain.js';

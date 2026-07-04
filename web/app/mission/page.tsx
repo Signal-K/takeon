@@ -5,14 +5,17 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   createRoverGame,
   getBody,
+  MATERIALS,
   RECIPES,
   RESOURCE_NAMES,
   STRUCTURES,
+  WEATHER_INFO,
   type MissionState,
   type ResourceKey,
   type RoverGame,
   type RoverSpec,
   type StructureType,
+  type Vec2,
 } from '@takeon/engine';
 import { useSync } from '../../lib/sync-context';
 
@@ -30,6 +33,7 @@ interface HudState {
   cargoUsed: number;
   cargoMax: number;
   daylight: number;
+  weatherLabel: string | null;
   cargo: Partial<Record<ResourceKey, number>>;
   status: 'active' | 'complete' | 'lost';
   canMine: boolean;
@@ -50,6 +54,7 @@ function MissionPageInner() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [buildOpen, setBuildOpen] = useState(false);
   const [craftOpen, setCraftOpen] = useState(false);
+  const [tapMenu, setTapMenu] = useState<{ tile: Vec2; x: number; y: number } | null>(null);
   const [endOpen, setEndOpen] = useState(false);
   const [fatal, setFatal] = useState('');
   const [showMinimap, setShowMinimap] = useState(true);
@@ -108,6 +113,10 @@ function MissionPageInner() {
           toast(`📷 ${meta.caption}`, 'good');
           void sync.uploadPhoto(meta, dataUrl, game?.sim.missionId ?? '').catch(() => undefined);
         },
+        onTileTap: (tile, pos) => {
+          setTapMenu({ tile, x: pos.x, y: pos.y });
+          return true;
+        },
       });
       gameRef.current = game;
 
@@ -144,6 +153,15 @@ function MissionPageInner() {
       });
       g.events.on('repaired', ({ amount }) => toast(`Repaired +${amount.toFixed(0)} durability`, 'good'));
       g.events.on('roverLost', ({ reason }) => toast(`Rover lost: ${reason}`, 'bad'));
+      g.events.on('weather', ({ type, phase }) => {
+        const info = WEATHER_INFO[type];
+        if (phase === 'start') toast(`${info.icon} ${info.warning}`, 'warn');
+        else toast(`${info.icon} ${info.name} has passed.`, 'good');
+      });
+      g.events.on('meteorImpact', ({ distance }) => {
+        if (distance <= 2.5) toast('☄ Direct hit — chassis damage!', 'bad');
+        else if (distance <= 6) toast('☄ Impact close by!', 'warn');
+      });
 
       const resize = () => {
         const el = canvasRef.current;
@@ -165,6 +183,9 @@ function MissionPageInner() {
           cargoUsed: r.cargoUsed,
           cargoMax: r.stats.cargoCapacity,
           daylight: g.sim.daylight(),
+          weatherLabel: g.sim.weather
+            ? `${WEATHER_INFO[g.sim.weather.type].icon} ${WEATHER_INFO[g.sim.weather.type].name}`
+            : null,
           cargo: { ...r.cargo },
           status: g.sim.status,
           canMine: r.stats.miningPower > 0,
@@ -279,6 +300,7 @@ function MissionPageInner() {
             </div>
           </div>
           <span className="chip">{hud.daylight > 0.5 ? '☀️' : hud.daylight > 0 ? '🌆' : '🌙'}</span>
+          {hud.weatherLabel && <span className="chip">{hud.weatherLabel}</span>}
           <span className="spacer" />
           <button onClick={() => gameRef.current?.rotateView()} title="Rotate view (R)">⟳</button>
           <button onClick={() => setShowMinimap((v) => !v)} title="Toggle map">🗺</button>
@@ -349,6 +371,51 @@ function MissionPageInner() {
           <span className="ico">📥</span>Deposit
         </button>
       </div>
+
+      {tapMenu && g && (
+        <div
+          className="tapmenu"
+          style={{
+            left: Math.min(tapMenu.x, (canvasRef.current?.clientWidth ?? 400) - 180),
+            top: Math.min(tapMenu.y, (canvasRef.current?.clientHeight ?? 400) - 160),
+          }}
+        >
+          {(() => {
+            const world = g.sim.world;
+            const mat = MATERIALS[world.surfaceMaterial(tapMenu.tile.x, tapMenu.tile.y)];
+            const h = world.height(tapMenu.tile.x, tapMenu.tile.y);
+            const canMine = h > 0 && g.sim.rover.stats.miningPower > 0;
+            const yieldName = mat.yields ? RESOURCE_NAMES[mat.yields.resource] : null;
+            return (
+              <>
+                <span className="hdr">
+                  {mat.name} · [{tapMenu.tile.x},{tapMenu.tile.y}]
+                </span>
+                <button
+                  onClick={() => {
+                    gameRef.current?.walkTo(tapMenu.tile.x, tapMenu.tile.y);
+                    setTapMenu(null);
+                  }}
+                >
+                  🛞 Drive here
+                </button>
+                {canMine && (
+                  <button
+                    onClick={() => {
+                      gameRef.current?.orderMine(tapMenu.tile.x, tapMenu.tile.y);
+                      setTapMenu(null);
+                      toast(`Mining order: ${mat.name}`);
+                    }}
+                  >
+                    ⛏ Mine {yieldName ?? mat.name}
+                  </button>
+                )}
+                <button onClick={() => setTapMenu(null)}>✕ Cancel</button>
+              </>
+            );
+          })()}
+        </div>
+      )}
 
       <div className="toasts">
         {toasts.map((t) => (

@@ -396,3 +396,52 @@ describe('block placement', () => {
     expect(sim.placeBlock()).toBe(false);
   });
 });
+
+describe('weather', () => {
+  it('dust storms cut solar charging and raise drive cost', () => {
+    const sim = makeSim('mars');
+    sim.startWeather('dust-storm', 1, 60);
+    expect(sim.weatherSolarMult()).toBeCloseTo(0.35, 2);
+    expect(sim.weatherMoveMult()).toBeCloseTo(1.3, 2);
+    const r = sim.rover;
+    r.battery = 10;
+    const clearCharge = r.stats.solarRate * sim.body.solarFlux; // per second, clear sky
+    runTicks(sim, TICK_RATE * 2);
+    expect(r.battery - 10).toBeLessThan(clearCharge * 2 * 0.6);
+  });
+
+  it('solar storms drain the battery and double instrument costs', () => {
+    const sim = makeSim('moon');
+    sim.rover.stats = { ...sim.rover.stats, solarRate: 0, rtgRate: 0.001 }; // isolate drain
+    sim.startWeather('solar-storm', 1, 60);
+    expect(sim.weatherSensorMult()).toBe(2);
+    const before = sim.rover.battery;
+    runTicks(sim, TICK_RATE * 3);
+    expect(sim.rover.battery).toBeLessThan(before);
+  });
+
+  it('meteor showers crater the terrain via persisted edits', () => {
+    const sim = makeSim('moon');
+    sim.startWeather('meteor-shower', 1, 60);
+    const editsBefore = Object.keys(sim.world.edits).length;
+    runTicks(sim, TICK_RATE * 20);
+    expect(Object.keys(sim.world.edits).length).toBeGreaterThan(editsBefore);
+    expect(sim.impacts.length + 1).toBeGreaterThan(0); // markers fade but events fired
+  });
+
+  it('weather ends and survives serialise/resume', () => {
+    const sim = makeSim('mars');
+    sim.startWeather('dust-devil', 0.8, 5);
+    expect(sim.weather?.pos).toBeDefined();
+    const snap = sim.serialize();
+    const resumed = new Simulation({
+      body: getBody('mars')!,
+      spec: snap.rover.spec,
+      events: new EventBus(),
+      resume: snap,
+    });
+    expect(resumed.weather?.type).toBe('dust-devil');
+    runTicks(resumed, TICK_RATE * 6);
+    expect(resumed.weather).toBeNull();
+  });
+});

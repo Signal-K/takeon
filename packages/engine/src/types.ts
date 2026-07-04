@@ -88,7 +88,13 @@ export interface BodyDef {
   /** Max terrain height in voxels. */
   maxHeight: number;
   seed: number;
-  palette: { sky: string; skyNight: string };
+  palette: {
+    sky: string;
+    skyNight: string;
+    /** Per-channel RGB multiplier applied to terrain colours (body identity:
+     * grey Moon, rusty Mars, blue-white Europa...). Default [1,1,1]. */
+    tint?: [number, number, number];
+  };
   /**
    * Real-terrain source: id of an embedded DEM patch (e.g. sampled from
    * NASA MOLA for Mars, LRO LOLA for the Moon). Blended with detail noise;
@@ -100,6 +106,11 @@ export interface BodyDef {
    * Mars, Clementine/M3 TiO2 for the lunar maria...). Missing = even split.
    */
   minerals?: { iron?: number; copper?: number; titanium?: number };
+  /**
+   * Weather event rates: expected events per ~10 game-minutes.
+   * Airless bodies get solar storms and meteor showers; Mars gets dust.
+   */
+  weather?: Partial<Record<WeatherType, number>>;
   terrain: {
     roughness: number; // 0..1
     craters: number; // approx count
@@ -191,6 +202,25 @@ export interface RoverStats {
   problems: string[];
 }
 
+/** Environmental events. Which ones a body rolls comes from BodyDef.weather. */
+export type WeatherType =
+  | 'dust-devil' // wandering vortex; scours panels, batters the chassis up close
+  | 'dust-storm' // global haze; solar drops hard, driving costs more
+  | 'solar-storm' // radiation surge; electronics drain, instruments cost double
+  | 'meteor-shower' // impacts crater the terrain; dangerous up close
+  | 'cryo-fog'; // sublimating ice haze; dims the sun
+
+export interface ActiveWeather {
+  type: WeatherType;
+  /** Seconds left. */
+  remaining: number;
+  duration: number;
+  /** 0..1 severity. */
+  intensity: number;
+  /** dust-devil only: current vortex tile position. */
+  pos?: Vec2;
+}
+
 export type AnomalyType =
   | 'wreckage'
   | 'crystal-formation'
@@ -276,6 +306,8 @@ export interface MissionState {
   photos: PhotoMeta[];
   /** Voxel edits as packed "x,y,z" keys -> material (0 = mined out). */
   edits: Record<string, number>;
+  /** Active weather event, if any (added in v0.2 — optional for old saves). */
+  weather?: ActiveWeather | null;
   status: 'active' | 'complete' | 'lost';
 }
 
@@ -295,7 +327,9 @@ export interface GameEvents {
   craftFailed: { reason: string };
   blockPlaced: { pos: Vec2 };
   repaired: { amount: number };
-  damaged: { amount: number; reason: 'fall' | 'terrain' };
+  damaged: { amount: number; reason: 'fall' | 'terrain' | 'impact' | 'storm' };
+  weather: { type: WeatherType; phase: 'start' | 'end'; intensity: number };
+  meteorImpact: { pos: Vec2; distance: number };
   batteryEmpty: {};
   roverLost: { reason: string };
   stateChanged: {};

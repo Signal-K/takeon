@@ -3,17 +3,18 @@ import type { Simulation } from '../sim/simulation.js';
 import { DIRS } from '../sim/simulation.js';
 import { Camera } from './camera.js';
 import { drawAnomaly, drawRover, drawStructure } from './entities.js';
-import { project, SpriteCache, TILE_H, TILE_W, TILE_Z } from './sprites.js';
+import { project, TILE_H, TILE_W, TILE_Z, shade } from './sprites.js';
 import { MATERIALS } from '../world/materials.js';
-import { hash2 } from '../util/rng.js';
+import { hash2, hash3 } from '../util/rng.js';
 
 const CHUNK = 16;
+/** Height deltas up to this blend into smooth slopes; larger become cliffs. */
+const SMOOTH_STEP = 1.01;
 
 interface Chunk {
   cx: number;
   cy: number;
   canvas: HTMLCanvasElement | OffscreenCanvas;
-  /** Projected-space position of the canvas's top-left corner. */
   originX: number;
   originY: number;
   dirty: boolean;
@@ -21,16 +22,16 @@ interface Chunk {
 
 export type ViewRotation = 0 | 1 | 2 | 3;
 
+type Proj = (x: number, y: number, z: number) => { x: number; y: number };
+
 /**
- * Isometric voxel renderer over Canvas 2D.
+ * Isometric renderer over Canvas 2D with a *smoothed* voxel surface:
+ * tile tops are polygons whose corner heights blend with neighbours
+ * (≤1 voxel apart), so gentle terrain reads as rolling slopes and ramps;
+ * bigger height jumps stay as cliffs rendered with geological strata.
  *
  * Terrain is composited from cached per-chunk canvases (rebuilt only when
- * voxels change), so per-frame cost is a handful of drawImage calls plus
- * dynamic entities — fast enough for mid-range phones.
- *
- * The camera can be rotated in 90° steps: the renderer draws a rotated
- * *view* of the world (world coordinates relabelled), so the sim never
- * knows the difference.
+ * voxels change). The camera rotates in 90° steps via a rotated view layer.
  */
 export class IsoRenderer {
   readonly camera = new Camera();
@@ -38,11 +39,12 @@ export class IsoRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private sim: Simulation;
-  private sprites = new SpriteCache();
   private chunks: Chunk[] = [];
   private chunksPerSide: number;
   private stars: { x: number; y: number; r: number; a: number }[] = [];
   private dpr = 1;
+  /** Body-tinted material colours, cached as hex. Key: material*4 + faceIdx. */
+  private tintCache = new Map<number, string>();
 
   constructor(canvas: HTMLCanvasElement, sim: Simulation) {
     this.canvas = canvas;
@@ -62,9 +64,26 @@ export class IsoRenderer {
     this.camera.centerOnTile(v.x, v.y, sim.world.height(r.pos.x, r.pos.y));
   }
 
+  /** Material colour with the body's identity tint applied (grey Moon,
+   * rusty Mars, blue Europa...). */
+  private tinted(material: Material, faceIdx: 0 | 1 | 2): string {
+    const key = (material as number) * 4 + faceIdx;
+    let hex = this.tintCache.get(key);
+    if (!hex) {
+      const base = MATERIALS[material].colors[faceIdx];
+      const t = this.sim.body.palette.tint ?? [1, 1, 1];
+      const n = parseInt(base.slice(1), 16);
+      const r = Math.max(0, Math.min(255, Math.round(((n >> 16) & 255) * t[0])));
+      const g = Math.max(0, Math.min(255, Math.round(((n >> 8) & 255) * t[1])));
+      const b = Math.max(0, Math.min(255, Math.round((n & 255) * t[2])));
+      hex = `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+      this.tintCache.set(key, hex);
+    }
+    return hex;
+  }
+
   // ── View rotation ─────────────────────────────────────────────────────
 
-  /** World → rotated view coordinates (works for floats). */
   toView(x: number, y: number): Vec2 {
     const s = this.sim.world.size - 1;
     switch (this.rotation) {
@@ -75,7 +94,6 @@ export class IsoRenderer {
     }
   }
 
-  /** Rotated view → world coordinates. */
   toWorld(u: number, v: number): Vec2 {
     const s = this.sim.world.size - 1;
     switch (this.rotation) {
@@ -92,7 +110,6 @@ export class IsoRenderer {
     return this.sim.world.height(w.x, w.y);
   }
 
-  /** Rotate the view by 90° steps; keeps the rover centred. */
   setRotation(rotation: ViewRotation): void {
     if (rotation === this.rotation) return;
     this.rotation = rotation;
@@ -105,6 +122,64 @@ export class IsoRenderer {
 
   rotateClockwise(): void {
     this.setRotation(((this.rotation + 1) % 4) as ViewRotation);
+  }
+
+  // ── Smoothed surface geometry ─────────────────────────────────────────
+
+  /**
+   * Height of the grid corner at (u+0.5, v+0.5): average of the adjacent
+   * columns whose heights sit within one step of the lowest — outliers
+   * (cliff tops) don't drag the corner up. Identical for every tile that
+   * shares the corner, so slopes are seam-free.
+   */
+  private cornerRaw(u: number, v: number): number {
+    let h0 = this.heightV(u, v);
+    let h1 = this.heightV(u + 1, v);
+    let h2 = this.heightV(u, v + 1);
+    let h3 = this.heightV(u + 1, v + 1);
+    let min = Infinity;
+    if (h0 >= 0 && h0 < min) min = h0;
+    if (h1 >= 0 && h1 < min) min = h1;
+    if (h2 >= 0 && h2 < min) min = h2;
+    if (h3 >= 0 && h3 < min) min = h3;
+    if (min === Infinity) return -1;
+    let sum = 0;
+    let n = 0;
+    if (h0 >= 0 && h0 - min <= SMOOTH_STEP) { sum += h0; n++; }
+    if (h1 >= 0 && h1 - min <= SMOOTH_STEP) { sum += h1; n++; }
+    if (h2 >= 0 && h2 - min <= SMOOTH_STEP) { sum += h2; n++; }
+    if (h3 >= 0 && h3 - min <= SMOOTH_STEP) { sum += h3; n++; }
+    return sum / n;
+  }
+
+  /**
+   * The four smoothed corner heights of tile (u,v) in screen order
+   * [top, right, bottom, left] = corners (u-.5,v-.5) (u+.5,v-.5)
+   * (u+.5,v+.5) (u-.5,v+.5). Corners that belong to a far-lower
+   * neighbourhood clamp back to the tile's own height (cliff edge).
+   */
+  private tileCorners(u: number, v: number, h: number): [number, number, number, number] {
+    const cs: [number, number, number, number] = [
+      this.cornerRaw(u - 1, v - 1),
+      this.cornerRaw(u, v - 1),
+      this.cornerRaw(u, v),
+      this.cornerRaw(u - 1, v),
+    ];
+    for (let i = 0; i < 4; i++) {
+      if (cs[i] < 0 || Math.abs(cs[i] - h) > SMOOTH_STEP) cs[i] = h;
+    }
+    return cs;
+  }
+
+  /** Smoothed surface height at a tile centre (world coords), for entities. */
+  surfaceZ(x: number, y: number): number {
+    const vv = this.toView(Math.round(x), Math.round(y));
+    const u = Math.round(vv.x);
+    const v = Math.round(vv.y);
+    const h = this.heightV(u, v);
+    if (h < 0) return 0;
+    const cs = this.tileCorners(u, v, h);
+    return (cs[0] + cs[1] + cs[2] + cs[3]) / 4;
   }
 
   // ── Setup ─────────────────────────────────────────────────────────────
@@ -135,11 +210,10 @@ export class IsoRenderer {
         const y0 = cy * CHUNK;
         const x1 = Math.min(x0 + CHUNK, world.size) - 1;
         const y1 = Math.min(y0 + CHUNK, world.size) - 1;
-        // Projected-space bounding box of every voxel in this chunk.
         const left = project(x0, y1, 0).sx - TILE_W / 2;
         const right = project(x1, y0, 0).sx + TILE_W / 2;
-        const top = project(x0, y0, world.maxHeight).sy - TILE_H / 2;
-        const bottom = project(x1, y1, 0).sy + TILE_H / 2 + TILE_Z;
+        const top = project(x0, y0, world.maxHeight + 1).sy - TILE_H / 2;
+        const bottom = project(x1, y1, 0).sy + TILE_H / 2 + TILE_Z * 1.5;
         const canvas = this.makeCanvas(Math.ceil(right - left), Math.ceil(bottom - top));
         this.chunks.push({ cx, cy, canvas, originX: left, originY: top, dirty: true });
       }
@@ -159,53 +233,218 @@ export class IsoRenderer {
   }
 
   private invalidateViewColumn(u: number, v: number): void {
-    const cx = Math.floor(u / CHUNK);
-    const cy = Math.floor(v / CHUNK);
-    // Exposure of view-space neighbours can change near chunk borders.
-    const marks = [
-      [cx, cy],
-      [u % CHUNK === 0 ? cx - 1 : cx, cy],
-      [cx, v % CHUNK === 0 ? cy - 1 : cy],
-    ];
-    for (const [mx, my] of marks) {
-      if (mx < 0 || my < 0) continue;
-      const chunk = this.chunks[my * this.chunksPerSide + mx];
-      if (chunk) chunk.dirty = true;
+    // Corner smoothing lets a column influence all 8 neighbours.
+    const marked = new Set<number>();
+    for (let dv = -1; dv <= 1; dv++) {
+      for (let du = -1; du <= 1; du++) {
+        const cx = Math.floor((u + du) / CHUNK);
+        const cy = Math.floor((v + dv) / CHUNK);
+        if (cx < 0 || cy < 0 || cx >= this.chunksPerSide || cy >= this.chunksPerSide) continue;
+        marked.add(cy * this.chunksPerSide + cx);
+      }
     }
+    for (const i of marked) this.chunks[i].dirty = true;
+  }
+
+  // ── Column drawing (shared by chunk builds and the occluder pass) ─────
+
+  /**
+   * Draw one column: smoothed top polygon + cliff faces with strata.
+   * `proj` maps continuous view coords to output pixels; `scale` is the
+   * output scale (for line widths and texture density).
+   */
+  private drawColumnV(g: CanvasRenderingContext2D, u: number, v: number, proj: Proj, scale: number): void {
+    const h = this.heightV(u, v);
+    if (h < 0) return;
+    const w = this.toWorld(u, v);
+    const world = this.sim.world;
+    const cs = this.tileCorners(u, v, h);
+
+    // Screen-order corner positions: top, right, bottom, left.
+    const pT = proj(u - 0.5, v - 0.5, cs[0]);
+    const pR = proj(u + 0.5, v - 0.5, cs[1]);
+    const pB = proj(u + 0.5, v + 0.5, cs[2]);
+    const pL = proj(u - 0.5, v + 0.5, cs[3]);
+
+    // ── Cliff faces first (they sit behind/below the top) ──────────────
+    const hSE = this.heightV(u + 1, v);
+    const hSW = this.heightV(u, v + 1);
+    if (cs[1] > hSE + 0.01 || cs[2] > hSE + 0.01 || hSE < 0) {
+      this.drawFace(g, proj, scale, w.x, w.y, u + 0.5, v - 0.5, cs[1], u + 0.5, v + 0.5, cs[2], hSE, 2);
+    }
+    if (cs[2] > hSW + 0.01 || cs[3] > hSW + 0.01 || hSW < 0) {
+      this.drawFace(g, proj, scale, w.x, w.y, u + 0.5, v + 0.5, cs[2], u - 0.5, v + 0.5, cs[3], hSW, 1);
+    }
+
+    // ── Top polygon ─────────────────────────────────────────────────────
+    const m = world.get(w.x, w.y, h) || Material.Regolith;
+    const def = MATERIALS[m];
+    const topColor = this.tinted(m, 0);
+    // Lighting: sun from screen top-left; slope toward it brightens.
+    const slope = (cs[0] - cs[2]) * 0.16 + (cs[3] - cs[1]) * 0.07;
+    const jitter = 1 + (hash2(w.x, w.y, 0xf00d) - 0.5) * 2 * def.jitter;
+    const bright = Math.max(0.62, Math.min(1.34, (1 + slope) * jitter));
+
+    g.beginPath();
+    g.moveTo(pT.x, pT.y);
+    g.lineTo(pR.x, pR.y);
+    g.lineTo(pB.x, pB.y);
+    g.lineTo(pL.x, pL.y);
+    g.closePath();
+    g.fillStyle = shade(topColor, bright);
+    g.fill();
+
+    // Soil texture: clipped speckles, grain streaks and occasional pebbles.
+    g.save();
+    g.clip();
+    const cxm = (pT.x + pB.x) / 2;
+    const bilerp = (a: number, b: number): { x: number; y: number } => {
+      // a: along T->R / L->B, b: along T->L / R->B (0..1)
+      const x1 = pT.x + (pR.x - pT.x) * a;
+      const y1 = pT.y + (pR.y - pT.y) * a;
+      const x2 = pL.x + (pB.x - pL.x) * a;
+      const y2 = pL.y + (pB.y - pL.y) * a;
+      return { x: x1 + (x2 - x1) * b, y: y1 + (y2 - y1) * b };
+    };
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const r1 = hash3(w.x, w.y, i, 0xcafe);
+      const r2 = hash3(w.x, w.y, i, 0xdead);
+      const r3 = hash3(w.x, w.y, i, 0xbeef);
+      const p = bilerp(0.08 + r1 * 0.84, 0.08 + r2 * 0.84);
+      if (r3 < 0.16) {
+        // Pebble with a hint of shadow.
+        const pr = (0.9 + r3 * 4) * scale;
+        g.fillStyle = 'rgba(15,10,25,0.18)';
+        g.beginPath();
+        g.ellipse(p.x + pr * 0.3, p.y + pr * 0.35, pr, pr * 0.55, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = shade(topColor, bright * (r2 > 0.5 ? 1.18 : 0.8));
+        g.beginPath();
+        g.ellipse(p.x, p.y, pr, pr * 0.6, 0, 0, Math.PI * 2);
+        g.fill();
+      } else if (r3 < 0.6) {
+        // Grain fleck.
+        g.fillStyle = shade(topColor, bright * (r1 > 0.5 ? 1.14 : 0.84));
+        g.fillRect(p.x, p.y, 1.4 * scale, 0.9 * scale);
+      } else {
+        // Wind streak along the diamond axis.
+        g.strokeStyle = shade(topColor, bright * 0.9);
+        g.lineWidth = 0.5 * scale;
+        g.beginPath();
+        g.moveTo(p.x - 3 * scale, p.y + 1.2 * scale);
+        g.lineTo(p.x + 3 * scale, p.y - 0.6 * scale);
+        g.stroke();
+      }
+    }
+    // Soft ambient occlusion where a higher neighbour looms (screen-top edges).
+    const hNE = this.heightV(u, v - 1);
+    const hNW = this.heightV(u - 1, v);
+    if (hNE > h + SMOOTH_STEP) {
+      const ao = g.createLinearGradient(pR.x, pR.y, cxm, (pT.y + pB.y) / 2);
+      ao.addColorStop(0, 'rgba(12,8,26,0.30)');
+      ao.addColorStop(1, 'rgba(12,8,26,0)');
+      g.fillStyle = ao;
+      g.fill();
+    }
+    if (hNW > h + SMOOTH_STEP) {
+      const ao = g.createLinearGradient(pL.x, pL.y, cxm, (pT.y + pB.y) / 2);
+      ao.addColorStop(0, 'rgba(12,8,26,0.30)');
+      ao.addColorStop(1, 'rgba(12,8,26,0)');
+      g.fillStyle = ao;
+      g.fill();
+    }
+    g.restore();
+  }
+
+  /** A cliff face between two corners, banded by the strata materials. */
+  private drawFace(
+    g: CanvasRenderingContext2D,
+    proj: Proj,
+    scale: number,
+    wx: number,
+    wy: number,
+    ua: number,
+    va: number,
+    za: number,
+    ub: number,
+    vb: number,
+    zb: number,
+    neighbourH: number,
+    colorIdx: 1 | 2,
+  ): void {
+    const world = this.sim.world;
+    const bottom = neighbourH < 0 ? -0.6 : Math.min(neighbourH, Math.min(za, zb));
+    const top = Math.max(za, zb);
+    if (top <= bottom + 0.01) return;
+
+    const pa = proj(ua, va, za);
+    const pb = proj(ub, vb, zb);
+    const pa0 = proj(ua, va, bottom);
+    const pb0 = proj(ub, vb, bottom);
+
+    g.beginPath();
+    g.moveTo(pa.x, pa.y);
+    g.lineTo(pb.x, pb.y);
+    g.lineTo(pb0.x, pb0.y);
+    g.lineTo(pa0.x, pa0.y);
+    g.closePath();
+    g.save();
+    g.clip();
+
+    // Strata bands: each z level filled with that voxel's material colour.
+    for (let z = Math.floor(bottom); z <= Math.ceil(top); z++) {
+      const mz = world.get(wx, wy, Math.max(0, Math.min(world.maxHeight - 1, z)));
+      const band = 1 + (hash3(wx, wy, z, 0x50a1) - 0.5) * 0.12;
+      g.fillStyle = shade(this.tinted(mz === Material.Air ? Material.Rock : mz, colorIdx), band);
+      const t1 = proj(ua, va, z + 1);
+      const t2 = proj(ub, vb, z + 1);
+      const b1 = proj(ua, va, z);
+      const b2 = proj(ub, vb, z);
+      g.beginPath();
+      g.moveTo(t1.x, t1.y);
+      g.lineTo(t2.x, t2.y);
+      g.lineTo(b2.x, b2.y);
+      g.lineTo(b1.x, b1.y);
+      g.closePath();
+      g.fill();
+      // Sediment seam.
+      g.strokeStyle = 'rgba(12,8,26,0.22)';
+      g.lineWidth = 0.6 * scale;
+      g.beginPath();
+      g.moveTo(b1.x, b1.y);
+      g.lineTo(b2.x, b2.y);
+      g.stroke();
+    }
+    // Contact-shadow gradient toward the base of the cliff.
+    const gr = g.createLinearGradient(0, Math.min(pa.y, pb.y), 0, Math.max(pa0.y, pb0.y));
+    gr.addColorStop(0, 'rgba(12,8,26,0)');
+    gr.addColorStop(1, 'rgba(12,8,26,0.38)');
+    g.fillStyle = gr;
+    g.fillRect(
+      Math.min(pa.x, pb.x, pa0.x, pb0.x),
+      Math.min(pa.y, pb.y),
+      Math.abs(pb.x - pa.x) + 2,
+      Math.max(pa0.y, pb0.y) - Math.min(pa.y, pb.y) + 2,
+    );
+    g.restore();
   }
 
   private rebuildChunk(chunk: Chunk): void {
     const world = this.sim.world;
-    const ctx = chunk.canvas.getContext('2d') as CanvasRenderingContext2D;
-    ctx.clearRect(0, 0, chunk.canvas.width, chunk.canvas.height);
+    const g = chunk.canvas.getContext('2d') as CanvasRenderingContext2D;
+    g.clearRect(0, 0, chunk.canvas.width, chunk.canvas.height);
     const u0 = chunk.cx * CHUNK;
     const v0 = chunk.cy * CHUNK;
     const uN = Math.min(CHUNK, world.size - u0);
     const vN = Math.min(CHUNK, world.size - v0);
-
-    // Painter order: diagonal rows (u+v ascending), columns bottom-to-top.
+    const proj: Proj = (x, y, z) => {
+      const p = project(x, y, z);
+      return { x: p.sx - chunk.originX, y: p.sy - chunk.originY };
+    };
     for (let s = 0; s <= uN + vN - 2; s++) {
       for (let lu = Math.max(0, s - vN + 1); lu <= Math.min(s, uN - 1); lu++) {
-        const lv = s - lu;
-        const u = u0 + lu;
-        const v = v0 + lv;
-        const h = this.heightV(u, v);
-        if (h < 0) continue;
-        const w = this.toWorld(u, v);
-        const hRight = this.heightV(u + 1, v); // -1 outside => exposed
-        const hLeft = this.heightV(u, v + 1);
-        for (let z = 0; z <= h; z++) {
-          const visible = z === h || z > hRight || z > hLeft;
-          if (!visible) continue;
-          const m = world.get(w.x, w.y, z);
-          if (m === Material.Air) continue;
-          const p = project(u, v, z);
-          ctx.drawImage(
-            this.sprites.tile(m, w.x, w.y, z) as CanvasImageSource,
-            Math.round(p.sx - TILE_W / 2 - chunk.originX),
-            Math.round(p.sy - TILE_H / 2 - chunk.originY),
-          );
-        }
+        this.drawColumnV(g, u0 + lu, v0 + (s - lu), proj, 1);
       }
     }
     chunk.dirty = false;
@@ -217,7 +456,7 @@ export class IsoRenderer {
     const world = sim.world;
     const daylight = sim.daylight();
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true;
 
     // Sky: vertical gradient from deep space down to the horizon tint.
     const horizon = mixColor(sim.body.palette.skyNight, sim.body.palette.sky, daylight);
@@ -235,7 +474,7 @@ export class IsoRenderer {
     }
     ctx.globalAlpha = 1;
 
-    // Camera follow (in view space).
+    // Camera follow (in view space, on the smoothed surface).
     const rover = sim.rover;
     const rz = this.roverZ();
     const rv = this.toView(rover.renderPos.x, rover.renderPos.y);
@@ -245,7 +484,7 @@ export class IsoRenderer {
       camera.cy += (p.sy - camera.cy) * 0.15;
     }
 
-    // Terrain chunks in painter order (chunk diagonal ascending).
+    // Terrain chunks in painter order.
     const sorted = [...this.chunks].sort((a, b) => a.cx + a.cy - (b.cx + b.cy));
     for (const chunk of sorted) {
       if (chunk.dirty) this.rebuildChunk(chunk);
@@ -256,46 +495,42 @@ export class IsoRenderer {
       ctx.drawImage(chunk.canvas as CanvasImageSource, s.x, s.y, w, h);
     }
 
-    // Facing-tile highlight.
+    // Facing-tile / mining highlights on the smoothed surface.
     const d = DIRS[rover.facing];
     const fx = rover.pos.x + d.x;
     const fy = rover.pos.y + d.y;
     if (world.isSolid(fx, fy)) {
-      const fv = this.toView(fx, fy);
-      this.strokeTileDiamond(fv.x, fv.y, world.height(fx, fy), 'rgba(255,255,255,0.35)');
+      this.strokeTilePolygon(fx, fy, 'rgba(255,255,255,0.35)');
     }
     if (rover.mining) {
-      const m = rover.mining;
-      const mv = this.toView(m.pos.x, m.pos.y);
       const pulse = 0.35 + (Math.sin(sim.time * 10) + 1) * 0.2;
-      this.strokeTileDiamond(mv.x, mv.y, world.height(m.pos.x, m.pos.y), `rgba(255,179,71,${pulse})`);
+      this.strokeTilePolygon(rover.mining.pos.x, rover.mining.pos.y, `rgba(255,179,71,${pulse})`);
     }
 
     // Entities in view-space diagonal order.
     type Ent = { s: number; draw: () => void };
     const ents: Ent[] = [];
     for (const a of sim.anomalies) {
-      const az = world.height(a.pos.x, a.pos.y);
-      if (az < 0) continue;
+      if (world.height(a.pos.x, a.pos.y) < 0) continue;
       const av = this.toView(a.pos.x, a.pos.y);
-      const p = camera.toScreen(...projXY(av.x, av.y, az + 1));
+      const az = this.surfaceZ(a.pos.x, a.pos.y);
+      const p = camera.toScreen(...projXY(av.x, av.y, az + 0.55));
       ents.push({
         s: av.x + av.y,
         draw: () => drawAnomaly(ctx, p.x, p.y, camera.zoom, a, sim.time),
       });
     }
     for (const st of sim.structures) {
-      const sz = world.height(st.pos.x, st.pos.y);
       const sv = this.toView(st.pos.x, st.pos.y);
-      const p = camera.toScreen(...projXY(sv.x, sv.y, sz + 1));
+      const sz = this.surfaceZ(st.pos.x, st.pos.y);
+      const p = camera.toScreen(...projXY(sv.x, sv.y, sz + 0.55));
       ents.push({
         s: sv.x + sv.y,
         draw: () => drawStructure(ctx, p.x, p.y, camera.zoom, st, sim.time, daylight),
       });
     }
     {
-      const p = camera.toScreen(...projXY(rv.x, rv.y, rz + 1));
-      // Facing on screen = world facing minus view rotation.
+      const p = camera.toScreen(...projXY(rv.x, rv.y, rz + 0.55));
       const screenFacing = (((rover.facing - this.rotation) % 4) + 4) % 4;
       ents.push({
         s: rv.x + rv.y,
@@ -308,6 +543,9 @@ export class IsoRenderer {
     // Re-draw terrain columns that should occlude nearby entities.
     this.redrawOccluders(rv, rz);
 
+    // Weather effects over the scene.
+    this.drawWeather(daylight);
+
     // Night tint.
     if (daylight < 1) {
       ctx.fillStyle = `rgba(10,8,30,${(1 - daylight) * 0.45})`;
@@ -315,78 +553,178 @@ export class IsoRenderer {
     }
   }
 
-  private roverZ(): number {
-    const r = this.sim.rover;
-    const world = this.sim.world;
-    if (r.moveFrom) {
-      const z0 = world.height(r.moveFrom.x, r.moveFrom.y);
-      const z1 = world.height(r.pos.x, r.pos.y);
-      return z0 + (z1 - z0) * r.moveT;
+  /** Weather rendering: vortices, haze, aurora, meteor strikes, fog. */
+  private drawWeather(daylight: number): void {
+    const { ctx, camera, sim } = this;
+    const t = sim.time;
+
+    // Meteor strike flashes + incoming streaks (recent impacts on the sim).
+    for (const imp of sim.impacts) {
+      const age = t - imp.t;
+      const a = Math.max(0, 1 - age / 1.1);
+      const iv = this.toView(imp.pos.x, imp.pos.y);
+      const iz = this.surfaceZ(imp.pos.x, imp.pos.y);
+      const p = camera.toScreen(...projXY(iv.x, iv.y, iz));
+      if (age < 0.35) {
+        // Incoming streak from the upper right.
+        ctx.strokeStyle = `rgba(255,220,160,${a})`;
+        ctx.lineWidth = 2 * camera.zoom * (1 - age * 2);
+        ctx.beginPath();
+        ctx.moveTo(p.x + 80 * camera.zoom * (0.35 - age) * 4, p.y - 130 * camera.zoom * (0.35 - age) * 4);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }
+      // Flash + dust ring.
+      const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, 22 * camera.zoom * (0.4 + age));
+      g.addColorStop(0, `rgba(255,240,200,${a * 0.8})`);
+      g.addColorStop(0.4, `rgba(255,170,90,${a * 0.35})`);
+      g.addColorStop(1, 'rgba(255,170,90,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 24 * camera.zoom * (0.4 + age), 0, Math.PI * 2);
+      ctx.fill();
     }
-    return world.height(r.pos.x, r.pos.y);
+
+    const w = sim.weather;
+    if (!w) return;
+    const i = w.intensity;
+
+    switch (w.type) {
+      case 'dust-devil': {
+        if (!w.pos) break;
+        const dv = this.toView(w.pos.x, w.pos.y);
+        const dz = this.surfaceZ(w.pos.x, w.pos.y);
+        const p = camera.toScreen(...projXY(dv.x, dv.y, dz));
+        const s = camera.zoom;
+        // Swirling stacked ellipses, wider toward the top.
+        for (let k = 0; k < 7; k++) {
+          const frac = k / 6;
+          const wob = Math.sin(t * 7 + k * 1.7) * 3 * s;
+          const rx = (5 + frac * 13) * s;
+          ctx.strokeStyle = `rgba(226,190,140,${0.5 - frac * 0.32})`;
+          ctx.lineWidth = 2.2 * s * (1 - frac * 0.4);
+          ctx.beginPath();
+          ctx.ellipse(p.x + wob, p.y - (6 + frac * 44) * s, rx, rx * 0.38, 0, t * 5 + k, t * 5 + k + Math.PI * 1.4);
+          ctx.stroke();
+        }
+        // Kicked-up dust at the base.
+        ctx.fillStyle = 'rgba(226,190,140,0.30)';
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y + 2 * s, 10 * s, 4 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'dust-storm': {
+        // Moving haze bands + a global sandy tint.
+        ctx.fillStyle = `rgba(214,150,80,${0.16 * i})`;
+        ctx.fillRect(0, 0, camera.viewW, camera.viewH);
+        for (let k = 0; k < 3; k++) {
+          const y = ((t * (26 + k * 14) + k * 220) % (camera.viewH + 240)) - 120;
+          const g = ctx.createLinearGradient(0, y - 70, 0, y + 70);
+          g.addColorStop(0, 'rgba(222,160,92,0)');
+          g.addColorStop(0.5, `rgba(222,160,92,${0.14 * i})`);
+          g.addColorStop(1, 'rgba(222,160,92,0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(0, y - 70, camera.viewW, 140);
+        }
+        break;
+      }
+      case 'solar-storm': {
+        // Aurora curtains at the top of the frame + a faint flicker.
+        for (let k = 0; k < 3; k++) {
+          const x0 = camera.viewW * (0.12 + k * 0.3) + Math.sin(t * 0.8 + k * 2) * 40;
+          const flick = 0.5 + Math.sin(t * (6 + k)) * 0.3;
+          const g = ctx.createLinearGradient(x0, 0, x0 + 30, camera.viewH * 0.45);
+          g.addColorStop(0, `rgba(120,255,200,${0.20 * i * flick})`);
+          g.addColorStop(0.6, `rgba(150,120,255,${0.10 * i * flick})`);
+          g.addColorStop(1, 'rgba(150,120,255,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.moveTo(x0 - 45, 0);
+          ctx.lineTo(x0 + 65, 0);
+          ctx.lineTo(x0 + 25, camera.viewH * 0.45);
+          ctx.lineTo(x0 - 15, camera.viewH * 0.45);
+          ctx.closePath();
+          ctx.fill();
+        }
+        break;
+      }
+      case 'cryo-fog': {
+        // Low drifting fog banks.
+        for (let k = 0; k < 3; k++) {
+          const y = camera.viewH * (0.45 + k * 0.18) + Math.sin(t * 0.5 + k * 2.4) * 14;
+          const g = ctx.createLinearGradient(0, y - 40, 0, y + 40);
+          g.addColorStop(0, 'rgba(205,230,252,0)');
+          g.addColorStop(0.5, `rgba(205,230,252,${0.13 * i})`);
+          g.addColorStop(1, 'rgba(205,230,252,0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(0, y - 40, camera.viewW, 80);
+        }
+        ctx.fillStyle = `rgba(200,225,250,${0.08 * i * (0.5 + daylight * 0.5)})`;
+        ctx.fillRect(0, 0, camera.viewW, camera.viewH);
+        break;
+      }
+      default:
+        break;
+    }
   }
 
-  /**
-   * View-space columns "in front of" (greater diagonal than) an entity can
-   * occlude it. Chunk canvases were already stamped below entities, so
-   * re-stamp just those columns above everything. Cheap: a few dozen blits.
-   */
+  /** Rover z on the smoothed surface, interpolated during tile moves. */
+  private roverZ(): number {
+    const r = this.sim.rover;
+    if (r.moveFrom) {
+      const z0 = this.surfaceZ(r.moveFrom.x, r.moveFrom.y);
+      const z1 = this.surfaceZ(r.pos.x, r.pos.y);
+      return z0 + (z1 - z0) * r.moveT;
+    }
+    return this.surfaceZ(r.pos.x, r.pos.y);
+  }
+
   private redrawOccluders(posV: Vec2, z: number): void {
-    const world = this.sim.world;
     const { ctx, camera } = this;
     const eu = Math.round(posV.x);
     const ev = Math.round(posV.y);
     const s0 = eu + ev;
     const R = 7;
+    const proj: Proj = (x, y, zz) => {
+      const p = project(x, y, zz);
+      return camera.toScreen(p.sx, p.sy);
+    };
     for (let s = s0 + 1; s <= s0 + R; s++) {
       for (let u = eu - R; u <= eu + R; u++) {
         const v = s - u;
         if (Math.abs(v - ev) > R) continue;
         const h = this.heightV(u, v);
-        if (h <= z) continue; // cannot occlude
-        const w = this.toWorld(u, v);
-        const hRight = this.heightV(u + 1, v);
-        const hLeft = this.heightV(u, v + 1);
-        for (let zz = Math.max(0, Math.floor(z)); zz <= h; zz++) {
-          const visible = zz === h || zz > hRight || zz > hLeft;
-          if (!visible) continue;
-          const m = world.get(w.x, w.y, zz);
-          if (m === Material.Air) continue;
-          const p = project(u, v, zz);
-          const sc = camera.toScreen(p.sx - TILE_W / 2, p.sy - TILE_H / 2);
-          ctx.drawImage(
-            this.sprites.tile(m, w.x, w.y, zz) as CanvasImageSource,
-            sc.x,
-            sc.y,
-            TILE_W * camera.zoom,
-            (TILE_H + TILE_Z) * camera.zoom,
-          );
-        }
+        if (h <= z + 0.5) continue; // cannot occlude the entity
+        this.drawColumnV(ctx, u, v, proj, camera.zoom);
       }
     }
   }
 
-  private strokeTileDiamond(u: number, v: number, z: number, style: string): void {
+  private strokeTilePolygon(x: number, y: number, style: string): void {
     const { ctx, camera } = this;
-    const p = project(u, v, z);
-    const c = camera.toScreen(p.sx, p.sy);
-    const hw = (TILE_W / 2) * camera.zoom;
-    const hh = (TILE_H / 2) * camera.zoom;
+    const vv = this.toView(x, y);
+    const u = Math.round(vv.x);
+    const v = Math.round(vv.y);
+    const h = this.heightV(u, v);
+    if (h < 0) return;
+    const cs = this.tileCorners(u, v, h);
+    const pts = [
+      project(u - 0.5, v - 0.5, cs[0]),
+      project(u + 0.5, v - 0.5, cs[1]),
+      project(u + 0.5, v + 0.5, cs[2]),
+      project(u - 0.5, v + 0.5, cs[3]),
+    ].map((p) => camera.toScreen(p.sx, p.sy));
     ctx.strokeStyle = style;
     ctx.lineWidth = Math.max(1, camera.zoom);
     ctx.beginPath();
-    ctx.moveTo(c.x, c.y - hh);
-    ctx.lineTo(c.x + hw, c.y);
-    ctx.lineTo(c.x, c.y + hh);
-    ctx.lineTo(c.x - hw, c.y);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.closePath();
     ctx.stroke();
   }
 
-  /**
-   * World tile under a canvas-space point (top surfaces considered,
-   * front-most wins). Returns world coordinates.
-   */
+  /** World tile under a canvas-space point (front-most surface wins). */
   pickTile(canvasX: number, canvasY: number): Vec2 | null {
     const { camera } = this;
     const world = this.sim.world;
@@ -445,7 +783,6 @@ export class IsoRenderer {
       const rv = this.toView(r.pos.x, r.pos.y);
       this.camera.centerOnTile(rv.x, rv.y, this.sim.world.height(r.pos.x, r.pos.y));
       this.draw();
-      // Vignette + telemetry strip for that mission-photo feel.
       const c = this.ctx;
       const g = c.createRadialGradient(w / 2, h / 2, h / 3, w / 2, h / 2, h);
       g.addColorStop(0, 'rgba(0,0,0,0)');
@@ -486,8 +823,7 @@ export class IsoRenderer {
         const h = world.height(x, y);
         if (h < 0) continue;
         const m = world.surfaceMaterial(x, y);
-        const base = MATERIALS[m].colors[0];
-        ctx.fillStyle = shadeCss(base, 0.5 + (h / world.maxHeight) * 0.7);
+        ctx.fillStyle = shade(this.tinted(m, 0), 0.5 + (h / world.maxHeight) * 0.7);
         ctx.fillRect(x * scale, y * scale, scale, scale);
       }
     }
@@ -520,15 +856,6 @@ function mixColor(a: string, b: string, t: number): string {
   return `rgb(${r},${g},${bl})`;
 }
 
-function shadeCss(hex: string, f: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const r = Math.min(255, Math.round(((n >> 16) & 255) * f));
-  const g = Math.min(255, Math.round(((n >> 8) & 255) * f));
-  const b = Math.min(255, Math.round((n & 255) * f));
-  return `rgb(${r},${g},${b})`;
-}
-
-/** Darken an rgb(...) css string by factor f. */
 function shadeCss2(rgb: string, f: number): string {
   const m = rgb.match(/rgb\((\d+),(\d+),(\d+)\)/);
   if (!m) return rgb;

@@ -16,7 +16,18 @@ export interface RoverGameOptions {
   controls?: boolean;
   /** Called when a photo is taken, with the rendered image. */
   onPhoto?: (dataUrl: string | null, meta: MissionState['photos'][number]) => void;
+  /**
+   * Called when the player taps a tile. Return true to consume the tap
+   * (e.g. to show a context menu offering "drive here" / "mine this");
+   * return false/undefined for the default behaviour (drive there).
+   */
+  onTileTap?: (tile: Vec2, canvas: { x: number; y: number }) => boolean | void;
 }
+
+/** A queued player order: drive somewhere, or go mine a specific column. */
+export type RoverOrder =
+  | { type: 'goto'; pos: Vec2 }
+  | { type: 'mine'; pos: Vec2 };
 
 /**
  * Facade tying sim + renderer + controls together behind one small API.
@@ -32,7 +43,7 @@ export class RoverGame {
   private acc = 0;
   private last = 0;
   private running = false;
-  private walkTarget: Vec2 | null = null;
+  private order: RoverOrder | null = null;
   private opts: RoverGameOptions;
 
   constructor(opts: RoverGameOptions) {
@@ -57,7 +68,9 @@ export class RoverGame {
         },
         onTileTap: (x, y) => {
           const tile = this.renderer.pickTile(x, y);
-          if (tile) this.walkTo(tile.x, tile.y);
+          if (!tile) return;
+          const consumed = this.opts.onTileTap?.(tile, { x, y });
+          if (!consumed) this.walkTo(tile.x, tile.y);
         },
       });
     }
@@ -109,7 +122,7 @@ export class RoverGame {
    * up on screen regardless of perspective.
    */
   move(dir: 0 | 1 | 2 | 3): boolean {
-    this.walkTarget = null;
+    this.order = null;
     const worldDir = (((dir + this.renderer.rotation) % 4) + 4) % 4;
     return this.sim.move(worldDir as 0 | 1 | 2 | 3);
   }
@@ -129,11 +142,31 @@ export class RoverGame {
 
   /** Tap-to-drive: greedily steps toward the target until reached/blocked. */
   walkTo(x: number, y: number): void {
-    this.walkTarget = { x, y };
+    this.order = { type: 'goto', pos: { x, y } };
+  }
+
+  /**
+   * Mining order: drive until adjacent to the target column, face it, then
+   * mine it down until it's level with the rover's own ground (or cargo /
+   * battery / tool says no). This is the "go mine that" instruction.
+   */
+  orderMine(x: number, y: number): void {
+    this.order = { type: 'mine', pos: { x, y } };
+    this.mineOrderStarted = false;
+  }
+
+  /** The currently queued order, if any (for HUD display). */
+  currentOrder(): RoverOrder | null {
+    return this.order;
+  }
+
+  cancelOrder(): void {
+    this.order = null;
+    this.mineOrderStarted = false;
   }
 
   mine(): boolean {
-    this.walkTarget = null;
+    this.order = null;
     return this.sim.mine();
   }
 
@@ -169,32 +202,63 @@ export class RoverGame {
     this.renderer.camera.follow = follow;
   }
 
-  private lastWalkAttempt = 0;
+  private stuckCount = 0;
+  private mineOrderStarted = false;
 
+  /** Execute the queued order, one step per idle tick. */
   private autoWalk(): void {
-    const t = this.walkTarget;
-    if (!t) return;
+    const o = this.order;
+    if (!o) return;
     const r = this.sim.rover;
     if (r.moveFrom || r.mining) return;
-    const dx = t.x - r.pos.x;
-    const dy = t.y - r.pos.y;
-    if (dx === 0 && dy === 0) {
-      this.walkTarget = null;
+    const dx = o.pos.x - r.pos.x;
+    const dy = o.pos.y - r.pos.y;
+    const manhattan = Math.abs(dx) + Math.abs(dy);
+
+    if (o.type === 'mine') {
+      if (manhattan === 0) {
+        this.order = null; // standing on it — nothing to mine from here
+        return;
+      }
+      if (manhattan === 1) {
+        // Adjacent: face the column and mine it down until it's level
+        // with the ground we're standing on.
+        r.facing = dx === 1 ? 0 : dy === 1 ? 1 : dx === -1 ? 2 : 3;
+        const targetH = this.sim.world.height(o.pos.x, o.pos.y);
+        const myH = this.sim.world.height(r.pos.x, r.pos.y);
+        if (targetH <= 0 || (this.mineOrderStarted && targetH <= Math.max(0, myH))) {
+          this.order = null;
+          this.mineOrderStarted = false;
+          return;
+        }
+        if (this.sim.mine()) {
+          this.mineOrderStarted = true;
+        } else {
+          this.order = null; // cargo full / battery / unreachable — stop
+          this.mineOrderStarted = false;
+        }
+        return;
+      }
+      // Not adjacent yet — fall through and drive toward it.
+    } else if (manhattan === 0) {
+      this.order = null;
       return;
     }
-    // Greedy: step along the dominant axis; fall back to the other axis.
+
+    // Greedy step: dominant axis first, other axis as fallback.
     const primary: 0 | 1 | 2 | 3 = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 0 : 2) : dy > 0 ? 1 : 3;
     const secondary: 0 | 1 | 2 | 3 = Math.abs(dx) >= Math.abs(dy)
       ? dy > 0 ? 1 : dy < 0 ? 3 : (dx > 0 ? 0 : 2)
       : dx > 0 ? 0 : dx < 0 ? 2 : (dy > 0 ? 1 : 3);
     if (!this.sim.move(primary) && !this.sim.move(secondary)) {
-      this.lastWalkAttempt++;
-      if (this.lastWalkAttempt > 3) {
-        this.walkTarget = null; // stuck — give up rather than burn battery
-        this.lastWalkAttempt = 0;
+      this.stuckCount++;
+      if (this.stuckCount > 3) {
+        this.order = null; // stuck — give up rather than burn battery
+        this.stuckCount = 0;
+        this.mineOrderStarted = false;
       }
     } else {
-      this.lastWalkAttempt = 0;
+      this.stuckCount = 0;
     }
   }
 }
