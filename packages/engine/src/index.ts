@@ -15,6 +15,7 @@ export { RoverGame, createRoverGame, type RoverGameOptions } from './core/game.j
 
 export { Simulation, TICK_RATE, TICK_DT, DIRS, type SimOptions } from './sim/simulation.js';
 export { STRUCTURES, SOLAR_ARRAY_RANGE } from './sim/structures.js';
+export { RECIPES, getRecipe } from './sim/recipes.js';
 
 export { VoxelWorld } from './world/world.js';
 export { generateTerrain, findLandingSite } from './world/terrain.js';
@@ -25,7 +26,8 @@ export { BODIES, getBody } from './world/bodies.js';
 export { PARTS, getPart } from './parts/catalog.js';
 export { computeStats, canReach, defaultSpec } from './parts/assembly.js';
 
-export { IsoRenderer } from './render/renderer.js';
+export { IsoRenderer, type ViewRotation } from './render/renderer.js';
+export { registerDem, getDem, sampleDem, type DemPatch } from './world/dem/index.js';
 export { Camera } from './render/camera.js';
 export { TILE_W, TILE_H, TILE_Z, project } from './render/sprites.js';
 export { Controls, type ControlCallbacks } from './input/controls.js';

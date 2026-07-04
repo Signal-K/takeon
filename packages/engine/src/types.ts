@@ -37,7 +37,24 @@ export type ResourceKey =
   | 'copper'
   | 'titanium'
   | 'crystal'
-  | 'sulfur';
+  | 'sulfur'
+  // Refined via crafting:
+  | 'iron-plate'
+  | 'glass'
+  | 'water'
+  | 'alloy';
+
+/** A crafting/refining recipe. */
+export interface Recipe {
+  id: string;
+  name: string;
+  description: string;
+  input: Partial<Record<ResourceKey, number>>;
+  output: { resource: ResourceKey; amount: number };
+  energy: number;
+  /** Must be adjacent to this structure to craft (e.g. refinery). */
+  near?: StructureType;
+}
 
 export interface MaterialDef {
   id: Material;
@@ -72,6 +89,17 @@ export interface BodyDef {
   maxHeight: number;
   seed: number;
   palette: { sky: string; skyNight: string };
+  /**
+   * Real-terrain source: id of an embedded DEM patch (e.g. sampled from
+   * NASA MOLA for Mars, LRO LOLA for the Moon). Blended with detail noise;
+   * absent = fully procedural.
+   */
+  dem?: string;
+  /**
+   * Ore-vein weighting informed by spectroscopy surveys (TES hematite for
+   * Mars, Clementine/M3 TiO2 for the lunar maria...). Missing = even split.
+   */
+  minerals?: { iron?: number; copper?: number; titanium?: number };
   terrain: {
     roughness: number; // 0..1
     craters: number; // approx count
@@ -182,7 +210,13 @@ export interface Anomaly {
   documented: boolean;
 }
 
-export type StructureType = 'solar-array' | 'beacon' | 'drill-rig' | 'cache' | 'habitat-frame';
+export type StructureType =
+  | 'solar-array'
+  | 'beacon'
+  | 'drill-rig'
+  | 'cache'
+  | 'refinery'
+  | 'habitat-frame';
 
 export interface StructureDef {
   type: StructureType;
@@ -257,6 +291,9 @@ export interface GameEvents {
   anomalyDocumented: { anomaly: Anomaly };
   built: { structure: Structure };
   buildFailed: { reason: string };
+  crafted: { recipe: string; resource: ResourceKey; amount: number };
+  craftFailed: { reason: string };
+  blockPlaced: { pos: Vec2 };
   repaired: { amount: number };
   damaged: { amount: number; reason: 'fall' | 'terrain' };
   batteryEmpty: {};

@@ -7,9 +7,9 @@ import { project } from './sprites.js';
 export class Camera {
   cx = 0;
   cy = 0;
-  zoom = 1.5;
-  minZoom = 0.6;
-  maxZoom = 4;
+  zoom = 2.2;
+  minZoom = 0.8;
+  maxZoom = 5;
   viewW = 800;
   viewH = 600;
   follow = true;

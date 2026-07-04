@@ -1,6 +1,7 @@
 import { Material, type BodyDef } from '../types.js';
 import { fbm2 } from '../util/noise.js';
 import { hash2, hash3, mulberry32 } from '../util/rng.js';
+import { getDem, sampleDem, type DemPatch } from './dem/index.js';
 import { VoxelWorld } from './world.js';
 
 /**
@@ -14,10 +15,13 @@ export function generateTerrain(body: BodyDef, seedOverride?: number): VoxelWorl
   const world = new VoxelWorld(size, maxHeight);
   const t = body.terrain;
   const rng = mulberry32(seed ^ 0x51ab);
+  // Real elevation patch (NASA MOLA/LOLA sample) when available for this body.
+  const dem: DemPatch | undefined = body.dem ? getDem(body.dem) : undefined;
 
   // Crater field: centers, radii and depths, applied to the heightmap.
+  // Real DEMs already carry their craters — skip synthetic ones then.
   const craters: { cx: number; cy: number; r: number; depth: number }[] = [];
-  for (let i = 0; i < t.craters; i++) {
+  for (let i = 0; i < (dem ? 0 : t.craters); i++) {
     craters.push({
       cx: rng() * size,
       cy: rng() * size,
@@ -43,6 +47,12 @@ export function generateTerrain(body: BodyDef, seedOverride?: number): VoxelWorl
       let n = fbm2(x * freq, y * freq, seed, 4);
       // Gentle large-scale relief on top of the detail noise.
       n = n * 0.65 + fbm2(x * freq * 0.25, y * freq * 0.25, seed + 55, 2) * 0.35;
+      if (dem) {
+        // Real topography carries the large-scale relief; procedural noise
+        // only adds sub-DEM-resolution detail.
+        const real = sampleDem(dem, x / (size - 1), y / (size - 1));
+        n = real * 0.78 + n * 0.22;
+      }
       let h = 1 + n * (maxHeight - 3) * (0.45 + t.roughness * 0.55);
 
       for (const c of craters) {
@@ -90,9 +100,16 @@ function pickMaterial(
     const rich = t.oreRichness;
     if (v > 1 - rich * 0.055 && depth >= 3) return Material.Crystal;
     if (v > 1 - rich * 0.16) {
-      const pick = hash3(x, y, z, seed + 23);
-      if (pick < 0.45) return Material.IronOre;
-      if (pick < 0.75) return Material.CopperOre;
+      // Vein composition weighted by the body's spectroscopy profile
+      // (e.g. TES/GRS iron for Mars, Clementine/M3 TiO2 for lunar maria).
+      const w = body.minerals ?? {};
+      const iron = w.iron ?? 0.45;
+      const copper = w.copper ?? 0.3;
+      const titanium = w.titanium ?? 0.25;
+      const total = iron + copper + titanium || 1;
+      const pick = hash3(x, y, z, seed + 23) * total;
+      if (pick < iron) return Material.IronOre;
+      if (pick < iron + copper) return Material.CopperOre;
       return Material.TitaniumOre;
     }
   }

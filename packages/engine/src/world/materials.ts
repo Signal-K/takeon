@@ -1,5 +1,10 @@
 import { Material, type MaterialDef, type ResourceKey } from '../types.js';
 
+/**
+ * Saturated, stylised material palette (Crashlands-adjacent): warm golds and
+ * ochres for soils, oxidised teal copper, vivid crystal. Deliberately not
+ * grey — side faces darken toward purple rather than desaturating.
+ */
 export const MATERIALS: Record<Material, MaterialDef> = {
   [Material.Air]: {
     id: Material.Air,
@@ -14,7 +19,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Regolith',
     hardness: 2,
     yields: { resource: 'regolith', amount: 1 },
-    colors: ['#b3a08a', '#8a7a68', '#6e6154'],
+    colors: ['#d99a55', '#a86f38', '#7d5230'],
     jitter: 0.06,
   },
   [Material.Rock]: {
@@ -22,7 +27,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Rock',
     hardness: 4,
     yields: { resource: 'stone', amount: 1 },
-    colors: ['#9a9188', '#726b64', '#575049'],
+    colors: ['#b08968', '#7d5f47', '#5a4438'],
     jitter: 0.05,
   },
   [Material.Basalt]: {
@@ -30,7 +35,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Basalt',
     hardness: 6,
     yields: { resource: 'stone', amount: 2 },
-    colors: ['#5d5a5e', '#454347', '#333136'],
+    colors: ['#6b5a72', '#4e4054', '#392f42'],
     jitter: 0.04,
   },
   [Material.Ice]: {
@@ -38,7 +43,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Water ice',
     hardness: 3,
     yields: { resource: 'ice', amount: 2 },
-    colors: ['#cfe6ef', '#9dc2d4', '#7ba3b8'],
+    colors: ['#a8e8f0', '#6fc3d8', '#4d9fbd'],
     jitter: 0.05,
   },
   [Material.IronOre]: {
@@ -46,7 +51,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Iron ore',
     hardness: 5,
     yields: { resource: 'iron', amount: 2 },
-    colors: ['#8f6f5c', '#6d5244', '#513c31'],
+    colors: ['#c96f4a', '#96502f', '#703a24'],
     jitter: 0.09,
   },
   [Material.Silica]: {
@@ -54,7 +59,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Silica sand',
     hardness: 2,
     yields: { resource: 'silica', amount: 2 },
-    colors: ['#d8cbb2', '#b1a58f', '#8e8471'],
+    colors: ['#f2dfa7', '#c9b478', '#9c8a5c'],
     jitter: 0.05,
   },
   [Material.CopperOre]: {
@@ -62,7 +67,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Copper ore',
     hardness: 5,
     yields: { resource: 'copper', amount: 2 },
-    colors: ['#7f9184', '#5e7365', '#48594e'],
+    colors: ['#4fbf9f', '#37927a', '#27695c'],
     jitter: 0.1,
   },
   [Material.TitaniumOre]: {
@@ -70,7 +75,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Titanium ore',
     hardness: 7,
     yields: { resource: 'titanium', amount: 1 },
-    colors: ['#aab4bd', '#7e8992', '#616b74'],
+    colors: ['#b9c7d6', '#8595a8', '#5f7186'],
     jitter: 0.08,
   },
   [Material.Crystal]: {
@@ -78,7 +83,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Crystal',
     hardness: 8,
     yields: { resource: 'crystal', amount: 1 },
-    colors: ['#b48fd9', '#8b64b3', '#6c4a91'],
+    colors: ['#c77dff', '#9d4edd', '#7b2cbf'],
     jitter: 0.12,
   },
   [Material.Dust]: {
@@ -86,7 +91,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Fine dust',
     hardness: 1,
     yields: { resource: 'regolith', amount: 1 },
-    colors: ['#c9b9a0', '#a2937d', '#847763'],
+    colors: ['#eab861', '#c08a3e', '#93672f'],
     jitter: 0.04,
   },
   [Material.Sulfur]: {
@@ -94,7 +99,7 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     name: 'Sulfur deposit',
     hardness: 3,
     yields: { resource: 'sulfur', amount: 2 },
-    colors: ['#d6c05a', '#ab9743', '#8a7a35'],
+    colors: ['#f6d743', '#c9ad2e', '#9c8722'],
     jitter: 0.1,
   },
 };
@@ -109,4 +114,8 @@ export const RESOURCE_NAMES: Record<ResourceKey, string> = {
   titanium: 'Titanium',
   crystal: 'Crystal',
   sulfur: 'Sulfur',
+  'iron-plate': 'Iron plate',
+  glass: 'Glass',
+  water: 'Water',
+  alloy: 'Ti-alloy',
 };

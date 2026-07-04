@@ -8,6 +8,10 @@ import { shade } from './sprites.js';
  * asset pipeline at all.
  */
 
+/** Rover render scale relative to a tile — deliberately oversized for a
+ * chunky, readable diorama look. */
+const ROVER_SCALE = 1.6;
+
 export function drawRover(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -15,9 +19,11 @@ export function drawRover(
   s: number,
   rover: RoverState,
   daylight: number,
+  screenFacing?: 0 | 1 | 2 | 3,
 ): void {
   const { spec, stats } = rover;
-  const flip = rover.facing === 1 || rover.facing === 2 ? -1 : 1;
+  const facing = screenFacing ?? rover.facing;
+  const flip = facing === 1 || facing === 2 ? -1 : 1;
   const hasSolar = stats.solarRate > 0;
   const hasRtg = stats.rtgRate > 0;
   const hasCam = stats.photoQuality > 0;
@@ -26,7 +32,7 @@ export function drawRover(
 
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(s * flip, s);
+  ctx.scale(s * ROVER_SCALE * flip, s * ROVER_SCALE);
 
   // Drop shadow.
   ctx.fillStyle = 'rgba(0,0,0,0.30)';
@@ -224,6 +230,26 @@ export function drawStructure(
       ctx.moveTo(0, -8);
       ctx.lineTo(0, 2);
       ctx.stroke();
+      break;
+    }
+    case 'refinery': {
+      // Furnace block with a glowing mouth and a smokestack.
+      ctx.fillStyle = '#5a4a52';
+      ctx.fillRect(-8, -9, 16, 12);
+      ctx.fillStyle = '#6e5a63';
+      ctx.fillRect(-8, -9, 16, 2.6);
+      const glow = 0.55 + Math.sin(time * 5) * 0.25;
+      ctx.fillStyle = `rgba(255,140,60,${glow})`;
+      ctx.fillRect(-4, -3, 8, 4.6);
+      ctx.strokeStyle = '#3a2f36';
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(-8, -9, 16, 12);
+      ctx.fillStyle = '#8a929b';
+      ctx.fillRect(4, -16, 3, 8);
+      ctx.fillStyle = `rgba(255,180,120,${glow * 0.5})`;
+      ctx.beginPath();
+      ctx.arc(5.5, -17.5, 2, 0, Math.PI * 2);
+      ctx.fill();
       break;
     }
     case 'habitat-frame': {

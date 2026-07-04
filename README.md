@@ -46,17 +46,37 @@ playable offline.
   gravity, sunlight and delta-v: your fuel capacity gates what you can reach,
   gravity scales fall damage, solar flux scales charging, day length drives the
   day/night cycle. Bennu is an irregular rubble pile with map-edge cliffs.
-- **On the surface** — drive (keys, touch d-pad, or tap-to-drive), mine the
-  voxel terrain (materials have hardness and yields; ores live in veins),
-  photograph anomalies to document discoveries, scan to reveal them,
-  build structures from cargo (solar array, nav beacon, auto-drill rig, supply
-  cache, habitat frame), repair with stone+iron.
+- **On the surface** — drive (keys, touch d-pad, or tap-to-drive), rotate the
+  isometric perspective in 90° steps (R), mine the voxel terrain (materials
+  have hardness and yields; ores live in veins), photograph anomalies to
+  document discoveries, scan to reveal them, build structures from cargo
+  (solar array, nav beacon, auto-drill rig, supply cache, refinery, habitat
+  frame), place stone blocks to terraform ramps and bridges (B), and repair
+  with stone+iron.
+- **Crafting & refining** — refine iron into plates, silica into glass, ice
+  into water on the rover; park beside a built refinery to smelt Ti-alloy.
+  Refined goods outvalue their inputs and gate the habitat frame.
 - **Mission end** — banked cache deposits, cargo, photos and documented
   discoveries convert to credits. A rover that runs out of battery with no way
   to recharge — or breaks its chassis — is lost.
 
 Worlds are generated deterministically from `(body, seed)`, so saves only
 persist voxel *edits* plus rover/structure state; resume is byte-faithful.
+
+## Real planetary data
+
+Two data channels feed generation:
+
+- **Topography** — Mars and the Moon reference embedded DEM patches sampled
+  from real elevation models (NASA MGS **MOLA** for Mars/Jezero, LRO **LOLA**
+  for Mare Imbrium). Run `node scripts/fetch-dem.mjs` (needs network access to
+  trek.nasa.gov, then rebuild the engine) to populate
+  `packages/engine/src/world/dem/generated.ts`; without the data the engine
+  falls back to procedural relief, so nothing breaks in sandboxes/CI.
+- **Spectroscopy-informed mineralogy** — each body carries `minerals` vein
+  weights derived from published surveys: TES/GRS hematite abundance makes
+  Mars iron-dominated; Clementine UVVIS / M3 TiO₂ maps make the lunar maria
+  titanium-rich. Any body row in `takeon_bodies` can override them.
 
 ## Backend (optional): PocketBase spoke
 

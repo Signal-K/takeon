@@ -17,6 +17,7 @@ import { generateAnomalies } from '../world/anomalies.js';
 import { findLandingSite, generateTerrain } from '../world/terrain.js';
 import { VoxelWorld } from '../world/world.js';
 import { computeStats } from '../parts/assembly.js';
+import { getRecipe } from './recipes.js';
 import { makeId } from '../util/rng.js';
 import {
   DRILL_RATE_TICKS,
@@ -403,6 +404,85 @@ export class Simulation {
     r.cargoUsed = 0;
     if (moved > 0) this.events.emit('stateChanged', {});
     return moved;
+  }
+
+  /**
+   * Craft/refine from cargo. Recipes with a `near` requirement need the
+   * matching structure on one of the 8 surrounding tiles.
+   */
+  craft(recipeId: string): boolean {
+    const r = this.rover;
+    if (this.status !== 'active') return false;
+    const rec = getRecipe(recipeId);
+    if (!rec) return false;
+    if (rec.near) {
+      const ok = this.structures.some(
+        (s) =>
+          s.type === rec.near &&
+          Math.abs(s.pos.x - r.pos.x) <= 1 &&
+          Math.abs(s.pos.y - r.pos.y) <= 1,
+      );
+      if (!ok) {
+        this.events.emit('craftFailed', { reason: `Needs an adjacent ${rec.near}.` });
+        return false;
+      }
+    }
+    if (r.battery < rec.energy) {
+      this.events.emit('craftFailed', { reason: 'Not enough battery.' });
+      return false;
+    }
+    for (const [res, qty] of Object.entries(rec.input) as [ResourceKey, number][]) {
+      if ((r.cargo[res] ?? 0) < qty) {
+        this.events.emit('craftFailed', { reason: `Needs ${qty} ${res} in cargo.` });
+        return false;
+      }
+    }
+    r.battery -= rec.energy;
+    for (const [res, qty] of Object.entries(rec.input) as [ResourceKey, number][]) {
+      this.removeCargo(res, qty);
+    }
+    this.addCargo(rec.output.resource, rec.output.amount);
+    this.events.emit('crafted', {
+      recipe: rec.id,
+      resource: rec.output.resource,
+      amount: rec.output.amount,
+    });
+    return true;
+  }
+
+  /**
+   * Place a stone block on the tile the rover faces (1 stone from cargo).
+   * Raises the column by one voxel — bridges, ramps, walls.
+   */
+  placeBlock(): boolean {
+    const r = this.rover;
+    if (this.status !== 'active' || r.moveFrom || r.mining) return false;
+    const d = DIRS[r.facing];
+    const tx = r.pos.x + d.x;
+    const ty = r.pos.y + d.y;
+    if (!this.world.isSolid(tx, ty)) return false;
+    if (this.structures.some((s) => s.pos.x === tx && s.pos.y === ty)) {
+      this.events.emit('buildFailed', { reason: 'Something is already built there.' });
+      return false;
+    }
+    if ((r.cargo.stone ?? 0) < 1) {
+      this.events.emit('buildFailed', { reason: 'Needs 1 stone in cargo.' });
+      return false;
+    }
+    const energy = 2;
+    if (r.battery < energy) {
+      this.events.emit('blocked', { reason: 'battery' });
+      return false;
+    }
+    const placed = this.world.placeTop(tx, ty, Material.Rock);
+    if (placed < 0) {
+      this.events.emit('buildFailed', { reason: 'Column is at max height.' });
+      return false;
+    }
+    r.battery -= energy;
+    this.removeCargo('stone', 1);
+    this.events.emit('blockPlaced', { pos: { x: tx, y: ty } });
+    return true;
   }
 
   /** Spend 2 stone + 1 iron to restore 25 durability. */

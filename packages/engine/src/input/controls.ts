@@ -1,15 +1,16 @@
 import type { Camera } from '../render/camera.js';
 
 export interface ControlCallbacks {
+  /** Direction is screen-relative; the game maps it through view rotation. */
   onMove: (dir: 0 | 1 | 2 | 3) => void;
-  onAction: (action: 'mine' | 'photo' | 'scan') => void;
+  onAction: (action: 'mine' | 'photo' | 'scan' | 'rotate' | 'place') => void;
   onTileTap: (canvasX: number, canvasY: number) => void;
 }
 
 /**
  * Keyboard + pointer/touch bindings for the mission canvas.
- * - Arrows/WASD: drive (screen-relative: right = +x, down = +y)
- * - E/Space: mine · P: photo · X: scan
+ * - Arrows/WASD: drive (screen-relative; view rotation is handled upstream)
+ * - E/Space: mine · P: photo · X: scan · R: rotate view · B: place block
  * - Drag: pan · Wheel / pinch: zoom · Tap: tap-to-drive target
  */
 export class Controls {
@@ -95,6 +96,10 @@ export class Controls {
       this.cb.onAction('photo');
     } else if (k === 'x') {
       this.cb.onAction('scan');
+    } else if (k === 'r') {
+      this.cb.onAction('rotate');
+    } else if (k === 'b') {
+      this.cb.onAction('place');
     }
   }
 

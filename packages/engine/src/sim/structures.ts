@@ -25,11 +25,17 @@ export const STRUCTURES: Record<StructureType, StructureDef> = {
     cost: { regolith: 4, iron: 2 },
     description: 'Deposit cargo here to bank it as mission yield and free up the hold.',
   },
+  refinery: {
+    type: 'refinery',
+    name: 'Refinery',
+    cost: { stone: 6, iron: 4 },
+    description: 'Furnace module. Unlocks alloy smelting when the rover is parked beside it.',
+  },
   'habitat-frame': {
     type: 'habitat-frame',
     name: 'Habitat Frame',
-    cost: { iron: 10, titanium: 4, silica: 6 },
-    description: 'The first bones of a permanent outpost. Prestige construction.',
+    cost: { 'iron-plate': 4, glass: 2, titanium: 2 },
+    description: 'The first bones of a permanent outpost, raised from refined materials.',
   },
 };
 

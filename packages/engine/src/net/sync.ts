@@ -60,6 +60,11 @@ export const RESOURCE_VALUE: Record<ResourceKey, number> = {
   titanium: 10,
   crystal: 25,
   sulfur: 5,
+  // Refined goods are worth more than their inputs — refining pays.
+  'iron-plate': 14,
+  glass: 11,
+  water: 10,
+  alloy: 32,
 };
 
 export const DISCOVERY_CREDITS = 120;

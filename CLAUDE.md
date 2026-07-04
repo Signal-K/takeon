@@ -10,6 +10,7 @@ npm test                          # engine unit tests (vitest)
 npm run dev                       # Next.js dev server on :3400
 cd pocketbase && TAKEON_ALLOW_ANON=true go run . serve --http 127.0.0.1:8094
 node scripts/export-catalog.mjs   # regen pocketbase/seed/*.json after catalog edits
+node scripts/fetch-dem.mjs        # embed real MOLA/LOLA DEM patches (needs trek.nasa.gov)
 ```
 
 Runtime verification recipe: `.claude/skills/verify/SKILL.md`.

@@ -51,7 +51,9 @@ export class RoverGame {
         onAction: (a) => {
           if (a === 'mine') this.mine();
           else if (a === 'photo') this.photo();
-          else this.scan();
+          else if (a === 'scan') this.scan();
+          else if (a === 'rotate') this.rotateView();
+          else if (a === 'place') this.placeBlock();
         },
         onTileTap: (x, y) => {
           const tile = this.renderer.pickTile(x, y);
@@ -101,9 +103,28 @@ export class RoverGame {
 
   // ── Player API (mirrors what the HUD buttons call) ────────────────────
 
+  /**
+   * Drive one tile. `dir` is screen-relative (0=SE 1=SW 2=NW 3=NE as seen);
+   * the current view rotation maps it onto world axes so "up" always means
+   * up on screen regardless of perspective.
+   */
   move(dir: 0 | 1 | 2 | 3): boolean {
     this.walkTarget = null;
-    return this.sim.move(dir);
+    const worldDir = (((dir + this.renderer.rotation) % 4) + 4) % 4;
+    return this.sim.move(worldDir as 0 | 1 | 2 | 3);
+  }
+
+  /** Rotate the isometric perspective by 90°. */
+  rotateView(): void {
+    this.renderer.rotateClockwise();
+  }
+
+  craft(recipeId: string): boolean {
+    return this.sim.craft(recipeId);
+  }
+
+  placeBlock(): boolean {
+    return this.sim.placeBlock();
   }
 
   /** Tap-to-drive: greedily steps toward the target until reached/blocked. */

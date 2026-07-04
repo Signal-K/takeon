@@ -18,8 +18,12 @@ export const BODIES: BodyDef[] = [
     size: 96,
     maxHeight: 14,
     seed: 1969,
-    palette: { sky: '#10131c', skyNight: '#05060c' },
+    palette: { sky: '#2c2650', skyNight: '#0a0920' },
     terrain: { roughness: 0.45, craters: 9, iceCaps: 0.06, oreRichness: 0.35 },
+    // Real relief: LRO LOLA patch (run scripts/fetch-dem.mjs to embed).
+    dem: 'moon-imbrium',
+    // Clementine UVVIS / M3: ilmenite-rich maria — titanium-heavy veins.
+    minerals: { iron: 0.3, copper: 0.15, titanium: 0.55 },
     description: 'Close, well-lit and gentle. Titanium in the maria, ice in shadowed polar craters.',
   },
   {
@@ -33,8 +37,12 @@ export const BODIES: BodyDef[] = [
     size: 112,
     maxHeight: 18,
     seed: 4212,
-    palette: { sky: '#c98b62', skyNight: '#1a0f12' },
+    palette: { sky: '#d97e4a', skyNight: '#221026' },
     terrain: { roughness: 0.6, craters: 5, iceCaps: 0.12, oreRichness: 0.45 },
+    // Real relief: MGS MOLA patch of the Jezero region (scripts/fetch-dem.mjs).
+    dem: 'mars-jezero',
+    // TES/GRS surveys: hematite-rich surface — iron-dominated veins.
+    minerals: { iron: 0.62, copper: 0.23, titanium: 0.15 },
     description: 'Rusty canyons and dust. Iron-rich, with polar ice and long, dim days.',
   },
   {
@@ -48,7 +56,7 @@ export const BODIES: BodyDef[] = [
     size: 96,
     maxHeight: 10,
     seed: 1610,
-    palette: { sky: '#233043', skyNight: '#0a0d16' },
+    palette: { sky: '#2b4a8f', skyNight: '#0c1230' },
     terrain: { roughness: 0.3, craters: 2, iceCaps: 0.85, oreRichness: 0.25 },
     description: 'A shell of fractured ice over a hidden ocean. Solar power is scarce out here.',
   },
@@ -63,7 +71,7 @@ export const BODIES: BodyDef[] = [
     size: 80,
     maxHeight: 12,
     seed: 1801,
-    palette: { sky: '#171a20', skyNight: '#07080c' },
+    palette: { sky: '#3d3178', skyNight: '#100b2c' },
     terrain: { roughness: 0.5, craters: 12, iceCaps: 0.2, oreRichness: 0.55 },
     description: 'The belt’s dwarf planet. Bright salt flats, buried brines and easy launches.',
   },
@@ -78,7 +86,7 @@ export const BODIES: BodyDef[] = [
     size: 56,
     maxHeight: 10,
     seed: 1999,
-    palette: { sky: '#0d0f14', skyNight: '#05060a' },
+    palette: { sky: '#2f2266', skyNight: '#0c0824' },
     terrain: { roughness: 0.85, craters: 4, iceCaps: 0, oreRichness: 0.7, irregular: true },
     description: 'A rubble pile you could jump off of. Rich, rough and unforgiving to wheels.',
   },
@@ -93,7 +101,7 @@ export const BODIES: BodyDef[] = [
     size: 96,
     maxHeight: 20,
     seed: 1979,
-    palette: { sky: '#4a3b28', skyNight: '#120b08' },
+    palette: { sky: '#a85a2e', skyNight: '#1c0d20' },
     terrain: { roughness: 0.75, craters: 3, iceCaps: 0, oreRichness: 0.6, sulfurFields: 0.5 },
     description: 'Volcanic and sulfur-stained. Steep terrain chews through durability.',
   },

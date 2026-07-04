@@ -22,6 +22,7 @@ const (
 var resourceValue = map[string]float64{
 	"regolith": 1, "stone": 2, "ice": 4, "iron": 5, "silica": 4,
 	"copper": 6, "titanium": 10, "crystal": 25, "sulfur": 5,
+	"iron-plate": 14, "glass": 11, "water": 10, "alloy": 32,
 }
 
 type missionStateLite struct {

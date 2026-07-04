@@ -344,3 +344,55 @@ function tryMineAnyDirection(sim: Simulation): boolean {
   }
   return false;
 }
+
+describe('crafting and refining', () => {
+  it('refines iron into plates, consuming battery and cargo', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    r.cargo = { iron: 4 };
+    r.cargoUsed = 4;
+    const b0 = r.battery;
+    expect(sim.craft('iron-plate')).toBe(true);
+    expect(r.cargo.iron).toBe(2);
+    expect(r.cargo['iron-plate']).toBe(1);
+    expect(r.cargoUsed).toBe(3);
+    expect(r.battery).toBeLessThan(b0);
+  });
+
+  it('rejects recipes without inputs and gates alloy behind a refinery', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    expect(sim.craft('glass')).toBe(false);
+    r.cargo = { titanium: 1, 'iron-plate': 1 };
+    r.cargoUsed = 2;
+    expect(sim.craft('alloy')).toBe(false); // no refinery nearby
+    r.cargo = { ...r.cargo, stone: 6, iron: 4 };
+    r.cargoUsed += 10;
+    expect(sim.build('refinery')).not.toBeNull();
+    expect(sim.craft('alloy')).toBe(true);
+    expect(r.cargo.alloy).toBe(1);
+  });
+});
+
+describe('block placement', () => {
+  it('places a stone block on the facing tile, raising it by one', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    r.cargo = { stone: 2 };
+    r.cargoUsed = 2;
+    const d = DIRS[r.facing];
+    const tx = r.pos.x + d.x;
+    const ty = r.pos.y + d.y;
+    const before = sim.world.height(tx, ty);
+    expect(sim.placeBlock()).toBe(true);
+    expect(sim.world.height(tx, ty)).toBe(before + 1);
+    expect(r.cargo.stone).toBe(1);
+    // The placement is a persisted edit.
+    expect(Object.keys(sim.world.edits).length).toBeGreaterThan(0);
+  });
+
+  it('refuses without stone in cargo', () => {
+    const sim = makeSim('moon');
+    expect(sim.placeBlock()).toBe(false);
+  });
+});

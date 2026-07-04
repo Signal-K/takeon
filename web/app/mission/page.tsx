@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   createRoverGame,
   getBody,
+  RECIPES,
   RESOURCE_NAMES,
   STRUCTURES,
   type MissionState,
@@ -48,6 +49,7 @@ function MissionPageInner() {
   const [hud, setHud] = useState<HudState | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [buildOpen, setBuildOpen] = useState(false);
+  const [craftOpen, setCraftOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [fatal, setFatal] = useState('');
   const [showMinimap, setShowMinimap] = useState(true);
@@ -132,6 +134,11 @@ function MissionPageInner() {
         toast(`Constructed ${STRUCTURES[structure.type].name}`, 'good'),
       );
       g.events.on('buildFailed', ({ reason }) => toast(reason, 'warn'));
+      g.events.on('crafted', ({ resource, amount }) =>
+        toast(`Refined ${amount} ${RESOURCE_NAMES[resource]}`, 'good'),
+      );
+      g.events.on('craftFailed', ({ reason }) => toast(reason, 'warn'));
+      g.events.on('blockPlaced', () => toast('Block placed', 'good'));
       g.events.on('damaged', ({ amount, reason }) => {
         if (amount >= 1) toast(`Chassis damage −${amount.toFixed(0)} (${reason})`, 'bad');
       });
@@ -273,6 +280,7 @@ function MissionPageInner() {
           </div>
           <span className="chip">{hud.daylight > 0.5 ? '☀️' : hud.daylight > 0 ? '🌆' : '🌙'}</span>
           <span className="spacer" />
+          <button onClick={() => gameRef.current?.rotateView()} title="Rotate view (R)">⟳</button>
           <button onClick={() => setShowMinimap((v) => !v)} title="Toggle map">🗺</button>
           <button onClick={() => setEndOpen(true)}>End</button>
         </div>
@@ -321,6 +329,12 @@ function MissionPageInner() {
         )}
         <button className="action-btn" onClick={() => setBuildOpen(true)}>
           <span className="ico">🏗</span>Build
+        </button>
+        <button className="action-btn" onClick={() => setCraftOpen(true)}>
+          <span className="ico">⚗️</span>Craft
+        </button>
+        <button className="action-btn" onClick={() => gameRef.current?.placeBlock()}>
+          <span className="ico">🧱</span>Place
         </button>
         <button className="action-btn" onClick={() => gameRef.current?.repair()}>
           <span className="ico">🔧</span>Repair
@@ -381,6 +395,48 @@ function MissionPageInner() {
               );
             })}
             <button onClick={() => setBuildOpen(false)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {craftOpen && g && (
+        <div className="modal-backdrop" onClick={() => setCraftOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Refining — from cargo, on the rover</h3>
+            <p className="sub" style={{ color: 'var(--text-dim)', fontSize: 13 }}>
+              Cargo:{' '}
+              {Object.entries(hud?.cargo ?? {})
+                .map(([k, v]) => `${v} ${RESOURCE_NAMES[k as ResourceKey]}`)
+                .join(', ') || 'empty'}
+            </p>
+            {RECIPES.map((rec) => {
+              const affordable = Object.entries(rec.input).every(
+                ([res, qty]) => (hud?.cargo[res as ResourceKey] ?? 0) >= (qty ?? 0),
+              );
+              return (
+                <button
+                  key={rec.id}
+                  className="build-option"
+                  disabled={!affordable}
+                  onClick={() => gameRef.current?.craft(rec.id)}
+                >
+                  <span className="info">
+                    <b>
+                      {rec.name}
+                      {rec.near ? ' (needs refinery)' : ''}
+                    </b>
+                    <span className="desc">{rec.description}</span>
+                  </span>
+                  <span className="tag">
+                    {Object.entries(rec.input)
+                      .map(([res, qty]) => `${qty} ${res}`)
+                      .join(' + ')}{' '}
+                    → {rec.output.amount} {rec.output.resource}
+                  </span>
+                </button>
+              );
+            })}
+            <button onClick={() => setCraftOpen(false)}>Close</button>
           </div>
         </div>
       )}
