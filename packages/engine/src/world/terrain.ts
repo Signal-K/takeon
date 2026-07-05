@@ -118,10 +118,12 @@ function pickMaterial(
   if (sulfurous && depth === 0) return Material.Sulfur;
 
   if (depth === 0) {
-    // Surface skin: dust in low spots, regolith elsewhere, silica patches.
-    const s = hash2(x, y, seed + 5);
-    if (s < 0.12) return Material.Silica;
-    return z <= 2 ? Material.Dust : Material.Regolith;
+    // Surface skin in large organic patches (not per-tile noise): silica
+    // flats, dust basins and regolith uplands read as biome-like regions.
+    const patch = fbm2(x * 0.055, y * 0.055, seed + 5, 3);
+    if (patch > 0.66) return Material.Silica;
+    if (patch < 0.38 || z <= 2) return Material.Dust;
+    return Material.Regolith;
   }
   if (depth <= 2) return Material.Regolith;
   if (depth <= 5) return Material.Rock;

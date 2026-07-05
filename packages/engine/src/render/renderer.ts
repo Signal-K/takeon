@@ -6,6 +6,7 @@ import { drawAnomaly, drawRover, drawStructure } from './entities.js';
 import { project, TILE_H, TILE_W, TILE_Z, shade } from './sprites.js';
 import { MATERIALS } from '../world/materials.js';
 import { hash2, hash3 } from '../util/rng.js';
+import { fbm2 } from '../util/noise.js';
 
 const CHUNK = 16;
 /** Height deltas up to this blend into smooth slopes; larger become cliffs. */
@@ -281,9 +282,12 @@ export class IsoRenderer {
     const def = MATERIALS[m];
     const topColor = this.tinted(m, 0);
     // Lighting: sun from screen top-left; slope toward it brightens.
+    // Ground tone varies in smooth organic blobs (low-frequency noise) plus
+    // a whisper of per-tile grain — no checkerboard, Crashlands-style patches.
     const slope = (cs[0] - cs[2]) * 0.16 + (cs[3] - cs[1]) * 0.07;
-    const jitter = 1 + (hash2(w.x, w.y, 0xf00d) - 0.5) * 2 * def.jitter;
-    const bright = Math.max(0.62, Math.min(1.34, (1 + slope) * jitter));
+    const blob = (fbm2(w.x * 0.11, w.y * 0.11, this.sim.seed ^ 0x600d, 3) - 0.5) * 0.34;
+    const grain = (hash2(w.x, w.y, 0xf00d) - 0.5) * def.jitter * 0.6;
+    const bright = Math.max(0.62, Math.min(1.36, 1 + slope + blob + grain));
 
     g.beginPath();
     g.moveTo(pT.x, pT.y);
@@ -353,6 +357,88 @@ export class IsoRenderer {
       ao.addColorStop(1, 'rgba(12,8,26,0)');
       g.fillStyle = ao;
       g.fill();
+    }
+    g.restore();
+
+    // Decorative scatter: tufts, rock clusters and shards on ~1 in 14 open
+    // tiles. Part of the cached chunk, so it costs nothing per frame.
+    const doodadRoll = hash2(w.x, w.y, 0xd00d);
+    if (doodadRoll < 0.07 && m !== Material.Basalt && m !== Material.Rock) {
+      const cz = (cs[0] + cs[1] + cs[2] + cs[3]) / 4;
+      const c = proj(u, v, cz);
+      const ox = (hash2(w.x, w.y, 0xa11) - 0.5) * 10 * scale;
+      const oy = (hash2(w.x, w.y, 0xb22) - 0.5) * 5 * scale;
+      this.drawDoodad(g, c.x + ox, c.y + oy, scale, w.x, w.y, m, bright);
+    }
+  }
+
+  /** Small hand-placed-looking props with chunky outlines. */
+  private drawDoodad(
+    g: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    s: number,
+    wx: number,
+    wy: number,
+    m: Material,
+    bright: number,
+  ): void {
+    const kind = Math.floor(hash2(wx, wy, 0xdaa) * 3);
+    const size = (0.7 + hash2(wx, wy, 0xebb) * 0.6) * s;
+    const outline = 'rgba(20,12,32,0.55)';
+    g.save();
+    g.translate(x, y);
+    g.lineJoin = 'round';
+
+    if (m === Material.Ice || kind === 2) {
+      // Ice/crystal shards.
+      const tint = m === Material.Ice ? this.tinted(Material.Ice, 0) : this.tinted(m, 0);
+      for (const [dx, h] of [[-3, 6], [0.5, 9], [3.5, 5]] as [number, number][]) {
+        g.fillStyle = shade(tint, 1.15 + h * 0.01);
+        g.strokeStyle = outline;
+        g.lineWidth = 0.8 * s;
+        g.beginPath();
+        g.moveTo((dx - 1.6) * size, 1.5 * size);
+        g.lineTo(dx * size, (1.5 - h) * size);
+        g.lineTo((dx + 1.6) * size, 1.5 * size);
+        g.closePath();
+        g.fill();
+        g.stroke();
+      }
+    } else if (kind === 0) {
+      // Dry tuft: splayed blades.
+      g.strokeStyle = outline;
+      g.lineWidth = 2.2 * size;
+      g.lineCap = 'round';
+      const tuft = m === Material.Sulfur ? '#e8cf58' : shade(this.tinted(m, 0), bright * 0.72);
+      for (const a of [-0.9, -0.45, 0, 0.45, 0.9]) {
+        const len = (5 + hash2(wx + a * 10, wy, 0xfcc) * 4) * size;
+        g.beginPath();
+        g.moveTo(0, 1.5 * size);
+        g.lineTo(Math.sin(a) * len, 1.5 * size - Math.cos(a * 0.6) * len);
+        g.stroke();
+      }
+      g.strokeStyle = tuft;
+      g.lineWidth = 1.3 * size;
+      for (const a of [-0.9, -0.45, 0, 0.45, 0.9]) {
+        const len = (5 + hash2(wx + a * 10, wy, 0xfcc) * 4) * size;
+        g.beginPath();
+        g.moveTo(0, 1.5 * size);
+        g.lineTo(Math.sin(a) * len, 1.5 * size - Math.cos(a * 0.6) * len);
+        g.stroke();
+      }
+    } else {
+      // Rounded rock cluster.
+      const rockHex = this.tinted(Material.Rock, 0);
+      for (const [dx, dy, r] of [[-2.5, 0.5, 3.2], [2, 1, 2.4], [0.2, -1.2, 2.1]] as [number, number, number][]) {
+        g.fillStyle = shade(rockHex, bright * (1.05 - Math.abs(dx) * 0.05));
+        g.strokeStyle = outline;
+        g.lineWidth = 0.9 * s;
+        g.beginPath();
+        g.ellipse(dx * size, dy * size, r * size, r * 0.72 * size, 0, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+      }
     }
     g.restore();
   }
