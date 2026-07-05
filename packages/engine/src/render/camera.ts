@@ -7,11 +7,11 @@ import { project } from './sprites.js';
 export class Camera {
   cx = 0;
   cy = 0;
-  /** Crashlands-scale framing: a tile is ~110px wide by default and the
-   * camera can't zoom out to ant-scale. */
-  zoom = 3.4;
-  minZoom = 1.8;
-  maxZoom = 6;
+  /** Chunky framing that still shows a useful stretch of ground around the
+   * rover — not so tight it feels like a magnifying glass. */
+  zoom = 2.5;
+  minZoom = 1.3;
+  maxZoom = 5.5;
   viewW = 800;
   viewH = 600;
   follow = true;

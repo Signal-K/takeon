@@ -19,6 +19,7 @@ export function drawRover(
   rover: RoverState,
   daylight: number,
   screenFacing?: 0 | 1 | 2 | 3,
+  time = 0,
 ): void {
   const { spec, stats } = rover;
   const facing = screenFacing ?? rover.facing;
@@ -31,12 +32,19 @@ export function drawRover(
   const tracks = stats.grip >= 0.8;
   const body = cssHex(spec.color || '#c8d6e5');
 
+  // Animation state: wheels spin and the chassis bounces while driving; a
+  // slow idle sway keeps it feeling alive when parked.
+  const moving = rover.moveFrom != null;
+  const spin = time * (tracks ? 5 : 7);
+  const bob = moving ? Math.sin(time * 16) * 0.55 : Math.sin(time * 1.8) * 0.14;
+  const tiltDir = moving ? Math.sin(time * 16) * 0.02 : 0;
+
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(s * ROVER_SCALE * flip, s * ROVER_SCALE);
   ctx.lineJoin = 'round';
 
-  // Ground shadow.
+  // Ground shadow (does not bob — it's on the ground).
   const sh = ctx.createRadialGradient(0, 3.5, 2, 0, 3.5, 13);
   sh.addColorStop(0, 'rgba(10,6,20,0.42)');
   sh.addColorStop(1, 'rgba(10,6,20,0)');
@@ -47,20 +55,33 @@ export function drawRover(
 
   // ── Drivetrain ────────────────────────────────────────────────────────
   if (tracks) {
-    // Tread loop with road wheels.
+    // Tread loop with scrolling cleats + spinning road wheels.
     ctx.fillStyle = '#23222b';
     roundRect(ctx, -12, -3.5, 24, 8, 3.5);
     ctx.fill();
     ctx.fillStyle = '#3a3844';
-    for (let i = -10; i <= 9; i += 2.5) ctx.fillRect(i, -3.5, 1.1, 8);
-    ctx.fillStyle = '#4d4b59';
+    const scroll = ((spin * 2) % 2.5 + 2.5) % 2.5;
+    for (let i = -10 + scroll; i <= 10; i += 2.5) ctx.fillRect(i, -3.5, 1.1, 8);
     for (const wx of [-8, -2.5, 3, 8.5]) {
+      ctx.save();
+      ctx.translate(wx, 0.5);
+      ctx.rotate(spin);
+      ctx.fillStyle = '#4d4b59';
       ctx.beginPath();
-      ctx.arc(wx, 0.5, 2.1, 0, Math.PI * 2);
+      ctx.arc(0, 0, 2.1, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = '#6c6a78';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(-1.6, 0);
+      ctx.lineTo(1.6, 0);
+      ctx.moveTo(0, -1.6);
+      ctx.lineTo(0, 1.6);
+      ctx.stroke();
+      ctx.restore();
     }
   } else {
-    // Rocker-bogie: suspension arms first, then spoked wheels.
+    // Rocker-bogie: suspension arms first, then spinning spoked wheels.
     ctx.strokeStyle = '#8a8f98';
     ctx.lineWidth = 1.1;
     ctx.beginPath();
@@ -81,13 +102,16 @@ export function drawRover(
       ctx.beginPath();
       ctx.arc(wx, 1.5, 3.6, 0, Math.PI * 2);
       ctx.fill();
+      ctx.save();
+      ctx.translate(wx, 1.5);
+      ctx.rotate(spin);
       // Treads.
       ctx.strokeStyle = '#15141b';
       ctx.lineWidth = 0.7;
       for (let a = 0; a < Math.PI * 2; a += Math.PI / 5) {
         ctx.beginPath();
-        ctx.moveTo(wx + Math.cos(a) * 2.9, 1.5 + Math.sin(a) * 2.9);
-        ctx.lineTo(wx + Math.cos(a) * 3.6, 1.5 + Math.sin(a) * 3.6);
+        ctx.moveTo(Math.cos(a) * 2.9, Math.sin(a) * 2.9);
+        ctx.lineTo(Math.cos(a) * 3.6, Math.sin(a) * 3.6);
         ctx.stroke();
       }
       // Hub + spokes.
@@ -95,16 +119,21 @@ export function drawRover(
       ctx.lineWidth = 0.6;
       for (let a = 0; a < Math.PI * 2; a += Math.PI / 3) {
         ctx.beginPath();
-        ctx.moveTo(wx, 1.5);
-        ctx.lineTo(wx + Math.cos(a) * 2.6, 1.5 + Math.sin(a) * 2.6);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * 2.6, Math.sin(a) * 2.6);
         ctx.stroke();
       }
+      ctx.restore();
       ctx.fillStyle = '#9aa0ab';
       ctx.beginPath();
       ctx.arc(wx, 1.5, 1, 0, Math.PI * 2);
       ctx.fill();
     }
   }
+
+  // Everything above the wheels bobs and leans with the chassis.
+  ctx.translate(0, bob);
+  ctx.transform(1, 0, tiltDir, 1, 0, 0);
 
   // ── Body ──────────────────────────────────────────────────────────────
   const bg = ctx.createLinearGradient(0, -11, 0, -2);
@@ -269,7 +298,7 @@ export function drawRover(
   // ── Tool arm ──────────────────────────────────────────────────────────
   if (hasTool) {
     const digging = !!rover.mining;
-    const bob = digging ? Math.sin(Date.now() / 60) * 1.2 : 0;
+    const bob = digging ? Math.sin(time * 18) * 1.2 : 0;
     ctx.strokeStyle = '#8a9099';
     ctx.lineWidth = 1.3;
     ctx.beginPath();

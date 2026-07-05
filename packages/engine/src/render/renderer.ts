@@ -89,6 +89,16 @@ export class IsoRenderer {
   private critters: Critter[] = [];
   private ambient!: AmbientProfile;
   private lastDrawMs = 0;
+  /** Smooth per-frame clock for animation (sim.time only ticks at 10 Hz). */
+  private renderTime = 0;
+  // ── Adaptive resolution ───────────────────────────────────────────────
+  private cssW = 800;
+  private cssH = 600;
+  private reqDpr = 1;
+  /** Backing-store multiplier auto-tuned to hold a smooth frame rate. */
+  private renderScale = 1;
+  private frameEma = 16;
+  private lastQualityMs = 0;
 
   constructor(canvas: HTMLCanvasElement, sim: Simulation) {
     this.canvas = canvas;
@@ -232,11 +242,42 @@ export class IsoRenderer {
   // ── Setup ─────────────────────────────────────────────────────────────
 
   resize(cssW: number, cssH: number, dpr = 1): void {
-    this.dpr = dpr;
-    this.canvas.width = Math.max(1, Math.round(cssW * dpr));
-    this.canvas.height = Math.max(1, Math.round(cssH * dpr));
+    this.cssW = cssW;
+    this.cssH = cssH;
+    this.reqDpr = dpr;
     this.camera.viewW = cssW;
     this.camera.viewH = cssH;
+    this.applyBacking();
+  }
+
+  /**
+   * Set the backing-store size from CSS size × effective DPR. The device
+   * pixel ratio is capped at 1.5 (past that the extra pixels cost fill rate
+   * with no visible payoff on a smoothed iso scene) and further scaled by
+   * `renderScale`, which the frame-rate governor tunes down on slow devices.
+   */
+  private applyBacking(): void {
+    this.dpr = Math.min(this.reqDpr, 1.5) * this.renderScale;
+    this.canvas.width = Math.max(1, Math.round(this.cssW * this.dpr));
+    this.canvas.height = Math.max(1, Math.round(this.cssH * this.dpr));
+  }
+
+  /**
+   * Frame-rate governor: nudge the backing resolution to keep frames smooth.
+   * Devices that can't push the pixels drop toward 60% scale; fast ones climb
+   * back to full. Adjusts at most ~once a second to avoid thrashing.
+   */
+  private tuneQuality(frameMs: number, nowMsVal: number): void {
+    this.frameEma = this.frameEma * 0.9 + frameMs * 0.1;
+    if (nowMsVal - this.lastQualityMs < 900) return;
+    let next = this.renderScale;
+    if (this.frameEma > 26 && this.renderScale > 0.6) next = Math.max(0.6, this.renderScale - 0.12);
+    else if (this.frameEma < 15 && this.renderScale < 1) next = Math.min(1, this.renderScale + 0.08);
+    if (next !== this.renderScale) {
+      this.renderScale = next;
+      this.applyBacking();
+    }
+    this.lastQualityMs = nowMsVal;
   }
 
   private makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas {
@@ -300,7 +341,7 @@ export class IsoRenderer {
    * `proj` maps continuous view coords to output pixels; `scale` is the
    * output scale (for line widths and texture density).
    */
-  private drawColumnV(g: CanvasRenderingContext2D, u: number, v: number, proj: Proj, scale: number): void {
+  private drawColumnV(g: CanvasRenderingContext2D, u: number, v: number, proj: Proj, scale: number, cheap = false): void {
     const h = this.heightV(u, v);
     if (h < 0) return;
     const w = this.toWorld(u, v);
@@ -345,6 +386,15 @@ export class IsoRenderer {
     g.fill();
 
     // Soil texture: clipped speckles, grain streaks and occasional pebbles.
+    // The occluder pass re-stamps columns above entities every frame — there,
+    // skip the expensive noise-sampled scallops, soil grain and doodads. The
+    // sliver of terrain peeking over an entity doesn't need the fine detail,
+    // and it keeps per-frame cost flat.
+    if (cheap) {
+      g.restore();
+      return;
+    }
+
     g.save();
     g.clip();
 
@@ -609,9 +659,12 @@ export class IsoRenderer {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.imageSmoothingEnabled = true;
 
-    // Advance render-only ambient life (particles + critters).
+    // Advance render-only ambient life (particles + critters) and adapt the
+    // backing resolution to the real frame interval.
     const _now = nowMs();
-    this.updateAmbient(Math.min(0.05, (_now - this.lastDrawMs) / 1000));
+    const frameMs = _now - this.lastDrawMs;
+    this.updateAmbient(Math.min(0.05, frameMs / 1000));
+    if (this.lastDrawMs > 0) this.tuneQuality(frameMs, _now);
     this.lastDrawMs = _now;
 
     // Sky: vertical gradient from deep space down to the horizon tint.
@@ -690,7 +743,7 @@ export class IsoRenderer {
       const screenFacing = (((rover.facing - this.rotation) % 4) + 4) % 4;
       ents.push({
         s: rv.x + rv.y,
-        draw: () => drawRover(ctx, p.x, p.y, camera.zoom, rover, daylight, screenFacing as 0 | 1 | 2 | 3),
+        draw: () => drawRover(ctx, p.x, p.y, camera.zoom, rover, daylight, screenFacing as 0 | 1 | 2 | 3, this.renderTime),
       });
     }
     // Ambient critters wander the surface — depth-sorted with everything else.
@@ -698,7 +751,7 @@ export class IsoRenderer {
       const cv = this.toView(c.x, c.y);
       const cz = this.surfaceZ(c.x, c.y);
       const p = camera.toScreen(...projXY(cv.x, cv.y, cz + 0.5));
-      ents.push({ s: cv.x + cv.y, draw: () => this.drawCritter(ctx, p.x, p.y, camera.zoom, c, sim.time) });
+      ents.push({ s: cv.x + cv.y, draw: () => this.drawCritter(ctx, p.x, p.y, camera.zoom, c, this.renderTime) });
     }
     ents.sort((a, b) => a.s - b.s);
     for (const e of ents) e.draw();
@@ -891,6 +944,7 @@ export class IsoRenderer {
   }
 
   private updateAmbient(dt: number): void {
+    this.renderTime += dt;
     const world = this.sim.world;
     const rover = this.sim.rover.renderPos;
     const prof = this.ambient;
@@ -945,11 +999,14 @@ export class IsoRenderer {
   private drawParticles(): void {
     const { ctx, camera } = this;
     const prof = this.ambient;
-    const t = this.sim.time;
+    const t = this.renderTime;
+    // Motes are airborne — one surface reference for the whole field is
+    // visually indistinguishable from sampling each and far cheaper.
+    const rover = this.sim.rover.renderPos;
+    const baseZ = this.surfaceZ(rover.x, rover.y);
     for (const p of this.particles) {
-      const surf = this.surfaceZ(p.x, p.y);
       const pv = this.toView(p.x, p.y);
-      const s = camera.toScreen(...projXY(pv.x, pv.y, surf + p.h));
+      const s = camera.toScreen(...projXY(pv.x, pv.y, baseZ + p.h));
       if (s.x < -20 || s.y < -20 || s.x > camera.viewW + 20 || s.y > camera.viewH + 20) continue;
       const flick = 0.55 + 0.45 * Math.sin(p.tw + t * 3);
       ctx.globalAlpha = p.alpha * flick;
@@ -1051,7 +1108,7 @@ export class IsoRenderer {
         if (Math.abs(v - ev) > R) continue;
         const h = this.heightV(u, v);
         if (h <= z + 0.5) continue; // cannot occlude the entity
-        this.drawColumnV(ctx, u, v, proj, camera.zoom);
+        this.drawColumnV(ctx, u, v, proj, camera.zoom, true);
       }
     }
   }
