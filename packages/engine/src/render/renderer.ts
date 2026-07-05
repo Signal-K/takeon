@@ -5,12 +5,50 @@ import { Camera } from './camera.js';
 import { drawAnomaly, drawRover, drawStructure } from './entities.js';
 import { project, TILE_H, TILE_W, TILE_Z, shade } from './sprites.js';
 import { MATERIALS } from '../world/materials.js';
+import { skinBiome } from '../world/terrain.js';
 import { hash2, hash3 } from '../util/rng.js';
 import { fbm2 } from '../util/noise.js';
+
+interface Particle {
+  x: number;
+  y: number;
+  h: number;
+  tw: number;
+  alpha: number;
+}
+
+interface Critter {
+  x: number;
+  y: number;
+  tx: number;
+  ty: number;
+  hx: number;
+  hy: number;
+  wait: number;
+  hue: number;
+  bob: number;
+}
+
+interface AmbientProfile {
+  count: number;
+  color: string;
+  wind: { x: number; y: number };
+  size: number;
+  sparkle?: boolean;
+}
 
 const CHUNK = 16;
 /** Height deltas up to this blend into smooth slopes; larger become cliffs. */
 const SMOOTH_STEP = 1.01;
+/** Sub-tile offsets sampled for scalloped biome-edge blending. */
+const BIOME_SAMPLES: [number, number][] = [
+  [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3],
+  [0.22, 0.22], [-0.22, -0.22], [0.22, -0.22], [-0.22, 0.22],
+];
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
 
 interface Chunk {
   cx: number;
@@ -46,6 +84,11 @@ export class IsoRenderer {
   private dpr = 1;
   /** Body-tinted material colours, cached as hex. Key: material*4 + faceIdx. */
   private tintCache = new Map<number, string>();
+  /** Render-only ambient life (not simulated, not saved). */
+  private particles: Particle[] = [];
+  private critters: Critter[] = [];
+  private ambient!: AmbientProfile;
+  private lastDrawMs = 0;
 
   constructor(canvas: HTMLCanvasElement, sim: Simulation) {
     this.canvas = canvas;
@@ -63,6 +106,9 @@ export class IsoRenderer {
     const r = sim.rover;
     const v = this.toView(r.pos.x, r.pos.y);
     this.camera.centerOnTile(v.x, v.y, sim.world.height(r.pos.x, r.pos.y));
+    this.ambient = this.ambientProfile();
+    this.spawnCritters();
+    this.lastDrawMs = nowMs();
   }
 
   /** Material colour with the body's identity tint applied (grey Moon,
@@ -301,6 +347,25 @@ export class IsoRenderer {
     // Soil texture: clipped speckles, grain streaks and occasional pebbles.
     g.save();
     g.clip();
+
+    // Scalloped biome edges: where a neighbouring surface biome's noise
+    // reaches into this tile, paint soft intrusions of its colour. Interior
+    // tiles (all samples agree) get none and stay clean, so only boundaries
+    // pick up the organic, interlocking patch look.
+    if (m === Material.Regolith || m === Material.Dust || m === Material.Silica) {
+      const cz = (cs[0] + cs[1] + cs[2] + cs[3]) / 4;
+      for (const [du, dv] of BIOME_SAMPLES) {
+        const ws = this.toWorld(u + du, v + dv);
+        const bm = skinBiome(ws.x, ws.y, this.sim.seed);
+        if (bm === m) continue;
+        const sp = proj(u + du, v + dv, cz);
+        g.fillStyle = shade(this.tinted(bm, 0), bright);
+        g.beginPath();
+        g.ellipse(sp.x, sp.y, 8 * scale, 4.4 * scale, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+
     const cxm = (pT.x + pB.x) / 2;
     const bilerp = (a: number, b: number): { x: number; y: number } => {
       // a: along T->R / L->B, b: along T->L / R->B (0..1)
@@ -544,6 +609,11 @@ export class IsoRenderer {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.imageSmoothingEnabled = true;
 
+    // Advance render-only ambient life (particles + critters).
+    const _now = nowMs();
+    this.updateAmbient(Math.min(0.05, (_now - this.lastDrawMs) / 1000));
+    this.lastDrawMs = _now;
+
     // Sky: vertical gradient from deep space down to the horizon tint.
     const horizon = mixColor(sim.body.palette.skyNight, sim.body.palette.sky, daylight);
     const zenith = shadeCss2(horizon, 0.38);
@@ -623,11 +693,21 @@ export class IsoRenderer {
         draw: () => drawRover(ctx, p.x, p.y, camera.zoom, rover, daylight, screenFacing as 0 | 1 | 2 | 3),
       });
     }
+    // Ambient critters wander the surface — depth-sorted with everything else.
+    for (const c of this.critters) {
+      const cv = this.toView(c.x, c.y);
+      const cz = this.surfaceZ(c.x, c.y);
+      const p = camera.toScreen(...projXY(cv.x, cv.y, cz + 0.5));
+      ents.push({ s: cv.x + cv.y, draw: () => this.drawCritter(ctx, p.x, p.y, camera.zoom, c, sim.time) });
+    }
     ents.sort((a, b) => a.s - b.s);
     for (const e of ents) e.draw();
 
     // Re-draw terrain columns that should occlude nearby entities.
     this.redrawOccluders(rv, rz);
+
+    // Airborne motes / spores drift above the scene.
+    this.drawParticles();
 
     // Weather effects over the scene.
     this.drawWeather(daylight);
@@ -753,6 +833,195 @@ export class IsoRenderer {
       default:
         break;
     }
+  }
+
+  // ── Ambient life (render-only) ────────────────────────────────────────
+
+  private ambientProfile(): AmbientProfile {
+    switch (this.sim.body.id) {
+      case 'mars':
+        return { count: 32, color: '#e6b070', wind: { x: 0.4, y: 0.14 }, size: 1.6 };
+      case 'io':
+        return { count: 28, color: '#f0d24a', wind: { x: 0.22, y: 0.3 }, size: 1.5 };
+      case 'bennu':
+        return { count: 20, color: '#b0a898', wind: { x: 0.12, y: 0.06 }, size: 1.3 };
+      case 'europa':
+        return { count: 26, color: '#dff0ff', wind: { x: 0.06, y: 0.04 }, size: 1.4, sparkle: true };
+      case 'ceres':
+        return { count: 22, color: '#e6ddff', wind: { x: 0.08, y: 0.05 }, size: 1.3, sparkle: true };
+      case 'moon':
+        return { count: 14, color: '#d8d2e0', wind: { x: 0.05, y: 0.03 }, size: 1.2 };
+      default:
+        return { count: 20, color: '#d8ccb0', wind: { x: 0.2, y: 0.1 }, size: 1.4 };
+    }
+  }
+
+  private spawnCritters(): void {
+    const world = this.sim.world;
+    const r = this.sim.rover.pos;
+    let placed = 0;
+    let tries = 0;
+    while (placed < 3 && tries < 200) {
+      tries++;
+      const a = Math.random() * Math.PI * 2;
+      const d = 4 + Math.random() * 8;
+      const x = Math.round(r.x + Math.cos(a) * d);
+      const y = Math.round(r.y + Math.sin(a) * d);
+      if (!world.isSolid(x, y)) continue;
+      this.critters.push({
+        x, y, tx: x, ty: y, hx: x, hy: y,
+        wait: 0.5 + Math.random() * 2,
+        hue: 90 + Math.random() * 65,
+        bob: Math.random() * 6.28,
+      });
+      placed++;
+    }
+  }
+
+  private spawnParticle(rover: { x: number; y: number }, wind: { x: number; y: number }, R: number): Particle {
+    const a = Math.random() * Math.PI * 2;
+    const d = Math.random() * R;
+    return {
+      x: rover.x + Math.cos(a) * d - wind.x * R * 0.35,
+      y: rover.y + Math.sin(a) * d - wind.y * R * 0.35,
+      h: 0.3 + Math.random() * 2.6,
+      tw: Math.random() * 6.28,
+      alpha: 0.22 + Math.random() * 0.4,
+    };
+  }
+
+  private updateAmbient(dt: number): void {
+    const world = this.sim.world;
+    const rover = this.sim.rover.renderPos;
+    const prof = this.ambient;
+    const w = this.sim.weather;
+    const storm = w != null && (w.type === 'dust-storm' || w.type === 'dust-devil');
+    const target = Math.round(prof.count * (storm ? 2 : 1));
+    const R = 16;
+    const wind = { x: prof.wind.x * (storm ? 2.4 : 1), y: prof.wind.y * (storm ? 2.4 : 1) };
+
+    while (this.particles.length < target) this.particles.push(this.spawnParticle(rover, wind, R));
+    if (this.particles.length > target) this.particles.length = target;
+    for (const p of this.particles) {
+      p.x += wind.x * dt;
+      p.y += wind.y * dt;
+      p.h += Math.sin((p.tw + this.sim.time) * 1.5) * dt * 0.4;
+      if (p.h < 0.2) p.h = 0.2;
+      const dx = p.x - rover.x;
+      const dy = p.y - rover.y;
+      if (dx * dx + dy * dy > (R + 3) * (R + 3)) Object.assign(p, this.spawnParticle(rover, wind, R));
+    }
+
+    for (const c of this.critters) {
+      const dxx = c.tx - c.x;
+      const dyy = c.ty - c.y;
+      if (Math.abs(dxx) < 0.03 && Math.abs(dyy) < 0.03) {
+        c.x = c.tx;
+        c.y = c.ty;
+        c.wait -= dt;
+        if (c.wait <= 0) {
+          const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]].sort(() => Math.random() - 0.5);
+          c.wait = 1 + Math.random();
+          for (const [ex, ey] of dirs) {
+            const nx = c.tx + ex;
+            const ny = c.ty + ey;
+            if (!world.isSolid(nx, ny)) continue;
+            if (Math.abs(nx - c.hx) + Math.abs(ny - c.hy) > 5) continue;
+            if (Math.abs(world.height(nx, ny) - world.height(c.tx, c.ty)) > 2) continue;
+            c.tx = nx;
+            c.ty = ny;
+            c.wait = 0.6 + Math.random() * 2.4;
+            break;
+          }
+        }
+      } else {
+        const sp = 1.7 * dt;
+        c.x += Math.sign(dxx) * Math.min(Math.abs(dxx), sp);
+        c.y += Math.sign(dyy) * Math.min(Math.abs(dyy), sp);
+      }
+    }
+  }
+
+  private drawParticles(): void {
+    const { ctx, camera } = this;
+    const prof = this.ambient;
+    const t = this.sim.time;
+    for (const p of this.particles) {
+      const surf = this.surfaceZ(p.x, p.y);
+      const pv = this.toView(p.x, p.y);
+      const s = camera.toScreen(...projXY(pv.x, pv.y, surf + p.h));
+      if (s.x < -20 || s.y < -20 || s.x > camera.viewW + 20 || s.y > camera.viewH + 20) continue;
+      const flick = 0.55 + 0.45 * Math.sin(p.tw + t * 3);
+      ctx.globalAlpha = p.alpha * flick;
+      ctx.fillStyle = prof.color;
+      const r = prof.size * camera.zoom * 0.6;
+      if (prof.sparkle) {
+        ctx.fillRect(s.x - r, s.y - 0.4 * r, 2 * r, 0.8 * r);
+        ctx.fillRect(s.x - 0.4 * r, s.y - r, 0.8 * r, 2 * r);
+      } else {
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** A small wandering critter: chunky blob with eyes, antennae and a hop. */
+  private drawCritter(g: CanvasRenderingContext2D, x: number, y: number, s: number, c: Critter, time: number): void {
+    const moving = Math.abs(c.tx - c.x) + Math.abs(c.ty - c.y) > 0.03;
+    const hop = moving ? Math.abs(Math.sin(time * 7 + c.bob)) : 0;
+    const hue = c.hue | 0;
+    g.save();
+    g.translate(x, y - hop * 3 * s);
+    g.scale(s, s);
+    g.lineJoin = 'round';
+    g.fillStyle = 'rgba(10,6,20,0.28)';
+    g.beginPath();
+    g.ellipse(0, 3.6 + hop * 3, 4.2, 1.8, 0, 0, Math.PI * 2);
+    g.fill();
+    const body = `hsl(${hue} 55% 58%)`;
+    const dark = `hsl(${hue} 55% 40%)`;
+    const squash = 1 + hop * 0.14;
+    g.strokeStyle = 'rgba(20,12,32,0.5)';
+    g.lineWidth = 0.7;
+    // Antennae.
+    g.strokeStyle = dark;
+    g.beginPath();
+    g.moveTo(-1.4, -3); g.lineTo(-2.2, -5.4);
+    g.moveTo(1.4, -3); g.lineTo(2.2, -5.4);
+    g.stroke();
+    g.fillStyle = body;
+    g.beginPath();
+    g.arc(-2.2, -5.6, 0.7, 0, Math.PI * 2);
+    g.arc(2.2, -5.6, 0.7, 0, Math.PI * 2);
+    g.fill();
+    // Body.
+    g.fillStyle = body;
+    g.strokeStyle = 'rgba(20,12,32,0.5)';
+    g.beginPath();
+    g.ellipse(0, 0, 4.2, 4.2 / squash, 0, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    // Feet.
+    g.fillStyle = dark;
+    g.beginPath();
+    g.ellipse(-1.9, 3.4, 1, 0.7, 0, 0, Math.PI * 2);
+    g.ellipse(1.9, 3.4, 1, 0.7, 0, 0, Math.PI * 2);
+    g.fill();
+    // Eyes with a glance toward travel direction.
+    const look = moving ? Math.sign(c.tx - c.x) * 0.45 : 0;
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.arc(-1.4, -0.4, 1.3, 0, Math.PI * 2);
+    g.arc(1.4, -0.4, 1.3, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#101018';
+    g.beginPath();
+    g.arc(-1.4 + look, -0.2, 0.6, 0, Math.PI * 2);
+    g.arc(1.4 + look, -0.2, 0.6, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
   }
 
   /** Rover z on the smoothed surface, interpolated during tile moves. */

@@ -131,6 +131,19 @@ function pickMaterial(
 }
 
 /**
+ * Surface skin biome (silica / dust / regolith) at continuous coords.
+ * Mirrors the depth-0 patch thresholds in pickMaterial (minus the elevation
+ * basin rule) so the renderer can draw scalloped, organic patch boundaries
+ * by sampling the same field at sub-tile resolution.
+ */
+export function skinBiome(x: number, y: number, seed: number): Material {
+  const patch = fbm2(x * 0.055, y * 0.055, seed + 5, 3);
+  if (patch > 0.66) return Material.Silica;
+  if (patch < 0.38) return Material.Dust;
+  return Material.Regolith;
+}
+
+/**
  * Find a good landing tile near the map centre: solid, locally flat.
  * Deterministic for a given world.
  */
