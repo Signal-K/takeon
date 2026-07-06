@@ -30,6 +30,7 @@ export function drawRover(
   const hasScanner = stats.scanRadius > 0;
   const hasTool = stats.miningPower > 0;
   const tracks = stats.grip >= 0.8;
+  const mob = rover.upgrades?.mobility ?? 0; // in-field mobility kit level
   const body = cssHex(spec.color || '#c8d6e5');
 
   // Animation state: wheels spin and the chassis bounces while driving; a
@@ -55,28 +56,31 @@ export function drawRover(
 
   // ── Drivetrain ────────────────────────────────────────────────────────
   if (tracks) {
-    // Tread loop with scrolling cleats + spinning road wheels.
+    // Tread loop with scrolling cleats + spinning road wheels. A mobility
+    // kit fits a taller, grippier track.
+    const th = 8 + mob * 1.3;
+    const rw = 2.1 + mob * 0.35;
     ctx.fillStyle = '#23222b';
-    roundRect(ctx, -12, -3.5, 24, 8, 3.5);
+    roundRect(ctx, -12, -3.5, 24, th, 3.5);
     ctx.fill();
     ctx.fillStyle = '#3a3844';
     const scroll = ((spin * 2) % 2.5 + 2.5) % 2.5;
-    for (let i = -10 + scroll; i <= 10; i += 2.5) ctx.fillRect(i, -3.5, 1.1, 8);
+    for (let i = -10 + scroll; i <= 10; i += 2.5) ctx.fillRect(i, -3.5, 1.1, th);
     for (const wx of [-8, -2.5, 3, 8.5]) {
       ctx.save();
-      ctx.translate(wx, 0.5);
+      ctx.translate(wx, 0.5 + (th - 8) * 0.5);
       ctx.rotate(spin);
       ctx.fillStyle = '#4d4b59';
       ctx.beginPath();
-      ctx.arc(0, 0, 2.1, 0, Math.PI * 2);
+      ctx.arc(0, 0, rw, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#6c6a78';
       ctx.lineWidth = 0.5;
       ctx.beginPath();
-      ctx.moveTo(-1.6, 0);
-      ctx.lineTo(1.6, 0);
-      ctx.moveTo(0, -1.6);
-      ctx.lineTo(0, 1.6);
+      ctx.moveTo(-rw + 0.5, 0);
+      ctx.lineTo(rw - 0.5, 0);
+      ctx.moveTo(0, -rw + 0.5);
+      ctx.lineTo(0, rw - 0.5);
       ctx.stroke();
       ctx.restore();
     }
@@ -94,24 +98,26 @@ export function drawRover(
     ctx.moveTo(0, 1);
     ctx.lineTo(-3, -5);
     ctx.stroke();
+    // A mobility kit swaps in larger, knobblier wheels.
+    const wr = 3.6 + mob * 0.7;
     for (const wx of [-8, 0, 8]) {
-      const wg = ctx.createRadialGradient(wx - 1, 0.5, 0.5, wx, 1.5, 4);
+      const wg = ctx.createRadialGradient(wx - 1, 0.5, 0.5, wx, 1.5, wr + 0.4);
       wg.addColorStop(0, '#4a4954');
       wg.addColorStop(1, '#1d1c24');
       ctx.fillStyle = wg;
       ctx.beginPath();
-      ctx.arc(wx, 1.5, 3.6, 0, Math.PI * 2);
+      ctx.arc(wx, 1.5, wr, 0, Math.PI * 2);
       ctx.fill();
       ctx.save();
       ctx.translate(wx, 1.5);
       ctx.rotate(spin);
       // Treads.
       ctx.strokeStyle = '#15141b';
-      ctx.lineWidth = 0.7;
+      ctx.lineWidth = 0.7 + mob * 0.12;
       for (let a = 0; a < Math.PI * 2; a += Math.PI / 5) {
         ctx.beginPath();
-        ctx.moveTo(Math.cos(a) * 2.9, Math.sin(a) * 2.9);
-        ctx.lineTo(Math.cos(a) * 3.6, Math.sin(a) * 3.6);
+        ctx.moveTo(Math.cos(a) * (wr - 0.7), Math.sin(a) * (wr - 0.7));
+        ctx.lineTo(Math.cos(a) * wr, Math.sin(a) * wr);
         ctx.stroke();
       }
       // Hub + spokes.
@@ -120,7 +126,7 @@ export function drawRover(
       for (let a = 0; a < Math.PI * 2; a += Math.PI / 3) {
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(a) * 2.6, Math.sin(a) * 2.6);
+        ctx.lineTo(Math.cos(a) * (wr - 1), Math.sin(a) * (wr - 1));
         ctx.stroke();
       }
       ctx.restore();
@@ -158,6 +164,13 @@ export function drawRover(
   ctx.fillStyle = shade(body, 1.35);
   roundRect(ctx, -10, -12.2, 20, 2.4, 1);
   ctx.fill();
+  // Mobility-kit pips: one amber stud per upgrade level on the deck.
+  for (let i = 0; i < mob; i++) {
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath();
+    ctx.arc(-8.5 + i * 2.2, -11, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
   // Gold multilayer-insulation block at the rear.
   const foil = ctx.createLinearGradient(-11, -9, -6, -3);
   foil.addColorStop(0, '#e8b64c');
@@ -483,7 +496,180 @@ export function drawStructure(
       }
       break;
     }
+    case 'launch-pad': {
+      const ready = st.cooldownUntil == null || time >= st.cooldownUntil;
+      // Concrete deck with hazard trim.
+      ctx.fillStyle = '#5b5f66';
+      roundRect(ctx, -10, -3, 20, 6, 1.2);
+      ctx.fill();
+      ctx.fillStyle = '#3f434a';
+      roundRect(ctx, -10, -3, 20, 2, 1.2);
+      ctx.fill();
+      ctx.fillStyle = '#e8b84a';
+      for (let i = -9; i < 9; i += 3) ctx.fillRect(i, 1.4, 1.5, 1.4);
+      // Gantry truss + swing arm.
+      ctx.strokeStyle = '#8a929b';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-7, 2);
+      ctx.lineTo(-7, -18);
+      ctx.moveTo(-4, 2);
+      ctx.lineTo(-4, -18);
+      for (let yy = -16; yy <= 0; yy += 3) {
+        ctx.moveTo(-7, yy);
+        ctx.lineTo(-4, yy - 1.5);
+      }
+      ctx.moveTo(-4, -12);
+      ctx.lineTo(0, -12);
+      ctx.stroke();
+      if (ready) {
+        // Rocket stood up on the cradle, cleared to launch.
+        const bodyGrad = ctx.createLinearGradient(-2.4, 0, 2.4, 0);
+        bodyGrad.addColorStop(0, '#c9d2dc');
+        bodyGrad.addColorStop(0.5, '#ffffff');
+        bodyGrad.addColorStop(1, '#aab3bf');
+        ctx.fillStyle = bodyGrad;
+        roundRect(ctx, -2.4, -16, 4.8, 15, 1.6);
+        ctx.fill();
+        ctx.fillStyle = '#c1442e';
+        ctx.beginPath();
+        ctx.moveTo(-2.4, -15);
+        ctx.lineTo(0, -21);
+        ctx.lineTo(2.4, -15);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-2.4, -3);
+        ctx.lineTo(-4.2, 0);
+        ctx.lineTo(-2.4, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(2.4, -3);
+        ctx.lineTo(4.2, 0);
+        ctx.lineTo(2.4, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#7fd4ff';
+        ctx.beginPath();
+        ctx.arc(0, -10, 1.1, 0, Math.PI * 2);
+        ctx.fill();
+        const blink = 0.5 + Math.sin(time * 5) * 0.5;
+        ctx.fillStyle = `rgba(90,240,140,${0.4 + blink * 0.6})`;
+        ctx.beginPath();
+        ctx.arc(6, -14, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Refuelling: empty cradle venting vapour, amber hold light.
+        ctx.strokeStyle = '#6f767e';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(-2.5, -1);
+        ctx.lineTo(-2.5, -10);
+        ctx.moveTo(2.5, -1);
+        ctx.lineTo(2.5, -10);
+        ctx.stroke();
+        const puff = (time * 3) % 6;
+        ctx.fillStyle = `rgba(220,235,245,${Math.max(0, 0.5 - puff * 0.08)})`;
+        ctx.beginPath();
+        ctx.arc(0, -8 - puff, 1.6 + puff * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        const blink = 0.5 + Math.sin(time * 4) * 0.5;
+        ctx.fillStyle = `rgba(240,180,70,${0.35 + blink * 0.5})`;
+        ctx.beginPath();
+        ctx.arc(6, -14, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
   }
+  ctx.restore();
+}
+
+/**
+ * A cargo rocket climbing away from a launch pad. `age` is seconds since the
+ * launch fired (fades out by ~3s). Drawn by the renderer as a scene overlay.
+ */
+export function drawLaunch(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  s: number,
+  age: number,
+): void {
+  const alpha = age < 2.4 ? 1 : Math.max(0, 1 - (age - 2.4) / 0.6);
+  if (alpha <= 0) return;
+  const rise = Math.pow(Math.min(1, age / 2.2), 0.85) * 92;
+  const thrusting = age < 2.1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.globalAlpha = alpha;
+  ctx.lineJoin = 'round';
+
+  // Ground smoke billow at the pad.
+  const smoke = Math.min(1, age / 1.8);
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2 + age;
+    const sr = 3 + smoke * 8;
+    ctx.fillStyle = `rgba(214,208,216,${0.38 * (1 - smoke)})`;
+    ctx.beginPath();
+    ctx.ellipse(Math.cos(a) * smoke * 9, 3 + Math.sin(a) * smoke * 2.5, sr, sr * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.save();
+  ctx.translate(0, -rise);
+  if (thrusting) {
+    const fl = 8 + Math.sin(age * 40) * 2.5;
+    const fg = ctx.createLinearGradient(0, 2, 0, 2 + fl);
+    fg.addColorStop(0, 'rgba(255,240,180,0.95)');
+    fg.addColorStop(0.4, 'rgba(255,150,60,0.8)');
+    fg.addColorStop(1, 'rgba(255,80,40,0)');
+    ctx.fillStyle = fg;
+    ctx.beginPath();
+    ctx.moveTo(-2.4, 2);
+    ctx.lineTo(2.4, 2);
+    ctx.lineTo(0, 2 + fl);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Fins.
+  ctx.fillStyle = '#c1442e';
+  ctx.beginPath();
+  ctx.moveTo(-2.2, 0);
+  ctx.lineTo(-4.4, 3);
+  ctx.lineTo(-2.2, 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(2.2, 0);
+  ctx.lineTo(4.4, 3);
+  ctx.lineTo(2.2, 3);
+  ctx.closePath();
+  ctx.fill();
+  // Body + nose + window.
+  const bg = ctx.createLinearGradient(-2.4, 0, 2.4, 0);
+  bg.addColorStop(0, '#c9d2dc');
+  bg.addColorStop(0.5, '#ffffff');
+  bg.addColorStop(1, '#aab3bf');
+  ctx.fillStyle = bg;
+  roundRect(ctx, -2.4, -9, 4.8, 12, 1.8);
+  ctx.fill();
+  ctx.fillStyle = '#c1442e';
+  ctx.beginPath();
+  ctx.moveTo(-2.4, -8);
+  ctx.lineTo(0, -13.5);
+  ctx.lineTo(2.4, -8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#7fd4ff';
+  ctx.beginPath();
+  ctx.arc(0, -4.5, 1.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 

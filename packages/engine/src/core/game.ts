@@ -194,6 +194,16 @@ export class RoverGame {
     return this.sim.depositCargo();
   }
 
+  /** Fire the hold home on a cargo rocket from an adjacent launch pad. */
+  launchCargo(): boolean {
+    return this.sim.launchCargo();
+  }
+
+  /** Bolt on a mobility kit (climb/grip/speed) using refined materials. */
+  upgradeMobility(): boolean {
+    return this.sim.upgradeMobility();
+  }
+
   save(): MissionState {
     return this.sim.serialize();
   }

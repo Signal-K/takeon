@@ -246,7 +246,8 @@ export type StructureType =
   | 'drill-rig'
   | 'cache'
   | 'refinery'
-  | 'habitat-frame';
+  | 'habitat-frame'
+  | 'launch-pad';
 
 export interface StructureDef {
   type: StructureType;
@@ -261,6 +262,8 @@ export interface Structure {
   pos: Vec2;
   /** drill-rig: buffered resources awaiting pickup. */
   buffer: Partial<Record<ResourceKey, number>>;
+  /** launch-pad: game-time (s) until the pad can fire the next rocket. */
+  cooldownUntil?: number;
 }
 
 export interface PhotoMeta {
@@ -274,9 +277,17 @@ export interface PhotoMeta {
   caption: string;
 }
 
+/** In-field upgrades applied on top of a rover's as-built stats. */
+export interface RoverUpgrades {
+  /** Mobility tier (0..3): each level adds climb, grip and a little speed. */
+  mobility: number;
+}
+
 export interface RoverState {
   spec: RoverSpec;
   stats: RoverStats;
+  /** In-field upgrades bought during the mission (optional for old saves). */
+  upgrades?: RoverUpgrades;
   /** Tile position. */
   pos: Vec2;
   /** Interpolated render position. */
@@ -326,6 +337,10 @@ export interface GameEvents {
   crafted: { recipe: string; resource: ResourceKey; amount: number };
   craftFailed: { reason: string };
   blockPlaced: { pos: Vec2 };
+  cargoLaunched: { pos: Vec2; manifest: Partial<Record<ResourceKey, number>>; total: number };
+  launchFailed: { reason: string };
+  upgraded: { kind: 'mobility'; level: number };
+  upgradeFailed: { reason: string };
   repaired: { amount: number };
   damaged: { amount: number; reason: 'fall' | 'terrain' | 'impact' | 'storm' };
   weather: { type: WeatherType; phase: 'start' | 'end'; intensity: number };

@@ -2,7 +2,7 @@ import { Material, type Vec2 } from '../types.js';
 import type { Simulation } from '../sim/simulation.js';
 import { DIRS } from '../sim/simulation.js';
 import { Camera } from './camera.js';
-import { drawAnomaly, drawRover, drawStructure } from './entities.js';
+import { drawAnomaly, drawLaunch, drawRover, drawStructure } from './entities.js';
 import { project, TILE_H, TILE_W, TILE_Z, shade } from './sprites.js';
 import { MATERIALS } from '../world/materials.js';
 import { skinBiome } from '../world/terrain.js';
@@ -27,6 +27,32 @@ interface Critter {
   wait: number;
   hue: number;
   bob: number;
+  /** 0 = grazer (rounder), 1 = hopper (taller, springier). */
+  kind: 0 | 1;
+  /** Body scale. */
+  scale: number;
+}
+
+/** Static sway-in-the-wind surface flora. */
+interface Flora {
+  x: number;
+  y: number;
+  phase: number;
+  h: number;
+  hue: number;
+  /** 0 = grass tuft, 1 = bulb/pod. */
+  kind: 0 | 1;
+}
+
+/** A creature circling overhead — pure atmosphere, drawn above the scene. */
+interface Flyer {
+  a: number;
+  r: number;
+  cx: number;
+  cy: number;
+  z: number;
+  speed: number;
+  flap: number;
 }
 
 interface AmbientProfile {
@@ -35,6 +61,12 @@ interface AmbientProfile {
   wind: { x: number; y: number };
   size: number;
   sparkle?: boolean;
+  /** Number of wandering ground critters. */
+  life: number;
+  /** Number of swaying flora tufts. */
+  flora: number;
+  /** Whether a flyer circles overhead. */
+  flyer: boolean;
 }
 
 const CHUNK = 16;
@@ -87,6 +119,8 @@ export class IsoRenderer {
   /** Render-only ambient life (not simulated, not saved). */
   private particles: Particle[] = [];
   private critters: Critter[] = [];
+  private flora: Flora[] = [];
+  private flyers: Flyer[] = [];
   private ambient!: AmbientProfile;
   private lastDrawMs = 0;
   /** Smooth per-frame clock for animation (sim.time only ticks at 10 Hz). */
@@ -118,6 +152,8 @@ export class IsoRenderer {
     this.camera.centerOnTile(v.x, v.y, sim.world.height(r.pos.x, r.pos.y));
     this.ambient = this.ambientProfile();
     this.spawnCritters();
+    this.spawnFlora();
+    this.spawnFlyers();
     this.lastDrawMs = nowMs();
   }
 
@@ -746,6 +782,17 @@ export class IsoRenderer {
         draw: () => drawRover(ctx, p.x, p.y, camera.zoom, rover, daylight, screenFacing as 0 | 1 | 2 | 3, this.renderTime),
       });
     }
+    // Wind strength for flora sway — stiffens in dust weather.
+    const windMag = Math.hypot(this.ambient.wind.x, this.ambient.wind.y);
+    const stormy = sim.weather != null && (sim.weather.type === 'dust-storm' || sim.weather.type === 'dust-devil');
+    const sway = (0.5 + windMag * 2.4) * (stormy ? 2.6 : 1);
+    // Swaying flora — depth-sorted, biased just behind same-tile creatures.
+    for (const f of this.flora) {
+      const fv = this.toView(f.x, f.y);
+      const fz = this.surfaceZ(f.x, f.y);
+      const p = camera.toScreen(...projXY(fv.x, fv.y, fz + 0.5));
+      ents.push({ s: fv.x + fv.y - 0.01, draw: () => this.drawFlora(ctx, p.x, p.y, camera.zoom, f, this.renderTime, sway) });
+    }
     // Ambient critters wander the surface — depth-sorted with everything else.
     for (const c of this.critters) {
       const cv = this.toView(c.x, c.y);
@@ -765,10 +812,28 @@ export class IsoRenderer {
     // Weather effects over the scene.
     this.drawWeather(daylight);
 
+    // Flyers wheel overhead, above the scene (dimmed by night with the rest).
+    for (const fl of this.flyers) {
+      const fx = fl.cx + Math.cos(fl.a) * fl.r;
+      const fy = fl.cy + Math.sin(fl.a) * fl.r;
+      const fvw = this.toView(fx, fy);
+      const fz = this.surfaceZ(fl.cx, fl.cy) + fl.z;
+      const p = camera.toScreen(...projXY(fvw.x, fvw.y, fz));
+      this.drawFlyer(ctx, p.x, p.y, camera.zoom, fl, this.renderTime);
+    }
+
     // Night tint.
     if (daylight < 1) {
       ctx.fillStyle = `rgba(10,8,30,${(1 - daylight) * 0.45})`;
       ctx.fillRect(0, 0, camera.viewW, camera.viewH);
+    }
+
+    // Cargo rockets climb over everything — their flame lights the night.
+    for (const l of this.sim.launches) {
+      const lv = this.toView(l.pos.x, l.pos.y);
+      const lz = this.surfaceZ(l.pos.x, l.pos.y);
+      const p = camera.toScreen(...projXY(lv.x, lv.y, lz + 0.55));
+      drawLaunch(ctx, p.x, p.y, camera.zoom, sim.time - l.t);
     }
   }
 
@@ -893,19 +958,19 @@ export class IsoRenderer {
   private ambientProfile(): AmbientProfile {
     switch (this.sim.body.id) {
       case 'mars':
-        return { count: 32, color: '#e6b070', wind: { x: 0.4, y: 0.14 }, size: 1.6 };
+        return { count: 32, color: '#e6b070', wind: { x: 0.4, y: 0.14 }, size: 1.6, life: 6, flora: 8, flyer: true };
       case 'io':
-        return { count: 28, color: '#f0d24a', wind: { x: 0.22, y: 0.3 }, size: 1.5 };
+        return { count: 28, color: '#f0d24a', wind: { x: 0.22, y: 0.3 }, size: 1.5, life: 5, flora: 4, flyer: true };
       case 'bennu':
-        return { count: 20, color: '#b0a898', wind: { x: 0.12, y: 0.06 }, size: 1.3 };
+        return { count: 20, color: '#b0a898', wind: { x: 0.12, y: 0.06 }, size: 1.3, life: 3, flora: 0, flyer: false };
       case 'europa':
-        return { count: 26, color: '#dff0ff', wind: { x: 0.06, y: 0.04 }, size: 1.4, sparkle: true };
+        return { count: 26, color: '#dff0ff', wind: { x: 0.06, y: 0.04 }, size: 1.4, sparkle: true, life: 4, flora: 4, flyer: false };
       case 'ceres':
-        return { count: 22, color: '#e6ddff', wind: { x: 0.08, y: 0.05 }, size: 1.3, sparkle: true };
+        return { count: 22, color: '#e6ddff', wind: { x: 0.08, y: 0.05 }, size: 1.3, sparkle: true, life: 4, flora: 3, flyer: false };
       case 'moon':
-        return { count: 14, color: '#d8d2e0', wind: { x: 0.05, y: 0.03 }, size: 1.2 };
+        return { count: 14, color: '#d8d2e0', wind: { x: 0.05, y: 0.03 }, size: 1.2, life: 3, flora: 0, flyer: false };
       default:
-        return { count: 20, color: '#d8ccb0', wind: { x: 0.2, y: 0.1 }, size: 1.4 };
+        return { count: 20, color: '#d8ccb0', wind: { x: 0.2, y: 0.1 }, size: 1.4, life: 5, flora: 5, flyer: true };
     }
   }
 
@@ -914,20 +979,75 @@ export class IsoRenderer {
     const r = this.sim.rover.pos;
     let placed = 0;
     let tries = 0;
-    while (placed < 3 && tries < 200) {
+    const want = this.ambient.life;
+    while (placed < want && tries < 400) {
       tries++;
       const a = Math.random() * Math.PI * 2;
-      const d = 4 + Math.random() * 8;
+      const d = 4 + Math.random() * 10;
       const x = Math.round(r.x + Math.cos(a) * d);
       const y = Math.round(r.y + Math.sin(a) * d);
       if (!world.isSolid(x, y)) continue;
+      const kind: 0 | 1 = Math.random() < 0.5 ? 0 : 1;
       this.critters.push({
         x, y, tx: x, ty: y, hx: x, hy: y,
         wait: 0.5 + Math.random() * 2,
         hue: 90 + Math.random() * 65,
         bob: Math.random() * 6.28,
+        kind,
+        scale: 0.8 + Math.random() * 0.5,
       });
       placed++;
+    }
+  }
+
+  private spawnFlora(): void {
+    const world = this.sim.world;
+    const r = this.sim.rover.pos;
+    const want = this.ambient.flora;
+    let placed = 0;
+    let tries = 0;
+    while (placed < want && tries < 500) {
+      tries++;
+      this.flora.push(this.makeFloraNear(r));
+      // makeFloraNear may reuse the rover tile if no better spot; accept it.
+      placed++;
+      if (tries > world.size * 4) break;
+    }
+  }
+
+  private makeFloraNear(r: { x: number; y: number }): Flora {
+    const world = this.sim.world;
+    for (let i = 0; i < 24; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = 2 + Math.random() * 12;
+      const x = Math.round(r.x + Math.cos(a) * d);
+      const y = Math.round(r.y + Math.sin(a) * d);
+      if (!world.isSolid(x, y)) continue;
+      return {
+        x, y,
+        phase: Math.random() * 6.28,
+        h: 0.7 + Math.random() * 0.6,
+        hue: this.ambient.sparkle ? 190 + Math.random() * 30 : 95 + Math.random() * 55,
+        kind: Math.random() < 0.7 ? 0 : 1,
+      };
+    }
+    return { x: r.x, y: r.y, phase: 0, h: 1, hue: 110, kind: 0 };
+  }
+
+  private spawnFlyers(): void {
+    if (!this.ambient.flyer) return;
+    const r = this.sim.rover.pos;
+    const n = 1 + (Math.random() < 0.4 ? 1 : 0);
+    for (let i = 0; i < n; i++) {
+      this.flyers.push({
+        a: Math.random() * Math.PI * 2,
+        r: 7 + Math.random() * 6,
+        cx: r.x,
+        cy: r.y,
+        z: 6 + Math.random() * 4,
+        speed: 0.3 + Math.random() * 0.25,
+        flap: Math.random() * 6.28,
+      });
     }
   }
 
@@ -975,24 +1095,49 @@ export class IsoRenderer {
         c.wait -= dt;
         if (c.wait <= 0) {
           const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]].sort(() => Math.random() - 0.5);
+          // Skittish: when the rover crowds in, bolt away from it and roam
+          // a little further from home; otherwise amble at random.
+          const near = Math.hypot(rover.x - c.tx, rover.y - c.ty) < 3.5;
+          if (near) {
+            dirs.sort(
+              (a, b) =>
+                Math.hypot(rover.x - (c.tx + b[0]), rover.y - (c.ty + b[1])) -
+                Math.hypot(rover.x - (c.tx + a[0]), rover.y - (c.ty + a[1])),
+            );
+          }
           c.wait = 1 + Math.random();
+          const reach = near ? 8 : 5;
           for (const [ex, ey] of dirs) {
             const nx = c.tx + ex;
             const ny = c.ty + ey;
             if (!world.isSolid(nx, ny)) continue;
-            if (Math.abs(nx - c.hx) + Math.abs(ny - c.hy) > 5) continue;
+            if (Math.abs(nx - c.hx) + Math.abs(ny - c.hy) > reach) continue;
             if (Math.abs(world.height(nx, ny) - world.height(c.tx, c.ty)) > 2) continue;
             c.tx = nx;
             c.ty = ny;
-            c.wait = 0.6 + Math.random() * 2.4;
+            c.wait = near ? 0.15 + Math.random() * 0.4 : 0.6 + Math.random() * 2.4;
             break;
           }
         }
       } else {
-        const sp = 1.7 * dt;
+        const sp = (this.critters.length && Math.hypot(rover.x - c.tx, rover.y - c.ty) < 3.5 ? 3.4 : 1.7) * dt;
         c.x += Math.sign(dxx) * Math.min(Math.abs(dxx), sp);
         c.y += Math.sign(dyy) * Math.min(Math.abs(dyy), sp);
       }
+    }
+
+    // Flora stays put but recycles to hug the rover as it roams.
+    for (const f of this.flora) {
+      if (Math.hypot(f.x - rover.x, f.y - rover.y) > 20) {
+        Object.assign(f, this.makeFloraNear(rover));
+      }
+    }
+
+    // Flyers wheel around a point that lazily tracks the rover.
+    for (const fl of this.flyers) {
+      fl.a += fl.speed * dt;
+      fl.cx += (rover.x - fl.cx) * 0.4 * dt;
+      fl.cy += (rover.y - fl.cy) * 0.4 * dt;
     }
   }
 
@@ -1027,11 +1172,14 @@ export class IsoRenderer {
   /** A small wandering critter: chunky blob with eyes, antennae and a hop. */
   private drawCritter(g: CanvasRenderingContext2D, x: number, y: number, s: number, c: Critter, time: number): void {
     const moving = Math.abs(c.tx - c.x) + Math.abs(c.ty - c.y) > 0.03;
-    const hop = moving ? Math.abs(Math.sin(time * 7 + c.bob)) : 0;
+    // Hoppers (kind 1) spring higher and faster than grazers (kind 0).
+    const rate = c.kind === 1 ? 9 : 6.5;
+    const lift = c.kind === 1 ? 4.4 : 2.6;
+    const hop = moving ? Math.abs(Math.sin(time * rate + c.bob)) : 0;
     const hue = c.hue | 0;
     g.save();
-    g.translate(x, y - hop * 3 * s);
-    g.scale(s, s);
+    g.translate(x, y - hop * lift * s * c.scale);
+    g.scale(s * c.scale, s * c.scale);
     g.lineJoin = 'round';
     g.fillStyle = 'rgba(10,6,20,0.28)';
     g.beginPath();
@@ -1053,11 +1201,13 @@ export class IsoRenderer {
     g.arc(-2.2, -5.6, 0.7, 0, Math.PI * 2);
     g.arc(2.2, -5.6, 0.7, 0, Math.PI * 2);
     g.fill();
-    // Body.
+    // Body — grazers are round, hoppers taller.
+    const bw = c.kind === 1 ? 3.6 : 4.4;
+    const bh = c.kind === 1 ? 4.7 : 4.0;
     g.fillStyle = body;
     g.strokeStyle = 'rgba(20,12,32,0.5)';
     g.beginPath();
-    g.ellipse(0, 0, 4.2, 4.2 / squash, 0, 0, Math.PI * 2);
+    g.ellipse(0, 0, bw, bh / squash, 0, 0, Math.PI * 2);
     g.fill();
     g.stroke();
     // Feet.
@@ -1077,6 +1227,68 @@ export class IsoRenderer {
     g.beginPath();
     g.arc(-1.4 + look, -0.2, 0.6, 0, Math.PI * 2);
     g.arc(1.4 + look, -0.2, 0.6, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  }
+
+  /** A wind-swayed tuft of surface growth (or frost sprig on icy worlds). */
+  private drawFlora(g: CanvasRenderingContext2D, x: number, y: number, s: number, f: Flora, time: number, sway: number): void {
+    const bend = Math.sin(time * 1.3 + f.phase) * sway;
+    g.save();
+    g.translate(x, y);
+    g.scale(s, s);
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
+    const stalk = `hsl(${f.hue | 0} 45% 42%)`;
+    const tip = `hsl(${f.hue | 0} 55% 60%)`;
+    if (f.kind === 0) {
+      // Blade cluster fanning out and bending downwind.
+      g.strokeStyle = stalk;
+      g.lineWidth = 0.6;
+      for (const off of [-1.4, -0.5, 0.4, 1.3]) {
+        const hh = (3.4 + f.h * 2) * (1 - Math.abs(off) * 0.12);
+        g.beginPath();
+        g.moveTo(off, 0);
+        g.quadraticCurveTo(off + bend * 0.6, -hh * 0.6, off + off * 0.3 + bend, -hh);
+        g.stroke();
+      }
+    } else {
+      // Bulb on a stem — sways as one.
+      const hh = 3.2 + f.h * 2;
+      g.strokeStyle = stalk;
+      g.lineWidth = 0.8;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.quadraticCurveTo(bend * 0.6, -hh * 0.6, bend, -hh);
+      g.stroke();
+      g.fillStyle = tip;
+      g.beginPath();
+      g.ellipse(bend, -hh - 0.6, 1.5, 1.9, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.restore();
+  }
+
+  /** A small silhouetted flyer with flapping wings, seen from below. */
+  private drawFlyer(g: CanvasRenderingContext2D, x: number, y: number, s: number, fl: Flyer, time: number): void {
+    const flap = Math.sin(time * 6 + fl.flap);
+    const dir = Math.cos(fl.a) >= 0 ? 1 : -1; // face travel direction
+    g.save();
+    g.translate(x, y);
+    g.scale(s * dir, s);
+    g.fillStyle = 'rgba(30,26,40,0.62)';
+    const span = 5;
+    const droop = flap * 2.4;
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.quadraticCurveTo(-span * 0.6, -1 - droop, -span, 1 - droop * 0.4);
+    g.quadraticCurveTo(-span * 0.5, 0.6, 0, 1.1);
+    g.quadraticCurveTo(span * 0.5, 0.6, span, 1 - droop * 0.4);
+    g.quadraticCurveTo(span * 0.6, -1 - droop, 0, 0);
+    g.fill();
+    // Body.
+    g.beginPath();
+    g.ellipse(0, 0.4, 0.9, 1.6, 0, 0, Math.PI * 2);
     g.fill();
     g.restore();
   }

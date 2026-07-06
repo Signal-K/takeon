@@ -445,3 +445,82 @@ describe('weather', () => {
     expect(resumed.weather).toBeNull();
   });
 });
+
+describe('cargo launch', () => {
+  function padBeside(sim: Simulation) {
+    const r = sim.rover;
+    sim.structures.push({
+      id: 'pad1',
+      type: 'launch-pad',
+      pos: { x: r.pos.x + 1, y: r.pos.y },
+      buffer: {},
+    });
+  }
+
+  it('banks the hold and fires a rocket from an adjacent pad', () => {
+    const sim = makeSim('moon');
+    padBeside(sim);
+    const r = sim.rover;
+    r.cargo = { iron: 3, silica: 2 };
+    r.cargoUsed = 5;
+    expect(sim.launchCargo()).toBe(true);
+    expect(r.cargoUsed).toBe(0);
+    expect(sim.banked.iron).toBe(3);
+    expect(sim.banked.silica).toBe(2);
+    expect(sim.launches.length).toBe(1);
+  });
+
+  it('refuses to fire again until the pad refuels', () => {
+    const sim = makeSim('moon');
+    padBeside(sim);
+    const r = sim.rover;
+    r.cargo = { iron: 2 };
+    r.cargoUsed = 2;
+    expect(sim.launchCargo()).toBe(true);
+    r.cargo = { iron: 2 };
+    r.cargoUsed = 2;
+    expect(sim.launchCargo()).toBe(false); // still on cooldown
+  });
+
+  it('refuses with no pad nearby or an empty hold', () => {
+    const sim = makeSim('moon');
+    expect(sim.launchCargo()).toBe(false); // no pad
+    padBeside(sim);
+    expect(sim.launchCargo()).toBe(false); // empty hold
+  });
+});
+
+describe('mobility upgrades', () => {
+  it('spends refined materials to raise climb, grip and speed', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    const climb0 = r.stats.maxClimb;
+    const grip0 = r.stats.grip;
+    r.cargo = { 'iron-plate': 2, alloy: 1 };
+    r.cargoUsed = 3;
+    expect(sim.upgradeMobility()).toBe(true);
+    expect(r.upgrades?.mobility).toBe(1);
+    expect(r.stats.maxClimb).toBe(climb0 + 1);
+    expect(r.stats.grip).toBeGreaterThan(grip0);
+    expect(r.cargo['iron-plate'] ?? 0).toBe(0);
+  });
+
+  it('refuses without materials and survives serialise/resume', () => {
+    const sim = makeSim('moon');
+    expect(sim.upgradeMobility()).toBe(false);
+    const r = sim.rover;
+    r.cargo = { 'iron-plate': 2, alloy: 1 };
+    r.cargoUsed = 3;
+    sim.upgradeMobility();
+    const climb = r.stats.maxClimb;
+    const snap = sim.serialize();
+    const resumed = new Simulation({
+      body: getBody('moon')!,
+      spec: snap.rover.spec,
+      events: new EventBus(),
+      resume: snap,
+    });
+    expect(resumed.rover.upgrades?.mobility).toBe(1);
+    expect(resumed.rover.stats.maxClimb).toBe(climb);
+  });
+});

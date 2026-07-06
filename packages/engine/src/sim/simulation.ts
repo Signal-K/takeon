@@ -8,6 +8,7 @@ import {
   type ResourceKey,
   type RoverSpec,
   type RoverState,
+  type RoverStats,
   type Structure,
   type StructureType,
   type Vec2,
@@ -23,6 +24,9 @@ import { getRecipe } from './recipes.js';
 import { makeId } from '../util/rng.js';
 import {
   DRILL_RATE_TICKS,
+  LAUNCH_COOLDOWN,
+  MAX_MOBILITY_UPGRADE,
+  MOBILITY_UPGRADE_COST,
   SOLAR_ARRAY_RANGE,
   SOLAR_ARRAY_RATE,
   STRUCTURES,
@@ -73,6 +77,8 @@ export class Simulation {
   weather: ActiveWeather | null = null;
   /** Recent meteor strikes for the renderer (fade after ~1s). */
   impacts: { pos: Vec2; t: number }[] = [];
+  /** In-flight cargo rockets for the renderer (fade after ~3s). */
+  launches: { pos: Vec2; t: number }[] = [];
 
   private drillTimers = new Map<string, number>();
   private weatherRng = mulberry32(0);
@@ -106,14 +112,19 @@ export class Simulation {
       }
       this.rover = {
         ...r.rover,
+        upgrades: r.rover.upgrades ? { ...r.rover.upgrades } : { mobility: 0 },
         renderPos: { ...r.rover.pos },
         moveFrom: null,
         moveT: 0,
         mining: null,
         cargo: { ...r.rover.cargo },
       };
-      // Stats may have been rebalanced since the save — recompute.
-      this.rover.stats = computeStats(r.rover.spec);
+      // Stats may have been rebalanced since the save — recompute, then
+      // re-apply the mission's field upgrades on top.
+      this.rover.stats = this.applyMobility(
+        computeStats(r.rover.spec),
+        this.rover.upgrades!.mobility,
+      );
     } else {
       const site = findLandingSite(this.world);
       const stats = computeStats(opts.spec);
@@ -122,6 +133,7 @@ export class Simulation {
       this.rover = {
         spec: opts.spec,
         stats,
+        upgrades: { mobility: 0 },
         pos: { ...site },
         renderPos: { ...site },
         facing: 0,
@@ -285,6 +297,11 @@ export class Simulation {
     const daylight = this.daylight();
 
     this.tickWeather();
+
+    // Fade spent cargo-rocket markers (renderer-only, transient).
+    if (this.launches.length > 0) {
+      this.launches = this.launches.filter((l) => this.time - l.t < 3);
+    }
 
     // ── Charging ────────────────────────────────────────────────────────
     let charge =
@@ -555,6 +572,79 @@ export class Simulation {
   }
 
   /**
+   * Fire the hold home on a cargo rocket from an adjacent launch pad. Banks
+   * everything in cargo as mission yield (same payout path as a cache) and
+   * kicks off the launch animation. The pad then refuels before it can fire
+   * again. Returns whether a rocket left the ground.
+   */
+  launchCargo(): boolean {
+    const r = this.rover;
+    if (this.status !== 'active' || r.moveFrom || r.mining) return false;
+    const pad = this.structures.find(
+      (s) =>
+        s.type === 'launch-pad' &&
+        Math.abs(s.pos.x - r.pos.x) <= 1 &&
+        Math.abs(s.pos.y - r.pos.y) <= 1,
+    );
+    if (!pad) {
+      this.events.emit('launchFailed', { reason: 'Park beside a launch pad.' });
+      return false;
+    }
+    if (pad.cooldownUntil != null && this.time < pad.cooldownUntil) {
+      this.events.emit('launchFailed', { reason: 'The pad is still refuelling.' });
+      return false;
+    }
+    if (r.cargoUsed <= 0) {
+      this.events.emit('launchFailed', { reason: 'The hold is empty.' });
+      return false;
+    }
+    const manifest: Partial<Record<ResourceKey, number>> = {};
+    let total = 0;
+    for (const [res, qty] of Object.entries(r.cargo) as [ResourceKey, number][]) {
+      if (!qty) continue;
+      this.banked[res] = (this.banked[res] ?? 0) + qty;
+      manifest[res] = qty;
+      total += qty;
+      delete r.cargo[res];
+    }
+    r.cargoUsed = 0;
+    pad.cooldownUntil = this.time + LAUNCH_COOLDOWN;
+    this.launches.push({ pos: { ...pad.pos }, t: this.time });
+    this.events.emit('cargoLaunched', { pos: { ...pad.pos }, manifest, total });
+    this.events.emit('stateChanged', {});
+    return true;
+  }
+
+  /**
+   * Spend refined materials to bolt on a mobility kit: each level raises the
+   * rover's climb, grip and speed so a stranded rover can get moving again.
+   */
+  upgradeMobility(): boolean {
+    const r = this.rover;
+    if (this.status !== 'active') return false;
+    const up = (r.upgrades ??= { mobility: 0 });
+    if (up.mobility >= MAX_MOBILITY_UPGRADE) {
+      this.events.emit('upgradeFailed', { reason: 'Mobility is already maxed out.' });
+      return false;
+    }
+    const cost = MOBILITY_UPGRADE_COST[up.mobility] ?? {};
+    for (const [res, qty] of Object.entries(cost) as [ResourceKey, number][]) {
+      if ((r.cargo[res] ?? 0) < qty) {
+        this.events.emit('upgradeFailed', { reason: `Needs ${qty} ${res} in cargo.` });
+        return false;
+      }
+    }
+    for (const [res, qty] of Object.entries(cost) as [ResourceKey, number][]) {
+      this.removeCargo(res, qty);
+    }
+    up.mobility += 1;
+    r.stats = this.applyMobility(computeStats(r.spec), up.mobility);
+    this.events.emit('upgraded', { kind: 'mobility', level: up.mobility });
+    this.events.emit('stateChanged', {});
+    return true;
+  }
+
+  /**
    * Craft/refine from cargo. Recipes with a `near` requirement need the
    * matching structure on one of the 8 surrounding tiles.
    */
@@ -648,6 +738,17 @@ export class Simulation {
 
   // ── Internals ─────────────────────────────────────────────────────────
 
+  /** Fold the mission's mobility upgrade level into a base stat block. */
+  private applyMobility(stats: RoverStats, level: number): RoverStats {
+    if (level <= 0) return stats;
+    return {
+      ...stats,
+      maxClimb: stats.maxClimb + level,
+      grip: Math.min(0.95, stats.grip + 0.12 * level),
+      speed: Math.round(stats.speed * (1 + 0.08 * level) * 100) / 100,
+    };
+  }
+
   private damage(amount: number, reason: 'fall' | 'terrain' | 'impact' | 'storm'): void {
     if (amount <= 0.01) return;
     const r = this.rover;
@@ -706,6 +807,7 @@ export class Simulation {
       time: this.time,
       rover: {
         ...this.rover,
+        upgrades: this.rover.upgrades ? { ...this.rover.upgrades } : { mobility: 0 },
         renderPos: { ...this.rover.pos },
         moveFrom: null,
         moveT: 0,
