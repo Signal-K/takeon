@@ -1,4 +1,4 @@
-import type { StructureDef, StructureType } from '../types.js';
+import type { ResourceKey, StructureDef, StructureType } from '../types.js';
 
 export const STRUCTURES: Record<StructureType, StructureDef> = {
   'solar-array': {
@@ -55,8 +55,14 @@ export const LAUNCH_COOLDOWN = 40;
 /** Mobility upgrades cap out here; each level adds climb, grip and speed. */
 export const MAX_MOBILITY_UPGRADE = 3;
 /** Refined-material cost to buy the next mobility level (index = current level). */
-export const MOBILITY_UPGRADE_COST: Partial<Record<import('../types.js').ResourceKey, number>>[] = [
+export const MOBILITY_UPGRADE_COST: Partial<Record<ResourceKey, number>>[] = [
   { 'iron-plate': 2, alloy: 1 },
   { 'iron-plate': 3, alloy: 2 },
   { 'iron-plate': 4, alloy: 3, titanium: 2 },
 ];
+
+/** Cost of the next mobility upgrade for a rover at `level`, or null if maxed. */
+export function nextMobilityUpgradeCost(level: number): Partial<Record<ResourceKey, number>> | null {
+  if (level >= MAX_MOBILITY_UPGRADE) return null;
+  return MOBILITY_UPGRADE_COST[level] ?? null;
+}

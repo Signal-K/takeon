@@ -594,20 +594,31 @@ export class Simulation {
       this.events.emit('launchFailed', { reason: 'The pad is still refuelling.' });
       return false;
     }
-    if (r.cargoUsed <= 0) {
-      this.events.emit('launchFailed', { reason: 'The hold is empty.' });
-      return false;
-    }
+    // Manifest = the rover's hold plus any drill-rig buffers next to the pad,
+    // so a mining outpost (rigs + pad) can ship without hauling to the hold.
     const manifest: Partial<Record<ResourceKey, number>> = {};
     let total = 0;
-    for (const [res, qty] of Object.entries(r.cargo) as [ResourceKey, number][]) {
-      if (!qty) continue;
+    const load = (res: ResourceKey, qty: number): void => {
+      if (!qty) return;
       this.banked[res] = (this.banked[res] ?? 0) + qty;
-      manifest[res] = qty;
+      manifest[res] = (manifest[res] ?? 0) + qty;
       total += qty;
+    };
+    for (const [res, qty] of Object.entries(r.cargo) as [ResourceKey, number][]) {
+      load(res, qty);
       delete r.cargo[res];
     }
     r.cargoUsed = 0;
+    for (const s of this.structures) {
+      if (s.type !== 'drill-rig') continue;
+      if (Math.abs(s.pos.x - pad.pos.x) > 1 || Math.abs(s.pos.y - pad.pos.y) > 1) continue;
+      for (const [res, qty] of Object.entries(s.buffer) as [ResourceKey, number][]) load(res, qty);
+      s.buffer = {};
+    }
+    if (total <= 0) {
+      this.events.emit('launchFailed', { reason: 'Nothing to load — fill the hold or a nearby drill rig first.' });
+      return false;
+    }
     pad.cooldownUntil = this.time + LAUNCH_COOLDOWN;
     this.launches.push({ pos: { ...pad.pos }, t: this.time });
     this.events.emit('cargoLaunched', { pos: { ...pad.pos }, manifest, total });

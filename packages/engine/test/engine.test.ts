@@ -486,7 +486,19 @@ describe('cargo launch', () => {
     const sim = makeSim('moon');
     expect(sim.launchCargo()).toBe(false); // no pad
     padBeside(sim);
-    expect(sim.launchCargo()).toBe(false); // empty hold
+    expect(sim.launchCargo()).toBe(false); // empty hold, no rigs
+  });
+
+  it('also sweeps adjacent drill-rig buffers into the rocket', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    const pad = { x: r.pos.x + 1, y: r.pos.y };
+    sim.structures.push({ id: 'pad2', type: 'launch-pad', pos: pad, buffer: {} });
+    sim.structures.push({ id: 'rig1', type: 'drill-rig', pos: { x: pad.x, y: pad.y + 1 }, buffer: { iron: 5 } });
+    // Empty hold, but the neighbouring rig has ore — it ships anyway.
+    expect(sim.launchCargo()).toBe(true);
+    expect(sim.banked.iron).toBe(5);
+    expect(sim.structures.find((s) => s.id === 'rig1').buffer.iron ?? 0).toBe(0);
   });
 });
 

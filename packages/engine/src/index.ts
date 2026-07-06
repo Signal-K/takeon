@@ -14,7 +14,14 @@ export { EventBus } from './core/events.js';
 export { RoverGame, createRoverGame, type RoverGameOptions, type RoverOrder } from './core/game.js';
 
 export { Simulation, TICK_RATE, TICK_DT, DIRS, type SimOptions } from './sim/simulation.js';
-export { STRUCTURES, SOLAR_ARRAY_RANGE } from './sim/structures.js';
+export {
+  STRUCTURES,
+  SOLAR_ARRAY_RANGE,
+  LAUNCH_COOLDOWN,
+  MAX_MOBILITY_UPGRADE,
+  MOBILITY_UPGRADE_COST,
+  nextMobilityUpgradeCost,
+} from './sim/structures.js';
 export { RECIPES, getRecipe } from './sim/recipes.js';
 export { WEATHER_INFO } from './sim/weather.js';
 
