@@ -3,6 +3,7 @@ import { EventBus } from './events.js';
 import { Simulation, TICK_DT } from '../sim/simulation.js';
 import { IsoRenderer } from '../render/renderer.js';
 import { Controls } from '../input/controls.js';
+import { GameAudio } from '../audio/audio.js';
 
 export interface RoverGameOptions {
   /** Canvas to render into. The game manages its size via `resize()`. */
@@ -22,6 +23,9 @@ export interface RoverGameOptions {
    * return false/undefined for the default behaviour (drive there).
    */
   onTileTap?: (tile: Vec2, canvas: { x: number; y: number }) => boolean | void;
+  /** Disable the built-in synthesised audio (default enabled but silent
+   * until `game.audio.unlock()` is called from a user gesture). */
+  audio?: boolean;
 }
 
 /** A queued player order: drive somewhere, or go mine a specific column. */
@@ -38,6 +42,8 @@ export class RoverGame {
   readonly events = new EventBus();
   readonly sim: Simulation;
   readonly renderer: IsoRenderer;
+  /** Synthesised audio director. Call `game.audio.unlock()` on first tap. */
+  readonly audio: GameAudio;
   private controls: Controls | null = null;
   private raf = 0;
   private acc = 0;
@@ -56,6 +62,9 @@ export class RoverGame {
       resume: opts.resume,
     });
     this.renderer = new IsoRenderer(opts.canvas, this.sim);
+    this.audio = new GameAudio({ enabled: opts.audio !== false });
+    this.audio.startAmbient(this.sim.body.id);
+    this.wireAudio();
     if (opts.controls !== false) {
       this.controls = new Controls(opts.canvas, this.renderer.camera, {
         onMove: (dir) => this.move(dir),
@@ -74,6 +83,32 @@ export class RoverGame {
         },
       });
     }
+  }
+
+  /** Map simulation events onto synthesised sound effects. */
+  private wireAudio(): void {
+    const a = this.audio;
+    const on = this.events.on.bind(this.events);
+    on('moved', () => a.moveStep());
+    on('mined', () => a.mine());
+    on('built', () => a.build());
+    on('blockPlaced', () => a.place());
+    on('crafted', () => a.craft());
+    on('scan', () => a.scan());
+    on('photo', () => a.photo());
+    on('anomalyDocumented', () => a.discovery());
+    on('cargoLaunched', () => a.launch());
+    on('upgraded', () => a.upgrade());
+    on('habitatComplete', () => a.habitat());
+    on('damaged', ({ amount }) => amount >= 1 && a.damage());
+    on('repaired', () => a.repair());
+    on('weather', ({ phase }) => phase === 'start' && a.weather());
+    on('roverLost', () => a.lost());
+    on('buildFailed', () => a.error());
+    on('craftFailed', () => a.error());
+    on('launchFailed', () => a.error());
+    on('upgradeFailed', () => a.error());
+    on('blocked', ({ reason }) => reason !== 'busy' && a.error());
   }
 
   // ── Loop ──────────────────────────────────────────────────────────────
@@ -105,6 +140,7 @@ export class RoverGame {
 
   dispose(): void {
     this.stop();
+    this.audio.stopAmbient();
     this.controls?.dispose();
     this.events.clear();
     this.sim.world.onColumnChange = null;

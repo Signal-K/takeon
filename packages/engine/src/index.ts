@@ -12,6 +12,7 @@
 export * from './types.js';
 export { EventBus } from './core/events.js';
 export { RoverGame, createRoverGame, type RoverGameOptions, type RoverOrder } from './core/game.js';
+export { GameAudio, type GameAudioOptions } from './audio/audio.js';
 
 export { Simulation, TICK_RATE, TICK_DT, DIRS, type SimOptions } from './sim/simulation.js';
 export {
