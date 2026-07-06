@@ -58,3 +58,27 @@ export {
 
 export { mulberry32, hash2, hash3, makeId } from './util/rng.js';
 export { valueNoise2, fbm2 } from './util/noise.js';
+
+// Framework-agnostic objective/mission module contract (offline-first).
+export {
+  TAKEON_SCHEMA_VERSION,
+  TAKEON_WORLD_KEY,
+  type TakeonObjectiveKind,
+  type TakeonObjective,
+  type TakeonMission,
+  type TakeonWorldState,
+  type TakeonObjectiveProgress,
+  type TakeonMissionProgress,
+} from './module/types.js';
+export {
+  tileKey,
+  createDemoMission,
+  createWorldState,
+  type TakeonGain,
+  explore,
+  returnToBase,
+  resetWorld,
+  deriveMissionProgress,
+  serializeWorldState,
+  parseWorldState,
+} from './module/state.js';
