@@ -1,5 +1,6 @@
 import {
   Material,
+  MISSION_SCHEMA_VERSION,
   type ActiveWeather,
   type Anomaly,
   type BodyDef,
@@ -106,13 +107,14 @@ export class Simulation {
 
     if (opts.resume) {
       const r = opts.resume;
-      this.time = r.time;
-      this.world.applyEdits(r.edits);
-      this.structures = r.structures.map((s) => ({ ...s, buffer: { ...s.buffer } }));
+      this.time = r.time ?? 0;
+      // Tolerate legacy / partial saves: fields added over time may be absent.
+      this.world.applyEdits(r.edits ?? {});
+      this.structures = (r.structures ?? []).map((s) => ({ ...s, buffer: { ...s.buffer } }));
       this.weather = r.weather ? { ...r.weather, pos: r.weather.pos ? { ...r.weather.pos } : undefined } : null;
-      this.photos = [...r.photos];
-      this.status = r.status;
-      for (const saved of r.anomalies) {
+      this.photos = [...(r.photos ?? [])];
+      this.status = r.status ?? 'active';
+      for (const saved of r.anomalies ?? []) {
         const a = this.anomalies.find((x) => x.id === saved.id);
         if (a) {
           a.scanned = saved.scanned;
@@ -923,6 +925,7 @@ export class Simulation {
   /** Serialisable snapshot for persistence. */
   serialize(): MissionState {
     return {
+      schemaVersion: MISSION_SCHEMA_VERSION,
       id: this.missionId,
       bodyId: this.body.id,
       seed: this.seed,

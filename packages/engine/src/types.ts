@@ -313,7 +313,16 @@ export interface RoverState {
   mining: { pos: Vec2; remaining: number; total: number } | null;
 }
 
+/**
+ * Bumped when the persisted MissionState shape changes. Loads are tolerant of
+ * older/absent values (fields added over time are optional and defaulted on
+ * resume), so this is a diagnostic marker rather than a hard gate.
+ */
+export const MISSION_SCHEMA_VERSION = 2;
+
 export interface MissionState {
+  /** Schema marker (absent on pre-v2 saves). */
+  schemaVersion?: number;
   id: string;
   bodyId: string;
   seed: number;

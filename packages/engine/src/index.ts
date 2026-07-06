@@ -53,6 +53,7 @@ export {
   missionCredits,
   RESOURCE_VALUE,
   DISCOVERY_CREDITS,
+  PHOTO_CREDITS_PER_QUALITY,
   STARTING_CREDITS,
 } from './net/sync.js';
 

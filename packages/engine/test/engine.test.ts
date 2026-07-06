@@ -11,6 +11,7 @@ import {
   generateTerrain,
   getBody,
   Material,
+  MISSION_SCHEMA_VERSION,
   missionCredits,
   PARTS,
   Simulation,
@@ -545,6 +546,45 @@ describe('outpost power grid', () => {
     r.durability = 40;
     runTicks(sim, TICK_RATE * 2);
     expect(r.durability).toBeGreaterThan(40);
+  });
+});
+
+describe('save schema versioning', () => {
+  it('stamps the current schema version on serialize', () => {
+    expect(makeSim('moon').serialize().schemaVersion).toBe(MISSION_SCHEMA_VERSION);
+  });
+
+  it('resumes a legacy save that predates upgrades/outposts', () => {
+    const snap = makeSim('moon').serialize();
+    const legacy = JSON.parse(JSON.stringify(snap));
+    delete legacy.schemaVersion; // pre-v2 payload
+    delete legacy.rover.upgrades;
+    const resumed = new Simulation({
+      body: getBody('moon')!,
+      spec: legacy.rover.spec,
+      events: new EventBus(),
+      resume: legacy,
+    });
+    expect(resumed.rover.upgrades).toEqual({ mobility: 0 });
+    expect(resumed.status).toBe('active');
+    expect(resumed.serialize().schemaVersion).toBe(MISSION_SCHEMA_VERSION);
+  });
+
+  it('tolerates a partial save missing optional arrays', () => {
+    const snap = makeSim('moon').serialize();
+    const partial = {
+      id: snap.id, bodyId: snap.bodyId, seed: snap.seed, time: 0,
+      rover: snap.rover, status: 'active',
+    } as unknown as MissionState;
+    const resumed = new Simulation({
+      body: getBody('moon')!,
+      spec: snap.rover.spec,
+      events: new EventBus(),
+      resume: partial,
+    });
+    expect(resumed.structures).toEqual([]);
+    expect(resumed.photos).toEqual([]);
+    expect(() => resumed.tick()).not.toThrow();
   });
 });
 
