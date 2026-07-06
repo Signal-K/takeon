@@ -21,6 +21,9 @@ export {
   MAX_MOBILITY_UPGRADE,
   MOBILITY_UPGRADE_COST,
   nextMobilityUpgradeCost,
+  POWER_RANGE,
+  AUTO_LAUNCH_THRESHOLD,
+  HABITAT_SERVICE_RANGE,
 } from './sim/structures.js';
 export { RECIPES, getRecipe } from './sim/recipes.js';
 export { WEATHER_INFO } from './sim/weather.js';

@@ -1,6 +1,7 @@
 import { Material, type Vec2 } from '../types.js';
 import type { Simulation } from '../sim/simulation.js';
 import { DIRS } from '../sim/simulation.js';
+import { POWER_RANGE } from '../sim/structures.js';
 import { Camera } from './camera.js';
 import { drawAnomaly, drawLaunch, drawRover, drawStructure } from './entities.js';
 import { project, TILE_H, TILE_W, TILE_Z, shade } from './sprites.js';
@@ -740,6 +741,9 @@ export class IsoRenderer {
       ctx.drawImage(chunk.canvas as CanvasImageSource, s.x, s.y, w, h);
     }
 
+    // Power grid: faint energised links from sources out to what they feed.
+    this.drawPowerLinks(daylight);
+
     // Facing-tile / mining highlights on the smoothed surface.
     const d = DIRS[rover.facing];
     const fx = rover.pos.x + d.x;
@@ -769,9 +773,10 @@ export class IsoRenderer {
       const sv = this.toView(st.pos.x, st.pos.y);
       const sz = this.surfaceZ(st.pos.x, st.pos.y);
       const p = camera.toScreen(...projXY(sv.x, sv.y, sz + 0.55));
+      const powered = sim.powered.has(st.id);
       ents.push({
         s: sv.x + sv.y,
-        draw: () => drawStructure(ctx, p.x, p.y, camera.zoom, st, sim.time, daylight),
+        draw: () => drawStructure(ctx, p.x, p.y, camera.zoom, st, sim.time, daylight, powered),
       });
     }
     {
@@ -1291,6 +1296,59 @@ export class IsoRenderer {
     g.ellipse(0, 0.4, 0.9, 1.6, 0, 0, Math.PI * 2);
     g.fill();
     g.restore();
+  }
+
+  /** Faint energised lines from power sources to the structures they feed. */
+  private drawPowerLinks(daylight: number): void {
+    const { ctx, camera, sim } = this;
+    const structs = sim.structures;
+    if (structs.length < 2) return;
+    const emitters = structs.filter(
+      (s) =>
+        s.type === 'generator' ||
+        (s.type === 'solar-array' && daylight > 0) ||
+        (s.type === 'pylon' && sim.powered.has(s.id)),
+    );
+    if (emitters.length === 0) return;
+    const screenOf = (st: { pos: Vec2 }): { x: number; y: number } => {
+      const v = this.toView(st.pos.x, st.pos.y);
+      const z = this.surfaceZ(st.pos.x, st.pos.y);
+      return camera.toScreen(...projXY(v.x, v.y, z + 0.35));
+    };
+    const t = this.renderTime;
+    const lw = Math.max(0.6, camera.zoom * 0.7);
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const s of structs) {
+      if (!sim.powered.has(s.id)) continue;
+      let best: (typeof structs)[number] | null = null;
+      let bestD = Infinity;
+      for (const e of emitters) {
+        if (e.id === s.id) continue;
+        const dd = Math.max(Math.abs(e.pos.x - s.pos.x), Math.abs(e.pos.y - s.pos.y));
+        if (dd <= POWER_RANGE && dd < bestD) {
+          bestD = dd;
+          best = e;
+        }
+      }
+      if (!best) continue;
+      const a = screenOf(best);
+      const b = screenOf(s);
+      const flow = 0.4 + 0.35 * Math.sin(t * 3 - bestD);
+      ctx.strokeStyle = `rgba(120,225,255,${0.16 + flow * 0.12})`;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      // Travelling spark hints at the direction of flow.
+      const f = (t * 0.6 + s.pos.x * 0.13) % 1;
+      ctx.fillStyle = 'rgba(190,240,255,0.85)';
+      ctx.beginPath();
+      ctx.arc(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, lw, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   /** Rover z on the smoothed surface, interpolated during tile moves. */

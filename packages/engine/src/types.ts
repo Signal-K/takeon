@@ -247,23 +247,31 @@ export type StructureType =
   | 'cache'
   | 'refinery'
   | 'habitat-frame'
-  | 'launch-pad';
+  | 'habitat'
+  | 'launch-pad'
+  | 'generator'
+  | 'pylon';
 
 export interface StructureDef {
   type: StructureType;
   name: string;
   cost: Partial<Record<ResourceKey, number>>;
   description: string;
+  /** Hidden from the build menu (e.g. `habitat`, which is built by upgrading
+   * a habitat-frame, not placed directly). Defaults to buildable. */
+  buildable?: boolean;
 }
 
 export interface Structure {
   id: string;
   type: StructureType;
   pos: Vec2;
-  /** drill-rig: buffered resources awaiting pickup. */
+  /** drill-rig / launch-pad: buffered resources awaiting pickup or shipment. */
   buffer: Partial<Record<ResourceKey, number>>;
   /** launch-pad: game-time (s) until the pad can fire the next rocket. */
   cooldownUntil?: number;
+  /** habitat-frame: 0..1 construction progress toward a finished habitat. */
+  progress?: number;
 }
 
 export interface PhotoMeta {
@@ -337,8 +345,9 @@ export interface GameEvents {
   crafted: { recipe: string; resource: ResourceKey; amount: number };
   craftFailed: { reason: string };
   blockPlaced: { pos: Vec2 };
-  cargoLaunched: { pos: Vec2; manifest: Partial<Record<ResourceKey, number>>; total: number };
+  cargoLaunched: { pos: Vec2; manifest: Partial<Record<ResourceKey, number>>; total: number; auto?: boolean };
   launchFailed: { reason: string };
+  habitatComplete: { pos: Vec2 };
   upgraded: { kind: 'mobility'; level: number };
   upgradeFailed: { reason: string };
   repaired: { amount: number };

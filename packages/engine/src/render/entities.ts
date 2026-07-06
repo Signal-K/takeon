@@ -376,6 +376,7 @@ export function drawStructure(
   st: Structure,
   time: number,
   daylight: number,
+  powered = false,
 ): void {
   ctx.save();
   ctx.translate(x, y);
@@ -384,6 +385,14 @@ export function drawStructure(
   ctx.beginPath();
   ctx.ellipse(0, 3, 10, 4, 0, 0, Math.PI * 2);
   ctx.fill();
+  // Energised aura for anything on the power grid.
+  if (powered && st.type !== 'generator' && st.type !== 'solar-array') {
+    const pulse = 0.5 + Math.sin(time * 4 + st.pos.x) * 0.5;
+    ctx.fillStyle = `rgba(120,230,255,${0.1 + pulse * 0.1})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 3, 9, 3.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   switch (st.type) {
     case 'solar-array': {
@@ -480,6 +489,19 @@ export function drawStructure(
       break;
     }
     case 'habitat-frame': {
+      const prog = Math.max(0, Math.min(1, st.progress ?? 0));
+      // Panels fill the dome from the base up as construction proceeds.
+      if (prog > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-11, 1 - 11 * prog, 22, 11 * prog);
+        ctx.clip();
+        ctx.fillStyle = 'rgba(150,200,235,0.35)';
+        ctx.beginPath();
+        ctx.arc(0, 1, 11, Math.PI, 0);
+        ctx.fill();
+        ctx.restore();
+      }
       ctx.strokeStyle = '#b8c0c9';
       ctx.lineWidth = 1.4;
       ctx.beginPath();
@@ -494,6 +516,101 @@ export function drawStructure(
         ctx.lineTo(Math.cos(Math.PI + a) * -11, 1 + Math.sin(Math.PI + a) * -11);
         ctx.stroke();
       }
+      break;
+    }
+    case 'habitat': {
+      // Finished pressurised dome with a lit airlock and roof beacon.
+      const dg = ctx.createLinearGradient(0, -11, 0, 2);
+      dg.addColorStop(0, '#e9eef4');
+      dg.addColorStop(1, '#a7b2c0');
+      ctx.fillStyle = dg;
+      ctx.beginPath();
+      ctx.arc(0, 2, 11, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#79828f';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.arc(0, 2, 11, Math.PI, 0);
+      ctx.moveTo(-11, 2);
+      ctx.lineTo(11, 2);
+      ctx.stroke();
+      // Warm windows.
+      ctx.fillStyle = `rgba(255,220,150,${0.6 + Math.sin(time * 2) * 0.12})`;
+      ctx.beginPath();
+      ctx.arc(-4.5, -1, 1.6, 0, Math.PI * 2);
+      ctx.arc(4.5, -1, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      // Airlock.
+      ctx.fillStyle = '#5f6773';
+      roundRect(ctx, -2.2, -3.5, 4.4, 5.5, 1);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(150,220,255,0.7)';
+      roundRect(ctx, -1.4, -2.6, 2.8, 3.4, 0.8);
+      ctx.fill();
+      // Roof beacon.
+      const blink = 0.5 + Math.sin(time * 3) * 0.5;
+      ctx.fillStyle = `rgba(120,255,180,${0.4 + blink * 0.6})`;
+      ctx.beginPath();
+      ctx.arc(0, -11.5, 1, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'generator': {
+      // Reactor block with cooling fins and a pulsing core.
+      ctx.fillStyle = '#4c525b';
+      roundRect(ctx, -8, -10, 16, 12, 1.4);
+      ctx.fill();
+      ctx.fillStyle = '#3a3f47';
+      for (let i = -7; i < 7; i += 2.4) ctx.fillRect(i, -10, 1.1, 12);
+      ctx.strokeStyle = '#2b2f36';
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(-8, -10, 16, 12);
+      const core = 0.5 + Math.sin(time * 4) * 0.5;
+      const cg = ctx.createRadialGradient(0, -4, 0.5, 0, -4, 5);
+      cg.addColorStop(0, `rgba(140,255,210,${0.7 + core * 0.3})`);
+      cg.addColorStop(1, 'rgba(60,200,150,0)');
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.arc(0, -4, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(180,255,225,${0.8})`;
+      ctx.beginPath();
+      ctx.arc(0, -4, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      // Vent stacks.
+      ctx.fillStyle = '#6b727c';
+      ctx.fillRect(-6.5, -14, 2.4, 4.4);
+      ctx.fillRect(4.1, -14, 2.4, 4.4);
+      break;
+    }
+    case 'pylon': {
+      // Lattice mast that relays the grid, with an arc at the tip.
+      ctx.strokeStyle = '#98a0aa';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-3.5, 2);
+      ctx.lineTo(-1, -14);
+      ctx.moveTo(3.5, 2);
+      ctx.lineTo(1, -14);
+      for (let yy = -12; yy <= 0; yy += 3) {
+        const f = (yy + 13) / 15;
+        ctx.moveTo(-3.5 * f, yy);
+        ctx.lineTo(3.5 * f, yy - 1.4);
+        ctx.moveTo(3.5 * f, yy);
+        ctx.lineTo(-3.5 * f, yy - 1.4);
+      }
+      ctx.stroke();
+      // Cross-arms.
+      ctx.beginPath();
+      ctx.moveTo(-4.5, -12);
+      ctx.lineTo(4.5, -12);
+      ctx.stroke();
+      const arc = 0.4 + Math.abs(Math.sin(time * 6)) * 0.6;
+      ctx.fillStyle = `rgba(140,230,255,${arc})`;
+      ctx.beginPath();
+      ctx.arc(0, -14.5, 1.2, 0, Math.PI * 2);
+      ctx.fill();
       break;
     }
     case 'launch-pad': {

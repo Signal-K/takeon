@@ -502,6 +502,52 @@ describe('cargo launch', () => {
   });
 });
 
+describe('outpost power grid', () => {
+  it('a generator powers nearby structures and pylons relay to distant ones', () => {
+    const sim = makeSim('moon');
+    const O = { x: 24, y: 24 };
+    sim.structures.push({ id: 'gen', type: 'generator', pos: { x: O.x, y: O.y }, buffer: {} });
+    sim.structures.push({ id: 'nearRig', type: 'drill-rig', pos: { x: O.x + 4, y: O.y }, buffer: {} });
+    sim.structures.push({ id: 'pyl', type: 'pylon', pos: { x: O.x + 5, y: O.y }, buffer: {} });
+    sim.structures.push({ id: 'farRig', type: 'drill-rig', pos: { x: O.x + 9, y: O.y }, buffer: {} });
+    sim.structures.push({ id: 'orphan', type: 'drill-rig', pos: { x: O.x + 16, y: O.y }, buffer: {} });
+    sim.tick();
+    expect(sim.powered.has('nearRig')).toBe(true);
+    expect(sim.powered.has('pyl')).toBe(true);
+    expect(sim.powered.has('farRig')).toBe(true); // reached only via the pylon relay
+    expect(sim.powered.has('orphan')).toBe(false);
+  });
+
+  it('a fuelled pad pulls a drill line and auto-ships at the threshold', () => {
+    const sim = makeSim('moon');
+    const O = { x: 30, y: 30 };
+    const pad = { id: 'pad', type: 'launch-pad' as const, pos: { x: O.x, y: O.y }, buffer: {} };
+    const rig = { id: 'rig', type: 'drill-rig' as const, pos: { x: O.x + 1, y: O.y }, buffer: { iron: 20 } };
+    sim.structures.push(pad, rig);
+    sim.tick();
+    expect(sim.banked.iron).toBe(20);
+    expect(sim.launches.length).toBe(1);
+    expect(pad.cooldownUntil ?? 0).toBeGreaterThan(0);
+    expect(rig.buffer.iron ?? 0).toBe(0);
+  });
+
+  it('a powered habitat frame finishes, then recharges and repairs a parked rover', () => {
+    const sim = makeSim('moon');
+    const r = sim.rover;
+    sim.structures.push({ id: 'gen', type: 'generator', pos: { x: r.pos.x + 1, y: r.pos.y + 1 }, buffer: {} });
+    const frame = { id: 'hab', type: 'habitat-frame' as const, pos: { x: r.pos.x + 1, y: r.pos.y }, buffer: {} };
+    sim.structures.push(frame);
+    let done = false;
+    sim.events.on('habitatComplete', () => { done = true; });
+    runTicks(sim, TICK_RATE * 31);
+    expect(done).toBe(true);
+    expect(sim.structures.find((s) => s.id === 'hab').type).toBe('habitat');
+    r.durability = 40;
+    runTicks(sim, TICK_RATE * 2);
+    expect(r.durability).toBeGreaterThan(40);
+  });
+});
+
 describe('mobility upgrades', () => {
   it('spends refined materials to raise climb, grip and speed', () => {
     const sim = makeSim('moon');

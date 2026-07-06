@@ -37,11 +37,30 @@ export const STRUCTURES: Record<StructureType, StructureDef> = {
     cost: { 'iron-plate': 4, glass: 2, titanium: 2 },
     description: 'The first bones of a permanent outpost, raised from refined materials.',
   },
+  habitat: {
+    type: 'habitat',
+    name: 'Habitat',
+    cost: {},
+    buildable: false,
+    description: 'A finished pressurised outpost. Recharges and slowly repairs a rover parked alongside it.',
+  },
   'launch-pad': {
     type: 'launch-pad',
     name: 'Launch Pad',
     cost: { 'iron-plate': 5, alloy: 2, silica: 4 },
-    description: 'Fuelled gantry. Park beside it and fire the hold home for instant yield — then it refuels before the next launch.',
+    description: 'Fuelled gantry. Park beside it and fire the hold home — or let it auto-ship a neighbouring drill line. Refuels between launches.',
+  },
+  generator: {
+    type: 'generator',
+    name: 'Generator',
+    cost: { 'iron-plate': 4, titanium: 2, copper: 3 },
+    description: 'Radioisotope plant. Powers nearby structures day and night — the backbone of an outpost grid.',
+  },
+  pylon: {
+    type: 'pylon',
+    name: 'Power Pylon',
+    cost: { iron: 3, copper: 2 },
+    description: 'Relays power onward, extending the grid to distant drills and pads.',
   },
 };
 
@@ -50,8 +69,22 @@ export const BUILD_RADIUS = 2;
 export const SOLAR_ARRAY_RANGE = 4;
 export const SOLAR_ARRAY_RATE = 5;
 export const DRILL_RATE_TICKS = 40; // sim ticks per voxel mined
+export const DRILL_RATE_TICKS_POWERED = 22; // powered drills run faster
 /** Game-seconds a launch pad refuels before it can fire again. */
 export const LAUNCH_COOLDOWN = 40;
+
+// ── Outpost power grid ─────────────────────────────────────────────────────
+/** Chebyshev tile radius a power source (or relaying pylon) energises. */
+export const POWER_RANGE = 5;
+/** Units a launch pad must accumulate from drill lines before it auto-fires. */
+export const AUTO_LAUNCH_THRESHOLD = 12;
+/** Habitat-frame construction: fraction of progress gained per second when powered. */
+export const HABITAT_BUILD_RATE = 1 / 30; // ~30s to finish once powered
+/** A finished habitat services a rover parked within this Chebyshev radius. */
+export const HABITAT_SERVICE_RANGE = 2;
+/** Habitat passive support while a rover is parked in range. */
+export const HABITAT_RECHARGE = 6; // battery/sec
+export const HABITAT_REPAIR = 1.5; // durability/sec
 /** Mobility upgrades cap out here; each level adds climb, grip and speed. */
 export const MAX_MOBILITY_UPGRADE = 3;
 /** Refined-material cost to buy the next mobility level (index = current level). */

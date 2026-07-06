@@ -23,10 +23,17 @@ import { computeStats } from '../parts/assembly.js';
 import { getRecipe } from './recipes.js';
 import { makeId } from '../util/rng.js';
 import {
+  AUTO_LAUNCH_THRESHOLD,
   DRILL_RATE_TICKS,
+  DRILL_RATE_TICKS_POWERED,
+  HABITAT_BUILD_RATE,
+  HABITAT_RECHARGE,
+  HABITAT_REPAIR,
+  HABITAT_SERVICE_RANGE,
   LAUNCH_COOLDOWN,
   MAX_MOBILITY_UPGRADE,
   MOBILITY_UPGRADE_COST,
+  POWER_RANGE,
   SOLAR_ARRAY_RANGE,
   SOLAR_ARRAY_RATE,
   STRUCTURES,
@@ -79,6 +86,8 @@ export class Simulation {
   impacts: { pos: Vec2; t: number }[] = [];
   /** In-flight cargo rockets for the renderer (fade after ~3s). */
   launches: { pos: Vec2; t: number }[] = [];
+  /** Ids of structures currently on the power grid (recomputed each tick). */
+  powered = new Set<string>();
 
   private drillTimers = new Map<string, number>();
   private weatherRng = mulberry32(0);
@@ -303,6 +312,9 @@ export class Simulation {
       this.launches = this.launches.filter((l) => this.time - l.t < 3);
     }
 
+    // Recompute the outpost power grid for this tick.
+    this.powered = this.computePower();
+
     // ── Charging ────────────────────────────────────────────────────────
     let charge =
       r.stats.rtgRate + r.stats.solarRate * daylight * this.body.solarFlux * this.weatherSolarMult();
@@ -350,11 +362,12 @@ export class Simulation {
       }
     }
 
-    // ── Auto drill rigs ─────────────────────────────────────────────────
+    // ── Auto drill rigs (faster when powered) ───────────────────────────
     for (const s of this.structures) {
       if (s.type !== 'drill-rig') continue;
+      const rate = this.powered.has(s.id) ? DRILL_RATE_TICKS_POWERED : DRILL_RATE_TICKS;
       const t = (this.drillTimers.get(s.id) ?? 0) + 1;
-      if (t >= DRILL_RATE_TICKS) {
+      if (t >= rate) {
         this.drillTimers.set(s.id, 0);
         const mat = this.world.mineTop(s.pos.x, s.pos.y);
         if (mat !== null) {
@@ -365,6 +378,9 @@ export class Simulation {
         this.drillTimers.set(s.id, t);
       }
     }
+
+    // ── Outposts: auto-shipping pads + habitat construction/service ──────
+    this.tickOutpost();
 
     if (r.battery <= 0.01 && r.stats.rtgRate === 0 && r.stats.solarRate === 0) {
       this.status = 'lost';
@@ -519,6 +535,7 @@ export class Simulation {
     const r = this.rover;
     if (this.status !== 'active' || r.moveFrom || r.mining) return null;
     const def = STRUCTURES[type];
+    if (def.buildable === false) return null; // e.g. habitat (built by upgrading a frame)
     const d = DIRS[r.facing];
     const tx = r.pos.x + d.x;
     const ty = r.pos.y + d.y;
@@ -594,35 +611,30 @@ export class Simulation {
       this.events.emit('launchFailed', { reason: 'The pad is still refuelling.' });
       return false;
     }
-    // Manifest = the rover's hold plus any drill-rig buffers next to the pad,
-    // so a mining outpost (rigs + pad) can ship without hauling to the hold.
+    // Manifest = the rover's hold, the pad's accumulated buffer, and any
+    // drill-rig buffers next to the pad — so a mining outpost can ship
+    // without hauling to the hold.
     const manifest: Partial<Record<ResourceKey, number>> = {};
-    let total = 0;
-    const load = (res: ResourceKey, qty: number): void => {
-      if (!qty) return;
-      this.banked[res] = (this.banked[res] ?? 0) + qty;
-      manifest[res] = (manifest[res] ?? 0) + qty;
-      total += qty;
+    const add = (res: ResourceKey, qty: number): void => {
+      if (qty) manifest[res] = (manifest[res] ?? 0) + qty;
     };
     for (const [res, qty] of Object.entries(r.cargo) as [ResourceKey, number][]) {
-      load(res, qty);
+      add(res, qty);
       delete r.cargo[res];
     }
     r.cargoUsed = 0;
+    for (const [res, qty] of Object.entries(pad.buffer) as [ResourceKey, number][]) add(res, qty);
+    pad.buffer = {};
     for (const s of this.structures) {
       if (s.type !== 'drill-rig') continue;
       if (Math.abs(s.pos.x - pad.pos.x) > 1 || Math.abs(s.pos.y - pad.pos.y) > 1) continue;
-      for (const [res, qty] of Object.entries(s.buffer) as [ResourceKey, number][]) load(res, qty);
+      for (const [res, qty] of Object.entries(s.buffer) as [ResourceKey, number][]) add(res, qty);
       s.buffer = {};
     }
-    if (total <= 0) {
+    if (this.shipManifest(pad, manifest, false) <= 0) {
       this.events.emit('launchFailed', { reason: 'Nothing to load — fill the hold or a nearby drill rig first.' });
       return false;
     }
-    pad.cooldownUntil = this.time + LAUNCH_COOLDOWN;
-    this.launches.push({ pos: { ...pad.pos }, t: this.time });
-    this.events.emit('cargoLaunched', { pos: { ...pad.pos }, manifest, total });
-    this.events.emit('stateChanged', {});
     return true;
   }
 
@@ -748,6 +760,105 @@ export class Simulation {
   }
 
   // ── Internals ─────────────────────────────────────────────────────────
+
+  /** Structure ids currently energised: generators (always) and solar arrays
+   * (in daylight) power everything within range, relayed onward by pylons. */
+  private computePower(): Set<string> {
+    const structs = this.structures;
+    const powered = new Set<string>();
+    if (structs.length === 0) return powered;
+    const daylight = this.daylight();
+    const emitters: Vec2[] = [];
+    for (const s of structs) {
+      if (s.type === 'generator' || (s.type === 'solar-array' && daylight > 0)) emitters.push(s.pos);
+    }
+    if (emitters.length === 0) return powered;
+    const within = (a: Vec2, b: Vec2): boolean =>
+      Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= POWER_RANGE;
+    // Relay through pylons until the reachable set stops growing.
+    const pylons = structs.filter((s) => s.type === 'pylon');
+    const activePylon = new Set<string>();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const p of pylons) {
+        if (activePylon.has(p.id)) continue;
+        if (emitters.some((e) => within(e, p.pos))) {
+          activePylon.add(p.id);
+          emitters.push(p.pos);
+          changed = true;
+        }
+      }
+    }
+    for (const s of structs) {
+      if (emitters.some((e) => within(e, s.pos))) powered.add(s.id);
+    }
+    return powered;
+  }
+
+  /** Bank a manifest as mission yield and fire the pad's rocket. Returns the
+   * unit total shipped (0 if the manifest was empty — no rocket flies). */
+  private shipManifest(pad: Structure, manifest: Partial<Record<ResourceKey, number>>, auto: boolean): number {
+    let total = 0;
+    for (const [res, qty] of Object.entries(manifest) as [ResourceKey, number][]) {
+      if (!qty) continue;
+      this.banked[res] = (this.banked[res] ?? 0) + qty;
+      total += qty;
+    }
+    if (total <= 0) return 0;
+    const cd = this.powered.has(pad.id) ? LAUNCH_COOLDOWN * 0.6 : LAUNCH_COOLDOWN;
+    pad.cooldownUntil = this.time + cd;
+    this.launches.push({ pos: { ...pad.pos }, t: this.time });
+    this.events.emit('cargoLaunched', { pos: { ...pad.pos }, manifest, total, auto });
+    this.events.emit('stateChanged', {});
+    return total;
+  }
+
+  /** Per-tick outpost automation: pads pull drill lines and auto-ship, and
+   * habitat frames build out (when powered) then service a parked rover. */
+  private tickOutpost(): void {
+    const r = this.rover;
+    for (const s of this.structures) {
+      if (s.type === 'launch-pad') {
+        // Draw neighbouring drill lines into the pad's own hold.
+        for (const rig of this.structures) {
+          if (rig.type !== 'drill-rig') continue;
+          if (Math.abs(rig.pos.x - s.pos.x) > 1 || Math.abs(rig.pos.y - s.pos.y) > 1) continue;
+          for (const [res, qty] of Object.entries(rig.buffer) as [ResourceKey, number][]) {
+            if (qty) s.buffer[res] = (s.buffer[res] ?? 0) + qty;
+          }
+          rig.buffer = {};
+        }
+        // Auto-fire once it holds a full load and the pad is fuelled.
+        const total = Object.values(s.buffer).reduce((a, b) => a + (b ?? 0), 0);
+        const ready = s.cooldownUntil == null || this.time >= s.cooldownUntil;
+        if (ready && total >= AUTO_LAUNCH_THRESHOLD) {
+          const manifest = s.buffer;
+          s.buffer = {};
+          this.shipManifest(s, manifest, true);
+        }
+      } else if (s.type === 'habitat-frame') {
+        if (this.powered.has(s.id)) {
+          s.progress = (s.progress ?? 0) + HABITAT_BUILD_RATE * TICK_DT;
+          if (s.progress >= 1) {
+            s.type = 'habitat';
+            s.progress = undefined;
+            this.events.emit('habitatComplete', { pos: { ...s.pos } });
+          }
+        }
+      } else if (s.type === 'habitat') {
+        if (
+          Math.abs(s.pos.x - r.pos.x) <= HABITAT_SERVICE_RANGE &&
+          Math.abs(s.pos.y - r.pos.y) <= HABITAT_SERVICE_RANGE
+        ) {
+          r.battery = Math.min(r.stats.batteryCapacity, r.battery + HABITAT_RECHARGE * TICK_DT);
+          if (r.durability < r.stats.durabilityMax) {
+            r.durability = Math.min(r.stats.durabilityMax, r.durability + HABITAT_REPAIR * TICK_DT);
+          }
+        }
+      }
+    }
+  }
 
   /** Fold the mission's mobility upgrade level into a base stat block. */
   private applyMobility(stats: RoverStats, level: number): RoverStats {
