@@ -72,7 +72,9 @@ Two data channels feed generation:
   for Mare Imbrium). Run `node scripts/fetch-dem.mjs` (needs network access to
   trek.nasa.gov, then rebuild the engine) to populate
   `packages/engine/src/world/dem/generated.ts`; without the data the engine
-  falls back to procedural relief, so nothing breaks in sandboxes/CI.
+  falls back to procedural relief, so nothing breaks in sandboxes/CI. The
+  script also writes a manifest (`dem/expected.ts`) that `test/dem.test.ts`
+  checks, so once fetched the data can't silently regress to the fallback.
 - **Spectroscopy-informed mineralogy** — each body carries `minerals` vein
   weights derived from published surveys: TES/GRS hematite abundance makes
   Mars iron-dominated; Clementine UVVIS / M3 TiO₂ maps make the lunar maria
