@@ -1,7 +1,8 @@
 {
   "name": "@takeon/engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Framework-agnostic isometric voxel rover game engine. Zero runtime dependencies.",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,8 +13,30 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Signal-K/takeon.git",
+    "directory": "packages/engine"
+  },
+  "homepage": "https://github.com/Signal-K/takeon#readme",
+  "bugs": "https://github.com/Signal-K/takeon/issues",
+  "keywords": [
+    "game-engine",
+    "isometric",
+    "voxel",
+    "rover",
+    "space",
+    "canvas",
+    "simulation",
+    "pixijs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

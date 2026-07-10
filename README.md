@@ -35,6 +35,22 @@ npm run dev            # http://localhost:3400
 The web app persists to `localStorage` when no backend is configured — fully
 playable offline.
 
+## Installing the packages
+
+`@takeon/engine` and `@takeon/pixi` publish to **npmjs.org** (not GitHub
+Packages — its npm registry only hosts scopes matching the repo owner, i.e.
+`@signal-k/*`, and requires auth even for public installs):
+
+```bash
+npm install @takeon/engine        # the whole game as a library
+npm install @takeon/pixi          # + the PixiJS mount adapter
+```
+
+Releases are tag-driven: bump both package versions (lockstep), add a
+`CHANGELOG.md` entry, and push a `v*` tag — CI builds, tests, and publishes
+anything not already on the registry. The repo needs an `NPM_TOKEN` secret
+(npm automation token with publish rights on the `@takeon` scope).
+
 ## Gameplay
 
 - **Customiser** — chassis, drivetrain, power source and battery are required;
