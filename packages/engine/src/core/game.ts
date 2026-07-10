@@ -1,5 +1,5 @@
 import type { BodyDef, MissionState, RoverSpec, StructureType, Vec2 } from '../types.js';
-import { EventBus } from './events.js';
+import { EventBus } from '../util/events.js';
 import { Simulation, TICK_DT } from '../sim/simulation.js';
 import { IsoRenderer } from '../render/renderer.js';
 import { Controls } from '../input/controls.js';

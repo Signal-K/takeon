@@ -15,7 +15,7 @@ import {
   type Vec2,
   type WeatherType,
 } from '../types.js';
-import type { EventBus } from '../core/events.js';
+import type { EventBus } from '../util/events.js';
 import { MATERIALS } from '../world/materials.js';
 import { generateAnomalies } from '../world/anomalies.js';
 import { findLandingSite, generateTerrain } from '../world/terrain.js';

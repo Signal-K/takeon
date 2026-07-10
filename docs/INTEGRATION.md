@@ -153,6 +153,33 @@ Mission saves are compact: the world regenerates deterministically from
 `(bodyId, seed)`, so `MissionState` carries only voxel `edits`, rover state,
 structures, anomaly flags and photo metadata.
 
+## Internal layering (and the finer package split)
+
+A finer split of `@takeon/engine` (into world / entities / rover / sync
+packages) has been evaluated against the measured import graph and **deferred**
+— three of the four proposed boundaries straddle today's code:
+
+```
+util ← world ← net           world ← sim → parts        render → {sim, world}
+                                    core → {sim, render, input, audio}
+```
+
+- `render → sim`: the renderer draws the *mission* (rover, structures,
+  mining highlights, power links), not just terrain — a `@takeon/world`
+  containing the renderer would depend on the rover sim, inverting the
+  required direction.
+- The generic "entities" verbs (build/craft/damage/repair) execute inside
+  `Simulation` methods that read rover cargo/facing/durability; there is no
+  rover-free verb layer to extract without rewriting the sim.
+- `types.ts` is a single shared module used by every folder.
+
+Only `net/sync.ts` (the would-be `@takeon/sync`) nearly cleaves. What *is*
+enforced now: `test/layering.test.ts` pins the folder-level dependency matrix
+(acyclic, checked in CI), so the graph can't degrade and a future split stays
+mechanical once the straddles above are untangled. Consumers who want a slice
+of the engine can rely on ESM tree-shaking — the full playable demo bundles to
+~87 KB minified.
+
 ## Extending content
 
 - **Bodies**: any `BodyDef` renders and simulates — add rows to

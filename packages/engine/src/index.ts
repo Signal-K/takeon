@@ -10,7 +10,7 @@
  */
 
 export * from './types.js';
-export { EventBus } from './core/events.js';
+export { EventBus } from './util/events.js';
 export { RoverGame, createRoverGame, type RoverGameOptions, type RoverOrder } from './core/game.js';
 export { GameAudio, type GameAudioOptions } from './audio/audio.js';
 
