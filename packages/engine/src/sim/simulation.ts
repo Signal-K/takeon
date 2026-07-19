@@ -549,7 +549,11 @@ export class Simulation {
       this.events.emit('buildFailed', { reason: 'Ground too uneven.' });
       return null;
     }
-    if (this.structures.some((s) => s.pos.x === tx && s.pos.y === ty)) {
+    const category = def.category ?? 'functional';
+    const sameCategoryHere = this.structures.some(
+      (s) => s.pos.x === tx && s.pos.y === ty && (STRUCTURES[s.type].category ?? 'functional') === category,
+    );
+    if (sameCategoryHere) {
       this.events.emit('buildFailed', { reason: 'Something is already built there.' });
       return null;
     }
@@ -562,10 +566,53 @@ export class Simulation {
     for (const [res, qty] of Object.entries(def.cost) as [ResourceKey, number][]) {
       this.removeCargo(res, qty);
     }
-    const s: Structure = { id: makeId('str'), type, pos: { x: tx, y: ty }, buffer: {} };
+    const s: Structure = { id: makeId('str'), type, pos: { x: tx, y: ty }, buffer: {}, facing: r.facing };
     this.structures.push(s);
     this.events.emit('built', { structure: s });
     return s;
+  }
+
+  /**
+   * Rotate a placed structure 90° (cosmetic orientation only — see
+   * `Structure.facing`). The rover must be adjacent to it, same range as
+   * other structure interactions (deposit/launch).
+   */
+  rotateStructure(id: string): boolean {
+    const r = this.rover;
+    const s = this.structures.find((st) => st.id === id);
+    if (!s) {
+      this.events.emit('rotateFailed', { reason: 'No such structure.' });
+      return false;
+    }
+    if (Math.abs(s.pos.x - r.pos.x) > 1 || Math.abs(s.pos.y - r.pos.y) > 1) {
+      this.events.emit('rotateFailed', { reason: 'Too far away.' });
+      return false;
+    }
+    s.facing = (((s.facing ?? 0) + 1) % 4) as 0 | 1 | 2 | 3;
+    this.events.emit('rotated', { id: s.id, facing: s.facing });
+    return true;
+  }
+
+  /**
+   * Demolish a placed structure. The rover must be adjacent to it. No
+   * resource refund in this first pass — demolition is a deliberate,
+   * lossy action, not an undo.
+   */
+  demolish(id: string): boolean {
+    const r = this.rover;
+    const idx = this.structures.findIndex((st) => st.id === id);
+    if (idx < 0) {
+      this.events.emit('demolishFailed', { reason: 'No such structure.' });
+      return false;
+    }
+    const s = this.structures[idx];
+    if (Math.abs(s.pos.x - r.pos.x) > 1 || Math.abs(s.pos.y - r.pos.y) > 1) {
+      this.events.emit('demolishFailed', { reason: 'Too far away.' });
+      return false;
+    }
+    this.structures.splice(idx, 1);
+    this.events.emit('demolished', { id: s.id, type: s.type, pos: s.pos });
+    return true;
   }
 
   /** Deposit all cargo into an adjacent cache, banking it as mission yield. */

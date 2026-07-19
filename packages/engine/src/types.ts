@@ -252,6 +252,14 @@ export type StructureType =
   | 'generator'
   | 'pylon';
 
+/**
+ * `functional` structures participate in the economy/power grid and are
+ * strictly one-per-tile. `decorative` structures (paths, beacons, lights)
+ * carry no mechanical function beyond marking/dressing a site, so they may
+ * share a tile with one functional structure. Defaults to `functional`.
+ */
+export type StructureCategory = 'functional' | 'decorative';
+
 export interface StructureDef {
   type: StructureType;
   name: string;
@@ -260,6 +268,8 @@ export interface StructureDef {
   /** Hidden from the build menu (e.g. `habitat`, which is built by upgrading
    * a habitat-frame, not placed directly). Defaults to buildable. */
   buildable?: boolean;
+  /** See `StructureCategory`. Defaults to `functional`. */
+  category?: StructureCategory;
 }
 
 export interface Structure {
@@ -272,6 +282,11 @@ export interface Structure {
   cooldownUntil?: number;
   /** habitat-frame: 0..1 construction progress toward a finished habitat. */
   progress?: number;
+  /** Orientation in iso space (SE, SW, NW, NE), same convention as rover
+   * `facing`. Purely cosmetic today (sprite/render hint) — set at build time
+   * from the rover's facing and changeable via `rotateStructure`. Optional
+   * for saves predating this field; treated as 0 when absent. */
+  facing?: 0 | 1 | 2 | 3;
 }
 
 export interface PhotoMeta {
@@ -351,6 +366,10 @@ export interface GameEvents {
   anomalyDocumented: { anomaly: Anomaly };
   built: { structure: Structure };
   buildFailed: { reason: string };
+  rotated: { id: string; facing: 0 | 1 | 2 | 3 };
+  rotateFailed: { reason: string };
+  demolished: { id: string; type: StructureType; pos: Vec2 };
+  demolishFailed: { reason: string };
   crafted: { recipe: string; resource: ResourceKey; amount: number };
   craftFailed: { reason: string };
   blockPlaced: { pos: Vec2 };

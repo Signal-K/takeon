@@ -12,6 +12,7 @@ export const STRUCTURES: Record<StructureType, StructureDef> = {
     name: 'Nav Beacon',
     cost: { iron: 3, copper: 2 },
     description: 'Marks a site on the map and lights the area at night.',
+    category: 'decorative',
   },
   'drill-rig': {
     type: 'drill-rig',
