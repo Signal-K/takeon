@@ -307,6 +307,66 @@ describe('simulation', () => {
   });
 });
 
+describe('structure placement mechanics', () => {
+  it('lets a decorative structure share a tile with a functional one', () => {
+    const sim = makeSim();
+    sim.rover.cargo = { silica: 6, iron: 7, copper: 2 };
+    const solar = sim.build('solar-array');
+    expect(solar).not.toBeNull();
+    const beacon = sim.build('beacon');
+    expect(beacon).not.toBeNull();
+    expect(beacon!.pos).toEqual(solar!.pos);
+    expect(sim.structures).toHaveLength(2);
+  });
+
+  it('still blocks two functional structures on the same tile', () => {
+    const sim = makeSim();
+    sim.rover.cargo = { silica: 6, iron: 12, titanium: 2 };
+    expect(sim.build('solar-array')).not.toBeNull();
+    expect(sim.build('drill-rig')).toBeNull();
+    expect(sim.structures).toHaveLength(1);
+  });
+
+  it('rotates a structure through all four facings and back', () => {
+    const sim = makeSim();
+    sim.rover.cargo = { silica: 6, iron: 4 };
+    const s = sim.build('solar-array')!;
+    expect(s.facing).toBe(sim.rover.facing);
+    expect(sim.rotateStructure(s.id)).toBe(true);
+    expect(s.facing).toBe(1);
+    sim.rotateStructure(s.id);
+    sim.rotateStructure(s.id);
+    sim.rotateStructure(s.id);
+    expect(s.facing).toBe(0);
+  });
+
+  it('refuses to rotate a structure the rover is not adjacent to', () => {
+    const sim = makeSim();
+    sim.rover.cargo = { silica: 6, iron: 4 };
+    const s = sim.build('solar-array')!;
+    sim.rover.pos = { x: s.pos.x + 5, y: s.pos.y + 5 };
+    expect(sim.rotateStructure(s.id)).toBe(false);
+  });
+
+  it('demolishes a structure the rover is adjacent to', () => {
+    const sim = makeSim();
+    sim.rover.cargo = { silica: 6, iron: 4 };
+    const s = sim.build('solar-array')!;
+    expect(sim.demolish(s.id)).toBe(true);
+    expect(sim.structures).toHaveLength(0);
+  });
+
+  it('refuses to demolish a structure the rover is not adjacent to, and an unknown id', () => {
+    const sim = makeSim();
+    sim.rover.cargo = { silica: 6, iron: 4 };
+    const s = sim.build('solar-array')!;
+    sim.rover.pos = { x: s.pos.x + 5, y: s.pos.y + 5 };
+    expect(sim.demolish(s.id)).toBe(false);
+    expect(sim.demolish('nope')).toBe(false);
+    expect(sim.structures).toHaveLength(1);
+  });
+});
+
 describe('mission credits', () => {
   it('pays for banked resources, cargo, documented anomalies and photos', () => {
     const sim = makeSim('moon');

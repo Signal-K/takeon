@@ -93,6 +93,7 @@ export class RoverGame {
     on('mined', () => a.mine());
     on('built', () => a.build());
     on('blockPlaced', () => a.place());
+    on('demolished', () => a.place());
     on('crafted', () => a.craft());
     on('scan', () => a.scan());
     on('photo', () => a.photo());
@@ -105,6 +106,8 @@ export class RoverGame {
     on('weather', ({ phase }) => phase === 'start' && a.weather());
     on('roverLost', () => a.lost());
     on('buildFailed', () => a.error());
+    on('rotateFailed', () => a.error());
+    on('demolishFailed', () => a.error());
     on('craftFailed', () => a.error());
     on('launchFailed', () => a.error());
     on('upgradeFailed', () => a.error());
@@ -220,6 +223,16 @@ export class RoverGame {
 
   build(type: StructureType): boolean {
     return this.sim.build(type) !== null;
+  }
+
+  /** Rotate a placed structure's cosmetic facing 90°. */
+  rotateStructure(id: string): boolean {
+    return this.sim.rotateStructure(id);
+  }
+
+  /** Demolish a placed structure (no resource refund). */
+  demolish(id: string): boolean {
+    return this.sim.demolish(id);
   }
 
   repair(): boolean {
