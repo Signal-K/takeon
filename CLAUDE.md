@@ -89,3 +89,13 @@ Runtime verification recipe: `.claude/skills/verify/SKILL.md`.
 - The iso painter's order is diagonal (`x+y` asc, then z asc); dynamic entities
   are drawn after chunk blits and occluders re-stamped
   (`renderer.redrawOccluders`) — don't reorder without checking cliffs.
+
+## Documentation & Decisions: Craft, Desk, ZenNotes
+
+As of 2026-07-21, this is the canonical split for where writing lives, monorepo-wide (see `~/Navigation/CLAUDE.md`):
+
+- **Craft** — long-form writing: planning docs, ideation, proposals, spec drafts, research notes. Every Craft doc tied to active Takeon work must be **tagged** and **attached to its Desk ticket(s)/story** (`attach_craft_doc`).
+- **ZenNotes** (`~/Navigation/workspace`, ZenNotes MCP) — canonical home for **decisions and rules**: finalized specs, feature definitions and their limits, design decisions. Search here first for authoritative rules.
+- **Desk** (MCP server `desk`, `projectId: "project-takeon"` if registered) — tickets/stories/epics; system of record for ticket state.
+
+Flow: research/ideation in Craft → tag + attach to the Desk ticket once it needs review or action → once a decision lands, write the durable rule/spec into ZenNotes, not just a Craft doc or ticket comment.
