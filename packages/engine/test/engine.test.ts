@@ -8,6 +8,7 @@ import {
   EventBus,
   findLandingSite,
   generateAnomalies,
+  GAME_EVENT_KEYS,
   generateTerrain,
   getBody,
   Material,
@@ -680,5 +681,33 @@ describe('mobility upgrades', () => {
     });
     expect(resumed.rover.upgrades?.mobility).toBe(1);
     expect(resumed.rover.stats.maxClimb).toBe(climb);
+  });
+});
+
+describe('event key catalogue', () => {
+  it('lists every key exactly once and matches what the sim emits', () => {
+    expect(new Set(GAME_EVENT_KEYS).size).toBe(GAME_EVENT_KEYS.length);
+
+    // Hosts subscribe by iterating this list, so anything the sim emits during
+    // ordinary play must be in it.
+    const sim = makeSim('moon');
+    const seen = new Set<string>();
+    for (const key of GAME_EVENT_KEYS) sim.events.on(key, () => seen.add(key));
+    const emitted: string[] = [];
+    const originalEmit = sim.events.emit.bind(sim.events);
+    sim.events.emit = ((key: any, payload: any) => {
+      emitted.push(key);
+      return originalEmit(key, payload);
+    }) as typeof sim.events.emit;
+
+    runTicks(sim, 5);
+    sim.move(0);
+    runTicks(sim, 10);
+    sim.mine();
+    runTicks(sim, 30);
+
+    expect(emitted.length).toBeGreaterThan(0);
+    for (const key of emitted) expect(GAME_EVENT_KEYS).toContain(key as never);
+    expect(seen.has('tick')).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import {
-  BODIES,
+  listBodies,
   canReach,
   computeStats,
   defaultSpec,
@@ -203,7 +203,7 @@ function CustomizePageInner() {
           <div className="stat" style={{ borderBottom: 'none' }}>
             <span>In range</span>
             <b>
-              {BODIES.filter((b) => canReach(stats, b.deltaV))
+              {listBodies().filter((b) => canReach(stats, b.deltaV))
                 .map((b) => b.name)
                 .join(', ') || 'nowhere — add fuel'}
             </b>

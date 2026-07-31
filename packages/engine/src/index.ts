@@ -30,10 +30,54 @@ export { RECIPES, getRecipe } from './sim/recipes.js';
 export { WEATHER_INFO } from './sim/weather.js';
 
 export { VoxelWorld } from './world/world.js';
-export { generateTerrain, findLandingSite } from './world/terrain.js';
+export { generateTerrain, findLandingSite, skinBiome } from './world/terrain.js';
 export { generateAnomalies } from './world/anomalies.js';
 export { MATERIALS, RESOURCE_NAMES } from './world/materials.js';
-export { BODIES, getBody } from './world/bodies.js';
+export { BODIES } from './world/bodies.js';
+export {
+  getBody,
+  listBodies,
+  registerBody,
+  registerBodies,
+  unregisterBody,
+  clearRegisteredBodies,
+  isRegisteredBody,
+  registeredBodies,
+} from './world/registry.js';
+
+// Authoring: measure a world, and build/validate destinations from a tool.
+export {
+  heightField,
+  slopeField,
+  reachableMask,
+  crossSection,
+  analyzeTerrain,
+  type TerrainAnalysis,
+  type AnalyzeTerrainOptions,
+} from './world/analysis.js';
+export {
+  createBodyDraft,
+  cloneBody,
+  forkBody,
+  validateBody,
+  builtinBodyIds,
+  parseBodyJson,
+  bodyToJson,
+  bodyToTypeScript,
+  getBodyField,
+  setBodyField,
+  BODY_FIELDS,
+  BODY_FIELD_GROUPS,
+  BODY_TYPES,
+  WEATHER_TYPES,
+  MIN_BODY_SIZE,
+  MAX_BODY_SIZE,
+  MAX_BODY_HEIGHT,
+  type BodyField,
+  type BodyFieldKind,
+  type BodyFieldGroup,
+  type BodyValidation,
+} from './world/authoring.js';
 
 export { PARTS, getPart } from './parts/catalog.js';
 export { computeStats, canReach, defaultSpec } from './parts/assembly.js';

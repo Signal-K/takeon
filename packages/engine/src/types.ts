@@ -388,3 +388,46 @@ export interface GameEvents {
 }
 
 export type GameEventKey = keyof GameEvents;
+
+/**
+ * Every event key, at runtime. `GameEvents` is a type, so hosts that want to
+ * listen to everything (a debug console, analytics, quest hooks) need this
+ * list. Keep it in step with `GameEvents` — `test/engine.test.ts` checks that
+ * the emitter and this array agree.
+ */
+export const GAME_EVENT_KEYS = [
+  'tick',
+  'moved',
+  'blocked',
+  'mined',
+  'miningStarted',
+  'cargoFull',
+  'photo',
+  'scan',
+  'anomalyDocumented',
+  'built',
+  'buildFailed',
+  'rotated',
+  'rotateFailed',
+  'demolished',
+  'demolishFailed',
+  'crafted',
+  'craftFailed',
+  'blockPlaced',
+  'cargoLaunched',
+  'launchFailed',
+  'habitatComplete',
+  'upgraded',
+  'upgradeFailed',
+  'repaired',
+  'damaged',
+  'weather',
+  'meteorImpact',
+  'batteryEmpty',
+  'roverLost',
+  'stateChanged',
+] as const satisfies readonly GameEventKey[];
+
+/** Compile-time guard: adding a `GameEvents` key without listing it fails here. */
+type UnlistedEventKey = Exclude<GameEventKey, (typeof GAME_EVENT_KEYS)[number]>;
+export const GAME_EVENT_KEYS_ARE_EXHAUSTIVE: UnlistedEventKey extends never ? true : never = true;

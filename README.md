@@ -20,16 +20,21 @@ like [Landnam](https://github.com/Signal-K/planet-hunters-experiment-1) — via
 |---|---|
 | `packages/engine` | `@takeon/engine` — the whole game as a zero-dependency TypeScript library: voxel worlds, terrain gen, isometric renderer (Canvas 2D, chunk-cached), rover simulation, parts/customiser maths, actions, persistence adapters |
 | `packages/pixi-adapter` | `@takeon/pixi` — mounts a mission inside an existing PixiJS stage (v7/v8) |
-| `web` | Standalone Next.js app: garage, customiser, destination picker, mission HUD. Mobile-friendly (touch d-pad, pinch zoom, tap-to-drive) |
+| `packages/ui` | `@takeon/ui` — React mission shell and HUD. Every component is replaceable by the parent app ([docs/UI.md](docs/UI.md)) |
+| `packages/editor` | `@takeon/editor` — mountable world editor: inspector, scene view, terrain/noise maps, analysis, play mode ([docs/EDITOR.md](docs/EDITOR.md)) |
+| `web` | Standalone Next.js app: garage, customiser, destination picker, mission HUD, `/editor`. Mobile-friendly (touch d-pad, pinch zoom, tap-to-drive) |
+| `desktop` | Optional Electron shell to run the editor as a Mac/Windows/Linux app (not an npm workspace) |
 | `pocketbase` | Go PocketBase **spoke** backend (port 8094) following the Star Sailors hub-and-spoke pattern: JS `pb_migrations`, custom `/api/takeon/*` routes, auth delegated to the shared backend, discovery cross-post hook |
 | `docs/INTEGRATION.md` | How to embed TakeOn in Landnam / any PixiJS game, or behind your own storage |
+| `docs/UI.md` | Adapting/replacing the UI from a game built on TakeOn |
+| `docs/EDITOR.md` | The world editor: terrain, noise, maps, analysis, play mode |
 
 ## Quick start (no backend needed)
 
 ```bash
 npm install
-npm run build          # engine → pixi adapter → web
-npm run dev            # http://localhost:3400
+npm run build          # engine → pixi adapter → ui → editor → web
+npm run dev            # http://localhost:3400  (editor at /editor)
 ```
 
 The web app persists to `localStorage` when no backend is configured — fully
@@ -37,16 +42,18 @@ playable offline.
 
 ## Installing the packages
 
-`@takeon/engine` and `@takeon/pixi` publish to **npmjs.org** (not GitHub
+`@takeon/engine`, `@takeon/pixi`, `@takeon/ui` and `@takeon/editor` publish to **npmjs.org** (not GitHub
 Packages — its npm registry only hosts scopes matching the repo owner, i.e.
 `@signal-k/*`, and requires auth even for public installs):
 
 ```bash
 npm install @takeon/engine        # the whole game as a library
 npm install @takeon/pixi          # + the PixiJS mount adapter
+npm install @takeon/ui            # + the React HUD (overridable component registry)
+npm install @takeon/editor        # + the world editor component
 ```
 
-Releases are tag-driven: bump both package versions (lockstep), add a
+Releases are tag-driven: bump the package versions (lockstep), add a
 `CHANGELOG.md` entry, and push a `v*` tag — CI builds, tests, and publishes
 anything not already on the registry. The repo needs an `NPM_TOKEN` secret
 (npm automation token with publish rights on the `@takeon` scope).
@@ -149,10 +156,62 @@ mounted.game.events.on('anomalyDocumented', ({ anomaly }) => { /* award XP */ })
 See [docs/INTEGRATION.md](docs/INTEGRATION.md) for the event catalogue and how
 to supply a custom `SyncAdapter` so mission data lands in *your* database.
 
+## Editing worlds
+
+TakeOn ships a small game editor — project tree, scene view, inspector,
+terrain instruments and a play button — for designing destinations instead of
+hand-editing `bodies.ts`:
+
+```bash
+npm run dev            # http://localhost:3400/editor
+```
+
+Or as a desktop app on macOS:
+
+```bash
+npm run build && npm run start -w takeon-web
+cd desktop && npm install && npm start
+```
+
+Edit terrain, noise and mineral parameters with live regeneration; read the
+elevation / slope / surface / ore / drivability maps and a vertical
+cross-section; check the analysis numbers (relief, cliff fraction, drivable
+percentage, recoverable resources); then press ▶ Play to drive the world with
+the real HUD. Drafts are published to the engine's body registry, so an edited
+world is immediately launchable from the garage. Export as `BodyDef` JSON or as
+a TypeScript literal for `world/bodies.ts`. Full guide:
+[docs/EDITOR.md](docs/EDITOR.md).
+
+## Building a game on top of TakeOn
+
+The UI is a package (`@takeon/ui`), and every component in it is resolved
+through a registry, so a host game can replace, wrap, restyle or extend any
+part of the interface:
+
+```tsx
+<TakeOnMission
+  body={getBody('mars')!}
+  spec={playerRover}
+  sync={myAdapter}
+  ui={{
+    components: { ActionBar: MyActionBar },   // replace a component
+    labels: { 'action.mine': 'Dig' },         // reskin the words
+    slots: { 'hudBar.end': <MyQuestChip /> }, // inject extra chrome
+    theme: { accent: '#ff8a3d' },             // recolour via CSS variables
+  }}
+/>
+```
+
+`MissionProvider` owns the engine loop, HUD state, toasts and persistence and
+exposes them through hooks, so a game can also drop the stock HUD entirely and
+build its own from `useMission()`. Gameplay rules stay in the engine either
+way. See [docs/UI.md](docs/UI.md).
+
 ## Tests
 
 ```bash
-npm test               # engine unit tests (terrain determinism, sim, economy)
+npm test               # engine unit tests (terrain determinism, sim, economy,
+                       # authoring/registry/analysis) + @takeon/ui registry tests
 ```
 
 ## Performance notes

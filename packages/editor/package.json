@@ -1,0 +1,61 @@
+{
+  "name": "@takeon/editor",
+  "version": "0.2.0",
+  "description": "Mountable authoring tool for TakeOn worlds: inspector, live iso viewport, noise/terrain maps and in-editor play mode.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./styles.css": {
+      "default": "./dist/styles.css"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Signal-K/takeon.git",
+    "directory": "packages/editor"
+  },
+  "homepage": "https://github.com/Signal-K/takeon#readme",
+  "bugs": "https://github.com/Signal-K/takeon/issues",
+  "keywords": [
+    "takeon",
+    "game-editor",
+    "level-editor",
+    "terrain",
+    "noise",
+    "procedural",
+    "react"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ../../scripts/copy-assets.mjs src/styles.css dist/styles.css",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@takeon/engine": "^0.2.0",
+    "@takeon/ui": "^0.2.0"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}

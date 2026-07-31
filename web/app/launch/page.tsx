@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
-import { BODIES, canReach, computeStats, type RoverSpec } from '@takeon/engine';
+import { canReach, computeStats, listBodies, type RoverSpec } from '@takeon/engine';
 import { useSync } from '../../lib/sync-context';
 
 function LaunchPageInner() {
@@ -52,7 +52,7 @@ function LaunchPageInner() {
       </p>
 
       <div className="grid" style={{ marginTop: 16 }}>
-        {BODIES.map((b) => {
+        {listBodies().map((b) => {
           const reachable = stats ? canReach(stats, b.deltaV) : false;
           return (
             <div className="card" key={b.id}>

@@ -117,6 +117,5 @@ export const BODIES: BodyDef[] = [
   },
 ];
 
-export function getBody(id: string): BodyDef | undefined {
-  return BODIES.find((b) => b.id === id);
-}
+// `getBody` lives in ./registry.ts so runtime-registered bodies (editor
+// drafts, backend rows) can shadow these built-ins.

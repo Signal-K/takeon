@@ -1,0 +1,13 @@
+{
+  "name": "takeon-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Electron shell that runs the TakeOn editor as a desktop app (macOS/Windows/Linux). Not part of the npm workspace — install on demand.",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
