@@ -9,7 +9,7 @@ import { Modal } from './primitives.js';
  */
 function DefaultCargoPanel() {
   const { hud, setPanel } = useMission();
-  const title = useLabel('cargo.title', 'Hold & banked yield');
+  const title = useLabel('cargo.title', 'Manifest');
   const close = useLabel('common.close', 'Close');
   const rows = mergeRows(hud?.cargo ?? {}, hud?.banked ?? {});
   const total = rows.reduce((sum, r) => sum + (RESOURCE_VALUE[r.resource] ?? 0) * (r.held + r.banked), 0);

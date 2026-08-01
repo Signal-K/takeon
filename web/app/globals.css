@@ -303,7 +303,30 @@ input[type='color'] {
 
 .editor-fullscreen {
   top: 57px;
-  background: var(--bg);
+  background: #eef1f6;
+}
+
+/* The editor is a light workspace; match the app bar above it so the page
+   doesn't read as two different products stacked together. */
+body:has(.editor-fullscreen) .topnav {
+  background: #ffffff;
+  border-bottom-color: #dbe2ec;
+}
+
+body:has(.editor-fullscreen) .topnav .logo {
+  color: #1b2532;
+}
+
+body:has(.editor-fullscreen) .topnav .chip {
+  background: #f7f9fc;
+  border-color: #dbe2ec;
+  color: #5d6b7d;
+}
+
+body:has(.editor-fullscreen) .topnav button {
+  background: #ffffff;
+  border-color: #c3cedd;
+  color: #1b2532;
 }
 
 .photo-grid {

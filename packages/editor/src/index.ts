@@ -14,7 +14,7 @@
  * the same `BodyDef`s the engine generates worlds from — no separate format.
  */
 
-export { TakeOnEditor, EDITOR_SLOT_KEYS, type TakeOnEditorProps } from './TakeOnEditor.js';
+export { TakeOnEditor, EDITOR_SLOT_KEYS, type TakeOnEditorProps, type EditorTheme } from './TakeOnEditor.js';
 export {
   useEditorState,
   EDITOR_STORAGE_KEY,
@@ -36,6 +36,7 @@ export {
 } from './maps.js';
 
 export { Toolbar, type ToolbarProps } from './panels/Toolbar.js';
+export { EditorCard, type EditorCardProps } from './panels/Card.js';
 export { BodyBrowser, type BodyBrowserProps } from './panels/BodyBrowser.js';
 export { Inspector, type InspectorProps } from './panels/Inspector.js';
 export { Viewport, type ViewportProps } from './panels/Viewport.js';

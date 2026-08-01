@@ -10,7 +10,7 @@ export interface BuildPanelProps {
 
 function DefaultBuildPanel({ allow }: BuildPanelProps) {
   const { hud, actions, setPanel } = useMission();
-  const title = useLabel('build.title', 'Construction — faces the tile ahead of the rover');
+  const title = useLabel('build.title', 'Construction');
   const close = useLabel('common.close', 'Close');
   const cargo = hud?.cargo ?? {};
   const options = Object.values(STRUCTURES)
@@ -20,7 +20,7 @@ function DefaultBuildPanel({ allow }: BuildPanelProps) {
   return (
     <Modal
       title={title}
-      subtitle={`Costs come out of the cargo hold. Cargo: ${describeCargo(cargo)}`}
+      subtitle={`Structures rise on the tile ahead of the rover, paid for out of the hold. Carrying: ${describeCargo(cargo)}`}
       onClose={() => setPanel(null)}
       footer={
         <button type="button" className="tk-btn" onClick={() => setPanel(null)}>

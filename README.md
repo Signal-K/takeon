@@ -173,20 +173,23 @@ npm run build && npm run start -w takeon-web
 cd desktop && npm install && npm start
 ```
 
-Edit terrain, noise and mineral parameters with live regeneration; read the
+One grid of uniform cards — scene, inspector, maps, analysis, rover,
+destinations, events — with light chrome by default (☾ toggles dark). Edit
+terrain, noise and mineral parameters with live regeneration; read the
 elevation / slope / surface / ore / drivability maps and a vertical
 cross-section; check the analysis numbers (relief, cliff fraction, drivable
 percentage, recoverable resources); then press ▶ Play to drive the world with
-the real HUD. Drafts are published to the engine's body registry, so an edited
+the real HUD, in the same card. Drafts are published to the engine's body registry, so an edited
 world is immediately launchable from the garage. Export as `BodyDef` JSON or as
 a TypeScript literal for `world/bodies.ts`. Full guide:
 [docs/EDITOR.md](docs/EDITOR.md).
 
 ## Building a game on top of TakeOn
 
-The UI is a package (`@takeon/ui`), and every component in it is resolved
-through a registry, so a host game can replace, wrap, restyle or extend any
-part of the interface:
+The HUD is a package (`@takeon/ui`) styled as pulp sci-fi instrumentation —
+hex cells, notched panel frames, segmented gauges, no web fonts or images — and
+every component in it is resolved through a registry, so a host game can
+replace, wrap, restyle or extend any part of the interface:
 
 ```tsx
 <TakeOnMission

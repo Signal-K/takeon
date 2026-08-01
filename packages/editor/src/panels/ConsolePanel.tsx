@@ -10,11 +10,12 @@ export interface ConsoleLine {
 
 export interface ConsolePanelProps {
   lines: ConsoleLine[];
+  /** Kept for hosts that render their own header; the card supplies one. */
   onClear(): void;
 }
 
 /** Live engine event log during play mode — the editor's "output" pane. */
-function DefaultConsolePanel({ lines, onClear }: ConsolePanelProps) {
+function DefaultConsolePanel({ lines }: ConsolePanelProps) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -23,12 +24,6 @@ function DefaultConsolePanel({ lines, onClear }: ConsolePanelProps) {
 
   return (
     <div className="tke-console">
-      <div className="tke-console-head">
-        <span>Events</span>
-        <button type="button" onClick={onClear}>
-          Clear
-        </button>
-      </div>
       <div className="tke-console-body" ref={ref}>
         {lines.length === 0 && <span className="tke-hint">Press ▶ Play to drive the world and watch events here.</span>}
         {lines.map((line) => (

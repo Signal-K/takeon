@@ -37,6 +37,16 @@ additive → minor, fixes → patch.
   (`classNames`, `theme`), relabel (`labels`) or extend (`slots`) any part of
   the interface. See `docs/UI.md`.
 
+### @takeon/ui — visual direction
+
+- New default skin: a pulp sci-fi homage (Out There: Ω). Hex cells for the
+  action bank and drive pad, notched panel frames with hairline neon edges,
+  segmented resource gauges, uppercase condensed type, comic-caption toasts and
+  a scene vignette. Pure CSS — no web fonts, no images, nothing fetched.
+- `Meter` gained `tone`, `Modal` gained a title bar with a close control, and
+  `Chip` gained `tone`; all still overridable through the registry, and the
+  whole palette is `--tk-*` variables.
+
 ### @takeon/editor (new)
 
 - `TakeOnEditor`: mountable world editor — project tree of built-ins and
@@ -45,6 +55,10 @@ additive → minor, fixes → patch.
   surface / ore / drivability maps, raw noise preview, vertical cross-section,
   terrain analysis, rover picker, undo/redo, JSON/TS import-export and an
   in-editor play mode wired to the real HUD. See `docs/EDITOR.md`.
+- Layout is one grid of uniform cards (scene 2×2, everything else the same
+  footprint, each scrolling internally) instead of sidebars, so panels stay in
+  line at every width. Chrome is light by default with a dark toggle
+  (remembered); the scene stays dark either way.
 
 ### web
 

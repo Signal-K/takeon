@@ -3,6 +3,7 @@ import { MissionProvider, MissionScreen, TakeOnUIProvider, type TakeOnUIConfig }
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnalysisPanel } from './panels/AnalysisPanel.js';
 import { BodyBrowser } from './panels/BodyBrowser.js';
+import { EditorCard } from './panels/Card.js';
 import { ConsolePanel, type ConsoleLine } from './panels/ConsolePanel.js';
 import { Inspector } from './panels/Inspector.js';
 import { MapsPanel } from './panels/MapsPanel.js';
@@ -11,6 +12,8 @@ import { Toolbar } from './panels/Toolbar.js';
 import { Viewport } from './panels/Viewport.js';
 import { useEditorSim } from './useEditorSim.js';
 import { useEditorState, type EditorPersistedState, type EditorStorage } from './state.js';
+
+export type EditorTheme = 'light' | 'dark';
 
 export interface TakeOnEditorProps {
   /** Extra destinations to edit alongside the built-ins (e.g. backend rows). */
@@ -24,19 +27,26 @@ export interface TakeOnEditorProps {
   onChange?(state: EditorPersistedState): void;
   /** Host-specific inspector fields, using the engine's field schema shape. */
   extraFields?: BodyField[];
+  /** Initial chrome theme (default light); the toolbar toggle overrides it. */
+  theme?: EditorTheme;
   /** Overrides for the editor's own panels and for the in-editor mission HUD. */
   ui?: TakeOnUIConfig;
   className?: string;
 }
 
+const THEME_KEY = 'takeon.editor.theme';
+
 /**
  * A minimal game editor for TakeOn worlds — scene view, inspector, project
- * tree, analysis and play mode, in the browser or in a desktop shell.
+ * tree, terrain instruments and play mode, in the browser or in a desktop
+ * shell.
  *
- * It is one React component with no routing of its own, so it drops into this
- * repo's Next.js app, into Landnam, or into an Electron window unchanged.
- * Every panel is registered through @takeon/ui's slot registry, so a host can
- * replace any of them (see `EDITOR_SLOT_KEYS`).
+ * Layout is one uniform grid of equal-height cards rather than sidebars: every
+ * panel has the same header, the same footprint and the same scroll behaviour,
+ * so nothing shifts as content grows. It is a single React component with no
+ * routing of its own, so it drops into this repo's Next.js app, into Landnam,
+ * or into an Electron window unchanged. Every panel is registered through
+ * @takeon/ui's slot registry (see `EDITOR_SLOT_KEYS`).
  */
 export function TakeOnEditor({
   bodies,
@@ -45,17 +55,28 @@ export function TakeOnEditor({
   publish,
   onChange,
   extraFields,
+  theme: initialTheme = 'light',
   ui,
   className,
 }: TakeOnEditorProps) {
   const editor = useEditorState({ bodies, storage, storageKey, publish, onChange });
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
+  const [theme, setTheme] = useState<EditorTheme>(initialTheme);
   const [maxClimb, setMaxClimb] = useState(2);
   const [time, setTime] = useState(0);
   const [lines, setLines] = useState<ConsoleLine[]>([]);
-  const [tab, setTab] = useState<'maps' | 'analysis' | 'rover'>('maps');
 
   const { sim, world, version, ms, generating, regenerate } = useEditorSim(editor.body, editor.spec, mode === 'edit');
+
+  // Remember the chrome theme across sessions; the scene stays dark either way.
+  useEffect(() => {
+    if (typeof localStorage === 'undefined') return;
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === 'light' || stored === 'dark') setTheme(stored);
+  }, []);
+  useEffect(() => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
 
   const landing = useMemo(
     () => (world ? analyzeTerrain(world, { maxClimb }).landingSite : null),
@@ -98,43 +119,38 @@ export function TakeOnEditor({
   }, []);
 
   const setSpec = (spec: RoverSpec) => editor.setSpec(spec);
+  const problems = editor.validation.errors.length + editor.validation.warnings.length;
 
   return (
     <TakeOnUIProvider {...ui} className={className ? `tke-root ${className}` : 'tke-root'}>
-      <Toolbar
-        body={editor.body}
-        mode={mode}
-        canPlay={editor.validation.ok}
-        canUndo={editor.canUndo}
-        canRedo={editor.canRedo}
-        generating={generating}
-        genMs={ms}
-        maxClimb={maxClimb}
-        onMaxClimb={setMaxClimb}
-        onMode={setMode}
-        onUndo={editor.undo}
-        onRedo={editor.redo}
-        onReseed={() => editor.patch('seed', Math.floor(Math.random() * 100000))}
-        onRegenerate={regenerate}
-        onImport={editor.importJson}
-      />
+      <div className="tke-shell" data-theme={theme}>
+        <Toolbar
+          body={editor.body}
+          mode={mode}
+          theme={theme}
+          canPlay={editor.validation.ok}
+          canUndo={editor.canUndo}
+          canRedo={editor.canRedo}
+          generating={generating}
+          genMs={ms}
+          maxClimb={maxClimb}
+          onMaxClimb={setMaxClimb}
+          onMode={setMode}
+          onTheme={setTheme}
+          onUndo={editor.undo}
+          onRedo={editor.redo}
+          onReseed={() => editor.patch('seed', Math.floor(Math.random() * 100000))}
+          onRegenerate={regenerate}
+          onImport={editor.importJson}
+        />
 
-      <div className="tke-layout">
-        <aside className="tke-side tke-left">
-          <PanelHeader title="Destinations" />
-          <BodyBrowser
-            entries={editor.entries}
-            selectedId={editor.selectedId}
-            onSelect={editor.select}
-            onCreate={editor.create}
-            onDuplicate={editor.duplicate}
-            onRemove={editor.remove}
-            canRemove={editor.isDraft}
-          />
-        </aside>
-
-        <main className="tke-centre">
-          <div className="tke-stage">
+        <div className="tke-grid">
+          <EditorCard
+            title={mode === 'play' ? `Play — ${editor.body.name}` : `Scene — ${editor.body.name}`}
+            hint={mode === 'play' ? 'live mission' : 'drag pan · wheel zoom · R rotate · F frame'}
+            className="tke-card-scene"
+            flush
+          >
             {mode === 'play' ? (
               <MissionProvider
                 key={`${editor.body.id}:${editor.body.seed}`}
@@ -152,46 +168,58 @@ export function TakeOnEditor({
             ) : (
               <Viewport sim={sim} version={version} generating={generating} time={time} onTimeChange={setTime} />
             )}
-          </div>
-          <ConsolePanel lines={lines} onClear={() => setLines([])} />
-        </main>
+          </EditorCard>
 
-        <aside className="tke-side tke-right">
-          <PanelHeader title={`Inspector — ${editor.body.name}`} />
-          <Inspector
-            body={editor.body}
-            validation={editor.validation}
-            onPatch={editor.patch}
-            extraFields={extraFields}
-          />
-          <div className="tke-tabs tke-tabs-sticky">
-            <button type="button" className={tab === 'maps' ? 'tke-tab tke-selected' : 'tke-tab'} onClick={() => setTab('maps')}>
-              Maps
-            </button>
-            <button
-              type="button"
-              className={tab === 'analysis' ? 'tke-tab tke-selected' : 'tke-tab'}
-              onClick={() => setTab('analysis')}
-            >
-              Analysis
-            </button>
-            <button type="button" className={tab === 'rover' ? 'tke-tab tke-selected' : 'tke-tab'} onClick={() => setTab('rover')}>
-              Rover
-            </button>
-          </div>
-          {tab === 'maps' && (
+          <EditorCard title="Inspector" hint={problems > 0 ? `${problems} note(s)` : 'valid'}>
+            <Inspector
+              body={editor.body}
+              validation={editor.validation}
+              onPatch={editor.patch}
+              extraFields={extraFields}
+            />
+          </EditorCard>
+
+          <EditorCard title="Maps" hint="click to inspect a column">
             <MapsPanel body={editor.body} world={world} version={version} maxClimb={maxClimb} from={landing} />
-          )}
-          {tab === 'analysis' && <AnalysisPanel world={world} maxClimb={maxClimb} version={version} />}
-          {tab === 'rover' && <RoverPanel spec={editor.spec} body={editor.body} onChange={setSpec} />}
-        </aside>
+          </EditorCard>
+
+          <EditorCard title="Analysis" hint={`climb ≤ ${maxClimb}`}>
+            <AnalysisPanel world={world} maxClimb={maxClimb} version={version} />
+          </EditorCard>
+
+          <EditorCard title="Rover" hint="used by play mode">
+            <RoverPanel spec={editor.spec} body={editor.body} onChange={setSpec} />
+          </EditorCard>
+
+          <EditorCard title="Destinations" hint="drafts shadow the shipped catalog" className="tke-card-wide">
+            <BodyBrowser
+              entries={editor.entries}
+              selectedId={editor.selectedId}
+              onSelect={editor.select}
+              onCreate={editor.create}
+              onDuplicate={editor.duplicate}
+              onRemove={editor.remove}
+              canRemove={editor.isDraft}
+            />
+          </EditorCard>
+
+          <EditorCard
+            title="Events"
+            hint="engine events during play"
+            className="tke-card-wide"
+            actions={
+              <button type="button" onClick={() => setLines([])}>
+                Clear
+              </button>
+            }
+            flush
+          >
+            <ConsolePanel lines={lines} onClear={() => setLines([])} />
+          </EditorCard>
+        </div>
       </div>
     </TakeOnUIProvider>
   );
-}
-
-function PanelHeader({ title }: { title: string }) {
-  return <h2 className="tke-panel-head">{title}</h2>;
 }
 
 function summarise(payload: unknown): string {
@@ -213,6 +241,7 @@ function summarise(payload: unknown): string {
 /** Panel slot keys a host can override through `TakeOnUIProvider`. */
 export const EDITOR_SLOT_KEYS = [
   'EditorToolbar',
+  'EditorCard',
   'EditorBodyBrowser',
   'EditorInspector',
   'EditorViewport',

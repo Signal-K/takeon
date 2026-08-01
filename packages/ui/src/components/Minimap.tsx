@@ -25,13 +25,13 @@ function DefaultMinimap({ size = 132, intervalMs = 1200, className, style }: Min
   }, [game, minimapVisible, intervalMs]);
 
   return (
-    <canvas
-      ref={ref}
-      width={size}
-      height={size}
+    <div
       className={cx('tk-minimap', useSlotClass('Minimap'), className)}
       style={{ display: minimapVisible ? 'block' : 'none', ...style }}
-    />
+    >
+      <canvas ref={ref} width={size} height={size} className="tk-minimap-canvas" />
+      <span className="tk-minimap-label">Survey</span>
+    </div>
   );
 }
 

@@ -41,15 +41,17 @@ before `next build` (env is inlined at build time).
 ## Flows worth driving (Playwright)
 
 1. `/customize` → fill `input[aria-label="Rover name"]`, click part options
-   (`.part-option:has-text("Field Lab")` etc.), then `button.primary` (label is
-   "Buy rover & pick target"); it routes to `/launch?rover=<id>`.
+   (`.part-option:has-text("Field Lab")` etc. — module options *toggle*, so
+   clicking "Sample Scoop"/"NavCam" removes the defaults), then `button.primary`
+   (label is "Buy rover & pick target"); it routes to `/launch?rover=<id>`.
 2. `/launch` → `.card:has-text("The Moon") button.primary` → lands on `/mission`.
    Launch needs the `?rover=` param; visiting it bare shows "Pick a rover first".
-3. Mission: wait `.tk-hudbar .tk-meter` (battery/durability/cargo); canvas is
+3. Mission: wait `.tk-hudbar .tk-meter` (power/hull/hold gauges); canvas is
    `.tk-canvas`. Click the canvas for the tile menu (`.tk-tilemenu`, with
    "Drive here" / "Mine …"), or use `.tk-dpad button[aria-label^="Drive"]`.
-   Action buttons are `.tk-action:has-text("Mine")` etc. — Photo/Scan only
-   render when the rover carries those modules.
+   Action buttons are the hex cells `.tk-action:has-text("Mine")` etc. —
+   Photo/Scan only render when the rover carries those modules. Modals close
+   via `.tk-modal-close` or the footer `button:has-text("Close")`.
 4. Mining yield appears as `.tk-toast-good` with `+N <resource>`; cargo meter is
    the 3rd `.tk-hudbar .tk-meter`; `.tk-action:has-text("Hold")` opens the cargo
    table (`.tk-table tbody tr`).
@@ -61,6 +63,10 @@ before `next build` (env is inlined at build time).
 
 ### Editor (`/editor`)
 
+Layout is one grid of uniform `.tke-card`s (Scene 2×2, Inspector, Maps,
+Analysis, Rover, then Destinations and Events spanning 2) — no sidebars, no
+tab-switching between Maps/Analysis/Rover. Chrome is light by default.
+
 1. Wait for `.tke-toolbar`. `.tke-list-item` lists 6 built-in destinations;
    `.tke-field` are inspector rows; `.tke-status` shows `96² · N ms`.
 2. Drag a terrain slider (`.tke-group:has-text("Terrain") input[type="range"]`)
@@ -69,12 +75,16 @@ before `next build` (env is inlined at build time).
 3. Maps: `.tke-tab:has-text("Slope"|"Surface"|"Ore density"|"Drivable"|"Noise")`
    then sample `.tke-map` with `getImageData` (each view should paint several
    distinct colours). `.tke-slice` is the cross-section.
-4. Analysis: `.tke-tab:has-text("Analysis")` → `.tke-stat` tiles (Columns,
-   Height, Relief, Drivable, Cliffs, Landing).
+4. Analysis card: `.tke-stat` tiles (Columns, Height, Relief, Drivable, Cliffs,
+   Landing) — visible without switching views.
 5. Play mode: `.tke-primary:has-text("Play")` mounts the real HUD inside the
-   stage (`.tk-hudbar .tk-meter` = 3). Drive with the d-pad; engine events land
-   in `.tke-console-line`. `.tke-primary:has-text("Stop")` returns to edit mode.
+   scene card (`.tk-hudbar .tk-meter` = 3). Drive with the d-pad; engine events
+   land in `.tke-console-line`. `.tke-primary:has-text("Stop")` returns.
 6. Scene view is `.tke-scene` (drag to pan, wheel to zoom, R rotates).
+7. Theme toggle: `.tke-toolbar button[title*="dark chrome"]` / `[title*="light
+   chrome"]`, persisted in `localStorage` under `takeon.editor.theme`.
+8. Layout check worth keeping: every `.tke-card-head` should measure the same
+   height, and standard cards the same width/height, at any viewport.
 
 Bennu (irregular asteroid) needs a fuel tank module; good probe for void-edge
 terrain. Mobile: 390x760 viewport, d-pad `.tk-dpad button[aria-label^="Drive"]`.

@@ -78,7 +78,7 @@ function DefaultActionBar({ items, extraItems, omit, className, style }: ActionB
             onClick={() => a.onSelect(ctx)}
           >
             <span className="tk-action-icon">{a.icon}</span>
-            {labels[`action.${a.id}`] ?? a.label}
+            <span className="tk-action-label">{labels[`action.${a.id}`] ?? a.label}</span>
           </button>
         ))}
       <Slot name="actionBar.end" />

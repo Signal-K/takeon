@@ -43,16 +43,24 @@ Or the one-liner, which wires all three together:
 
 ### 1. `theme` — CSS variables
 
-Every colour, radius and font in the stock skin comes from a `--tk-*` custom
-property: `bg`, `panel`, `panel-soft`, `border`, `text`, `text-dim`, `accent`,
-`accent-2`, `good`, `warn`, `bad`, `radius`, `font`. Setting them re-skins the
-whole HUD without overriding a single rule (they can also be set in plain CSS
-on any ancestor).
+Every colour, edge and font in the stock skin comes from a `--tk-*` custom
+property: `bg`, `panel`, `panel-solid`, `panel-raised`, `border`, `hairline`,
+`text`, `text-dim`, `accent`, `accent-2`, `good`, `warn`, `bad`, `radius`,
+`notch` (corner cut on panel frames), `font` and `glow`. Setting them re-skins
+the whole HUD without overriding a single rule (they can also be set in plain
+CSS on any ancestor).
+
+The stock look is a pulp sci-fi homage — deep-space panels with hairline neon
+edges, hex cells for anything you press, segmented gauges, uppercase condensed
+type, and a vignette over the scene. It ships as pure CSS: no web fonts, no
+images, nothing fetched at runtime. Swap `accent`/`accent-2` and the whole HUD
+changes allegiance; set `notch: 0` for square frames.
 
 ### 2. `labels` — strings and icons
 
 Every user-visible string is looked up by key with the built-in text as
-fallback: `action.mine`, `action.build`, `hud.battery`, `hud.end`, `tile.drive`,
+fallback: `action.mine`, `action.build`, `hud.battery` ("Power"),
+`hud.durability` ("Hull"), `hud.cargo` ("Hold"), `hud.end`, `tile.drive`,
 `end.confirm`, `common.close`, and so on. Useful for tone ("Dig", "Salvage"),
 localisation, or matching your game's vocabulary.
 

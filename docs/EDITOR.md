@@ -10,13 +10,28 @@ own, so it runs in this repo's Next.js app, inside a game built on TakeOn
 (Landnam), or in a desktop window.
 
 ```
-┌───────────── toolbar: ▶ Play · undo/redo · seed · climb limit · JSON/TS ─────────────┐
-│ Destinations │            Scene view (real iso renderer)            │  Inspector     │
-│  built-ins   │  drag to pan · wheel zoom · R rotate · ☀ time scrub  │  (schema-      │
-│  + drafts    ├─────────────────────────────────────────────────────┤   generated)   │
-│              │            Events console (play mode)                │  Maps/Analysis │
-└──────────────┴─────────────────────────────────────────────────────┴────────────────┘
+┌──── toolbar: ▶ Play · undo/redo · seed · climb limit · JSON/TS · ☾ theme ────┐
+│ ┌───────────────────────┐ ┌────────────┐ ┌────────────┐                     │
+│ │                       │ │ Inspector  │ │ Maps       │                     │
+│ │   Scene (2×2 cells)   │ ├────────────┤ ├────────────┤                     │
+│ │                       │ │ Analysis   │ │ Rover      │                     │
+│ └───────────────────────┘ └────────────┘ └────────────┘                     │
+│ ┌───────────────────────┐ ┌───────────────────────────┐                     │
+│ │ Destinations          │ │ Events                    │                     │
+│ └───────────────────────┘ └───────────────────────────┘                     │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Every panel is the same card: same 38 px header, same footprint, its own
+internal scroll. Nothing is a sidebar, so no column grows a different height
+than its neighbour and nothing shifts as content changes. Cards reflow to
+three, two or one column as the window narrows; the scene keeps its 2×2 cell
+until there is no room for it.
+
+The chrome is **light by default** — authoring happens in daylight, and a
+bright shell makes the dark scene read as a viewport into the game rather than
+more UI. The ☾/☀ button in the toolbar switches to dark chrome and the choice
+is remembered; pass `theme="dark"` to start there.
 
 ## Running it
 
@@ -107,23 +122,24 @@ to the drivetrain you're designing for (rocker-bogie 2, tracks 3).
 
 ### Analysis
 
-The numbers behind the map: relief range, mean height, cliff fraction, drivable
-percentage, height histogram, surface mix and total recoverable resources.
+Its own card, always visible beside the maps — the numbers behind them: relief
+range, mean height, cliff fraction, drivable percentage, height histogram,
+surface mix and total recoverable resources.
 "92% drivable, 4% cliffs, 51k stone" is a design spec; "looks about right" is
 not.
 
 ### Rover
 
-The rover play mode uses — part dropdowns with the derived climb, speed, move
-cost and cargo numbers, plus a warning when the build can't actually reach this
-destination's delta-v. Mechanics work is mostly "does this drivetrain cope with
+Also its own card: the rover play mode uses, with part dropdowns and the
+derived climb, speed, move cost and cargo numbers, plus a warning when the
+build can't actually reach this destination's delta-v. Mechanics work is mostly "does this drivetrain cope with
 this terrain", so it sits next to the terrain controls.
 
 ### Play mode
 
-▶ Play boots a real mission on the edited world using the full HUD from
-`@takeon/ui` — the same components the shipped game uses. Every engine event
-lands in the events console (`tick` and `stateChanged` filtered out), so you can
+▶ Play boots a real mission *inside the scene card* — same cell, so the layout
+never jumps — using the full HUD from `@takeon/ui`, the same components the
+shipped game uses. Every engine event lands in the events console (`tick` and `stateChanged` filtered out), so you can
 watch `mined`, `damaged`, `blocked` and `weather` fire as you drive. ■ Stop
 returns to the scene view.
 
@@ -154,9 +170,11 @@ replace any of them:
 />
 ```
 
-Slot keys: `EditorToolbar`, `EditorBodyBrowser`, `EditorInspector`,
-`EditorViewport`, `EditorMapsPanel`, `EditorAnalysisPanel`, `EditorRoverPanel`,
-`EditorConsolePanel` (exported as `EDITOR_SLOT_KEYS`). The mission HUD inside
+Slot keys: `EditorToolbar`, `EditorCard`, `EditorBodyBrowser`,
+`EditorInspector`, `EditorViewport`, `EditorMapsPanel`, `EditorAnalysisPanel`,
+`EditorRoverPanel`, `EditorConsolePanel` (exported as `EDITOR_SLOT_KEYS`).
+Overriding `EditorCard` alone re-skins every panel frame at once; the tool's
+own colours come from `--tke-*` variables on `.tke-shell`. The mission HUD inside
 play mode uses the same mechanism — see [UI.md](UI.md).
 
 The pieces are exported individually too (`useEditorState`, `useEditorSim`,

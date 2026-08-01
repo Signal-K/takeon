@@ -11,7 +11,7 @@ export interface CraftPanelProps {
 
 function DefaultCraftPanel({ allow }: CraftPanelProps) {
   const { hud, actions, setPanel } = useMission();
-  const title = useLabel('craft.title', 'Refining — from cargo, on the rover');
+  const title = useLabel('craft.title', 'Refining');
   const close = useLabel('common.close', 'Close');
   const cargo = hud?.cargo ?? {};
   const recipes = allow ? RECIPES.filter((r) => allow.includes(r.id)) : RECIPES;
@@ -19,7 +19,7 @@ function DefaultCraftPanel({ allow }: CraftPanelProps) {
   return (
     <Modal
       title={title}
-      subtitle={`Cargo: ${describeCargo(cargo)}`}
+      subtitle={`Processed on the rover, from the hold. Carrying: ${describeCargo(cargo)}`}
       onClose={() => setPanel(null)}
       footer={
         <button type="button" className="tk-btn" onClick={() => setPanel(null)}>

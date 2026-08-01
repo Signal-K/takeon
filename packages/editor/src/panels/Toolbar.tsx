@@ -5,6 +5,7 @@ import { useState } from 'react';
 export interface ToolbarProps {
   body: BodyDef;
   mode: 'edit' | 'play';
+  theme: 'light' | 'dark';
   canPlay: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -13,6 +14,7 @@ export interface ToolbarProps {
   maxClimb: number;
   onMaxClimb(value: number): void;
   onMode(mode: 'edit' | 'play'): void;
+  onTheme(theme: 'light' | 'dark'): void;
   onUndo(): void;
   onRedo(): void;
   onReseed(): void;
@@ -24,6 +26,7 @@ export interface ToolbarProps {
 function DefaultToolbar({
   body,
   mode,
+  theme,
   canPlay,
   canUndo,
   canRedo,
@@ -32,6 +35,7 @@ function DefaultToolbar({
   maxClimb,
   onMaxClimb,
   onMode,
+  onTheme,
   onUndo,
   onRedo,
   onReseed,
@@ -102,6 +106,13 @@ function DefaultToolbar({
       </button>
       <button type="button" onClick={() => setImporting(true)}>
         ⭱ Import
+      </button>
+      <button
+        type="button"
+        onClick={() => onTheme(theme === 'light' ? 'dark' : 'light')}
+        title={theme === 'light' ? 'Switch to dark chrome' : 'Switch to light chrome'}
+      >
+        {theme === 'light' ? '☾' : '☀'}
       </button>
 
       {importing && (

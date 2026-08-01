@@ -1,10 +1,15 @@
 /*
- * @takeon/ui default skin.
+ * @takeon/ui — pulp sci-fi skin.
+ *
+ * Visual direction is a homage to Out There: Ω: comic-book space pulp read as
+ * instrumentation. Hex cells for anything you press, notched panel frames with
+ * hairline neon edges, segmented gauges instead of smooth bars, and uppercase
+ * condensed type. Nothing is loaded from the network — no web fonts, no
+ * images: the whole look is variables, borders and clip-paths.
  *
  * Everything is driven by `--tk-*` custom properties, so a host game can
- * restyle the whole HUD by setting them (via `<TakeOnUIProvider theme>` or
- * plain CSS on any ancestor) without overriding a single rule. Class names are
- * `tk-` prefixed so they never collide with the host's own stylesheet.
+ * restyle the HUD by setting them (via `<TakeOnUIProvider theme>` or plain CSS
+ * on any ancestor) without overriding a rule. Class names are `tk-` prefixed.
  */
 
 .tk-scope {
@@ -12,28 +17,58 @@
 }
 
 :where(.tk-mission, .tk-scope) {
-  --tk-bg: #120e2e;
-  --tk-panel: #1e1849;
-  --tk-panel-soft: rgba(30, 24, 73, 0.9);
-  --tk-border: #37307a;
-  --tk-text: #e8e6f5;
-  --tk-text-dim: #9b96c9;
-  --tk-accent: #45e0c4;
-  --tk-accent-2: #ffc857;
-  --tk-good: #7bd88f;
-  --tk-warn: #ffb347;
-  --tk-bad: #ff6b6b;
-  --tk-radius: 12px;
-  --tk-font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --tk-bg: #060a14;
+  --tk-panel: rgba(10, 18, 33, 0.88);
+  --tk-panel-solid: #0b1424;
+  --tk-panel-raised: #12203a;
+  --tk-border: #29506b;
+  --tk-hairline: rgba(126, 224, 226, 0.35);
+  --tk-text: #e6f3f7;
+  --tk-text-dim: #7ba2b8;
+  --tk-accent: #5fe3d8;
+  --tk-accent-2: #ffb03a;
+  --tk-good: #6fdc8c;
+  --tk-warn: #ffb03a;
+  --tk-bad: #ff5f5f;
+  --tk-radius: 2px;
+  --tk-notch: 10px;
+  --tk-font: 'Barlow Condensed', 'Roboto Condensed', 'Avenir Next Condensed', 'Helvetica Neue',
+    system-ui, -apple-system, sans-serif;
+  --tk-glow: 0 0 14px rgba(95, 227, 216, 0.18);
+}
+
+/* Notched frame: the signature panel silhouette (corner cut top-left and
+   bottom-right), drawn with a clip-path so it needs no images. */
+.tk-notch {
+  clip-path: polygon(
+    var(--tk-notch) 0,
+    100% 0,
+    100% calc(100% - var(--tk-notch)),
+    calc(100% - var(--tk-notch)) 100%,
+    0 100%,
+    0 var(--tk-notch)
+  );
 }
 
 .tk-mission {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: #000;
+  background: var(--tk-bg);
   color: var(--tk-text);
   font-family: var(--tk-font);
+  letter-spacing: 0.01em;
+}
+
+/* Vignette: pushes the eye to the middle of the scene, the way a comic panel
+   darkens toward its border. Never intercepts input. */
+.tk-mission::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(3, 6, 14, 0.55) 100%);
 }
 
 .tk-canvas {
@@ -51,36 +86,53 @@
   text-align: center;
   color: var(--tk-bad);
   font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
 }
+
+/* ── Buttons ────────────────────────────────────────────────────────── */
 
 .tk-btn {
   font: inherit;
-  color: inherit;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--tk-text);
   cursor: pointer;
   border: 1px solid var(--tk-border);
   background: var(--tk-panel);
   border-radius: var(--tk-radius);
-  padding: 10px 16px;
-  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+  padding: 8px 14px;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
   touch-action: manipulation;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
 }
 
-.tk-btn:hover {
+.tk-btn:hover:not(:disabled) {
   border-color: var(--tk-accent);
+  color: var(--tk-accent);
+  box-shadow: var(--tk-glow);
 }
 
-.tk-btn:active {
-  transform: scale(0.97);
+.tk-btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .tk-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
+.tk-btn-icon {
+  padding: 8px 11px;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
 .tk-btn-primary {
-  background: linear-gradient(135deg, #1f9e88, #14708a);
+  background: linear-gradient(135deg, rgba(95, 227, 216, 0.22), rgba(95, 227, 216, 0.06));
   border-color: var(--tk-accent);
+  color: var(--tk-accent);
   font-weight: 600;
 }
 
@@ -88,7 +140,7 @@
   flex: 1;
 }
 
-/* ── Top bar ────────────────────────────────────────────────────────── */
+/* ── Status rack ────────────────────────────────────────────────────── */
 
 .tk-hudbar {
   position: absolute;
@@ -96,9 +148,9 @@
   left: 0;
   right: 0;
   display: flex;
-  gap: 8px;
-  padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
-  align-items: center;
+  gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top)) 12px 8px;
+  align-items: flex-start;
   pointer-events: none;
   z-index: 5;
 }
@@ -107,153 +159,291 @@
   pointer-events: auto;
 }
 
-.tk-hudbar .tk-btn {
-  padding: 7px 12px;
-  background: var(--tk-panel-soft);
+.tk-rack {
+  display: flex;
+  gap: 14px;
+  padding: 8px 14px;
+  background: var(--tk-panel);
+  border: 1px solid var(--tk-border);
+  border-top-color: var(--tk-hairline);
+  box-shadow: inset 0 1px 0 rgba(126, 224, 226, 0.12);
+  clip-path: polygon(
+    var(--tk-notch) 0,
+    100% 0,
+    100% calc(100% - var(--tk-notch)),
+    calc(100% - var(--tk-notch)) 100%,
+    0 100%,
+    0 var(--tk-notch)
+  );
 }
 
 .tk-meter {
-  flex: 1;
-  max-width: 170px;
-  background: rgba(20, 15, 50, 0.78);
-  border: 1px solid var(--tk-border);
-  border-radius: 8px;
-  padding: 5px 8px;
-  font-size: 11px;
-  color: var(--tk-text-dim);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 132px;
+  --tk-meter-colour: var(--tk-accent);
+}
+
+.tk-meter[data-tone='good'] { --tk-meter-colour: var(--tk-good); }
+.tk-meter[data-tone='warn'] { --tk-meter-colour: var(--tk-accent-2); }
+.tk-meter[data-tone='bad'] { --tk-meter-colour: var(--tk-bad); }
+.tk-meter[data-tone='neutral'] { --tk-meter-colour: var(--tk-text-dim); }
+
+.tk-meter-icon {
+  font-size: 15px;
+  line-height: 1;
+  color: var(--tk-meter-colour);
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+.tk-meter-body {
   display: block;
+  flex: 1;
 }
 
 .tk-meter-head {
-  display: block;
-  white-space: nowrap;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--tk-text-dim);
 }
 
+.tk-meter-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: var(--tk-text);
+}
+
+.tk-meter-value em {
+  font-style: normal;
+  color: var(--tk-text-dim);
+}
+
+/* Segmented bar: a solid fill with notches punched out of it, so the gauge
+   reads as discrete cells rather than a smooth percentage. */
 .tk-bar {
+  position: relative;
   display: block;
-  height: 6px;
-  border-radius: 3px;
-  background: #2b2461;
-  margin-top: 3px;
+  height: 7px;
+  margin-top: 4px;
+  background: rgba(126, 224, 226, 0.1);
+  border: 1px solid rgba(126, 224, 226, 0.22);
   overflow: hidden;
 }
 
 .tk-bar-fill {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  background: var(--tk-meter-colour);
+  box-shadow: 0 0 10px var(--tk-meter-colour);
   transition: width 0.3s;
+}
+
+.tk-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 6px,
+    var(--tk-panel-solid) 6px 8px
+  );
+  pointer-events: none;
+}
+
+.tk-readout {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .tk-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   border: 1px solid var(--tk-border);
-  background: var(--tk-panel-soft);
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 13px;
+  background: var(--tk-panel);
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
   color: var(--tk-text-dim);
   white-space: nowrap;
-  font-family: inherit;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
 }
+
+.tk-chip b {
+  font-size: 13px;
+  color: var(--tk-accent);
+  filter: drop-shadow(0 0 6px rgba(95, 227, 216, 0.5));
+}
+
+.tk-chip[data-tone='warn'] b { color: var(--tk-accent-2); filter: drop-shadow(0 0 6px rgba(255, 176, 58, 0.5)); }
+.tk-chip[data-tone='bad'] b { color: var(--tk-bad); }
 
 button.tk-chip {
   cursor: pointer;
 }
 
-/* ── Controls ───────────────────────────────────────────────────────── */
+button.tk-chip:hover {
+  border-color: var(--tk-accent);
+  color: var(--tk-text);
+}
+
+/* ── Drive pad ──────────────────────────────────────────────────────── */
 
 .tk-dpad {
   position: absolute;
-  left: 14px;
-  bottom: calc(14px + env(safe-area-inset-bottom));
+  left: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: repeat(3, 54px);
-  grid-template-rows: repeat(3, 54px);
-  gap: 4px;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows: repeat(3, 46px);
+  gap: 3px;
   z-index: 5;
 }
 
 .tk-dpad button {
   font: inherit;
-  color: var(--tk-text);
-  border: 1px solid var(--tk-border);
-  border-radius: 12px;
-  background: var(--tk-panel-soft);
-  font-size: 20px;
+  font-size: 17px;
+  color: var(--tk-text-dim);
+  border: none;
   padding: 0;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
+  background: var(--tk-panel);
+  box-shadow: inset 0 0 0 1px var(--tk-border);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  transition: color 0.12s, background 0.12s;
 }
 
 .tk-dpad button:hover {
-  border-color: var(--tk-accent);
+  color: var(--tk-accent);
+  background: var(--tk-panel-raised);
+}
+
+.tk-dpad button:active {
+  color: var(--tk-bg);
+  background: var(--tk-accent);
 }
 
 .tk-dpad .tk-blank {
   visibility: hidden;
 }
 
+/* ── Action honeycomb ───────────────────────────────────────────────── */
+
+/* Two interlocking columns of hex cells, anchored bottom-right: the ship's
+   module bank, not a stack of round buttons. */
 .tk-actions {
   position: absolute;
-  right: 10px;
-  bottom: calc(14px + env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  right: 14px;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(2, 64px);
+  column-gap: 4px;
+  align-content: end;
   z-index: 5;
-  max-height: calc(100% - 120px);
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.tk-actions::-webkit-scrollbar {
-  display: none;
 }
 
 .tk-action {
-  width: 62px;
-  height: 62px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--tk-panel-soft);
-  border: 1px solid var(--tk-border);
+  width: 64px;
+  height: 72px;
+  padding-bottom: 2px;
+  border: none;
+  padding: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   font-family: inherit;
-  font-size: 10px;
-  gap: 2px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
   color: var(--tk-text-dim);
   cursor: pointer;
   user-select: none;
   touch-action: manipulation;
+  background: var(--tk-panel);
+  box-shadow: inset 0 0 0 1px var(--tk-border);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  transition: color 0.12s, background 0.12s;
+}
+
+/* Right-hand column drops half a cell; later rows climb into the notch above
+   them, so the block reads as a honeycomb rather than a grid. */
+/* Pointy-top hexes tile at 0.75× their height; the offset column drops by
+   half that pitch. Anything else and the cells overlap or drift apart. */
+.tk-action:nth-child(even) {
+  transform: translateY(27px);
+}
+
+.tk-action:nth-child(n + 3) {
+  margin-top: -18px;
 }
 
 .tk-action:hover {
-  border-color: var(--tk-accent);
-  color: var(--tk-text);
+  color: var(--tk-accent);
+  background: var(--tk-panel-raised);
+  box-shadow: inset 0 0 0 1px var(--tk-accent);
+}
+
+.tk-action:active {
+  color: var(--tk-bg);
+  background: var(--tk-accent);
 }
 
 .tk-action-icon {
-  font-size: 20px;
+  font-size: 19px;
   line-height: 1;
 }
 
+.tk-action-label {
+  font-size: 9px;
+}
+
+/* ── Survey map ─────────────────────────────────────────────────────── */
+
 .tk-minimap {
   position: absolute;
-  top: calc(52px + env(safe-area-inset-top));
-  right: 10px;
+  top: calc(74px + env(safe-area-inset-top));
+  right: 14px;
+  padding: 6px;
+  background: var(--tk-panel);
   border: 1px solid var(--tk-border);
-  border-radius: 8px;
-  background: rgba(20, 15, 50, 0.86);
-  padding: 4px;
   z-index: 5;
+  clip-path: polygon(
+    var(--tk-notch) 0,
+    100% 0,
+    100% calc(100% - var(--tk-notch)),
+    calc(100% - var(--tk-notch)) 100%,
+    0 100%,
+    0 var(--tk-notch)
+  );
+}
+
+.tk-minimap-canvas {
+  display: block;
+}
+
+.tk-minimap-label {
+  display: block;
+  margin-top: 4px;
+  text-align: center;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: var(--tk-text-dim);
 }
 
 /* ── Tile menu ──────────────────────────────────────────────────────── */
@@ -261,71 +451,83 @@ button.tk-chip {
 .tk-tilemenu {
   position: absolute;
   z-index: 8;
-  min-width: 170px;
+  min-width: 186px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  background: rgba(22, 17, 56, 0.96);
+  gap: 2px;
+  background: var(--tk-panel-solid);
   border: 1px solid var(--tk-border);
-  border-radius: 10px;
-  padding: 6px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  border-left: 2px solid var(--tk-accent);
+  padding: 8px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
 }
 
 .tk-tilemenu button {
   font: inherit;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
   color: var(--tk-text);
   background: none;
   border: 1px solid transparent;
-  padding: 9px 14px;
-  border-radius: 8px;
+  padding: 8px 10px;
   text-align: left;
-  font-size: 13px;
   cursor: pointer;
 }
 
 .tk-tilemenu button:hover {
-  border-color: var(--tk-accent);
+  border-color: var(--tk-hairline);
+  color: var(--tk-accent);
+  background: rgba(95, 227, 216, 0.07);
 }
 
 .tk-tilemenu-head {
-  font-size: 11px;
-  color: var(--tk-text-dim);
-  padding: 2px 6px;
-  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--tk-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  padding: 2px 10px 6px;
+  border-bottom: 1px solid var(--tk-border);
+  margin-bottom: 4px;
 }
 
-/* ── Toasts ─────────────────────────────────────────────────────────── */
+/* ── Toasts (comic captions) ────────────────────────────────────────── */
 
 .tk-toasts {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(96px + env(safe-area-inset-bottom));
+  bottom: calc(104px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column-reverse;
   gap: 6px;
   z-index: 6;
   pointer-events: none;
-  width: min(92vw, 420px);
+  width: min(92vw, 440px);
+  align-items: center;
 }
 
 .tk-toast {
-  background: rgba(22, 17, 56, 0.93);
+  width: fit-content;
+  max-width: 100%;
+  background: var(--tk-panel-solid);
   border: 1px solid var(--tk-border);
   border-left: 3px solid var(--tk-accent);
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  animation: tk-toast-in 0.2s ease-out;
+  padding: 9px 14px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--tk-text);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  animation: tk-toast-in 0.18s ease-out;
 }
 
 .tk-toast-warn { border-left-color: var(--tk-warn); }
 .tk-toast-good { border-left-color: var(--tk-good); }
-.tk-toast-bad { border-left-color: var(--tk-bad); }
+.tk-toast-bad { border-left-color: var(--tk-bad); color: #ffd9d9; }
 
 @keyframes tk-toast-in {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
 }
 
@@ -334,7 +536,7 @@ button.tk-chip {
 .tk-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(8, 5, 24, 0.74);
+  background: rgba(3, 6, 14, 0.78);
   z-index: 30;
   display: flex;
   align-items: flex-end;
@@ -342,57 +544,109 @@ button.tk-chip {
 }
 
 .tk-modal {
-  background: var(--tk-panel);
+  background: var(--tk-panel-solid);
   border: 1px solid var(--tk-border);
-  border-radius: 14px 14px 0 0;
-  width: min(100%, 560px);
-  max-height: 80vh;
-  overflow-y: auto;
-  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  width: min(100%, 580px);
+  max-height: 82vh;
   display: flex;
   flex-direction: column;
-  gap: 10px;
   color: var(--tk-text);
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.6);
 }
 
 @media (min-width: 700px) {
   .tk-backdrop { align-items: center; }
-  .tk-modal { border-radius: 14px; }
+  .tk-modal {
+    clip-path: polygon(
+      18px 0,
+      100% 0,
+      100% calc(100% - 18px),
+      calc(100% - 18px) 100%,
+      0 100%,
+      0 18px
+    );
+  }
+}
+
+.tk-modal-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--tk-border);
+  background: linear-gradient(90deg, rgba(95, 227, 216, 0.14), transparent 70%);
 }
 
 .tk-modal-title {
-  font-size: 16px;
   margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--tk-accent);
 }
 
-.tk-modal-sub {
+.tk-modal-close {
+  margin-left: auto;
+  background: none;
+  border: none;
   color: var(--tk-text-dim);
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 0;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.tk-modal-close:hover {
+  color: var(--tk-accent);
+}
+
+.tk-modal-body {
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tk-modal-foot {
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--tk-border);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Dialogs with no footer still need breathing room at the bottom. */
+.tk-modal-body:last-child {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+.tk-modal-body .tk-btn {
+  align-self: stretch;
 }
 
 .tk-option {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   text-align: left;
   font: inherit;
-  color: inherit;
+  color: var(--tk-text);
   cursor: pointer;
   border: 1px solid var(--tk-border);
-  background: var(--tk-panel);
-  border-radius: var(--tk-radius);
+  border-left: 2px solid var(--tk-border);
+  background: rgba(255, 255, 255, 0.02);
   padding: 10px 14px;
 }
 
 .tk-option:hover:not(:disabled) {
-  border-color: var(--tk-accent);
+  border-color: var(--tk-hairline);
+  border-left-color: var(--tk-accent);
+  background: rgba(95, 227, 216, 0.06);
 }
 
 .tk-option:disabled {
-  opacity: 0.45;
+  opacity: 0.38;
   cursor: not-allowed;
 }
 
@@ -402,38 +656,103 @@ button.tk-chip {
   gap: 3px;
 }
 
+.tk-option-info b {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
 .tk-option-desc {
   font-size: 12px;
   color: var(--tk-text-dim);
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 .tk-tag {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
+  font-size: 10px;
+  padding: 3px 9px;
+  background: rgba(126, 224, 226, 0.08);
   border: 1px solid var(--tk-border);
-  color: var(--tk-text-dim);
+  color: var(--tk-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
   white-space: nowrap;
+}
+
+.tk-modal-sub {
+  color: var(--tk-text-dim);
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0;
 }
 
 .tk-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .tk-table th,
 .tk-table td {
   text-align: left;
-  padding: 6px 4px;
-  border-bottom: 1px dashed var(--tk-border);
+  padding: 7px 4px;
+  border-bottom: 1px solid rgba(41, 80, 107, 0.5);
 }
 
 .tk-table th {
-  color: var(--tk-text-dim);
+  color: var(--tk-accent);
   font-weight: 500;
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.18em;
+}
+
+/* ── Small screens ──────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .tk-rack {
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .tk-meter {
+    min-width: 118px;
+  }
+
+  .tk-hudbar {
+    gap: 6px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .tk-readout {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .tk-actions {
+    grid-template-columns: repeat(2, 56px);
+    right: 10px;
+  }
+
+  .tk-action {
+    width: 56px;
+    height: 63px;
+  }
+
+  .tk-action:nth-child(even) {
+    transform: translateY(24px);
+  }
+
+  .tk-action:nth-child(n + 3) {
+    margin-top: -16px;
+  }
+
+  .tk-dpad {
+    grid-template-columns: repeat(3, 46px);
+    grid-template-rows: repeat(3, 42px);
+  }
 }
