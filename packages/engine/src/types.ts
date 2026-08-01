@@ -40,6 +40,9 @@ export const Material = {
   Crystal: 9,
   Dust: 10,
   Sulfur: 11,
+  Grass: 12,
+  Sand: 13,
+  Snow: 14,
 } as const;
 export type Material = number;
 
@@ -113,12 +116,20 @@ export interface OreBand {
   label?: string;
 }
 
-export type BodyType = 'planet' | 'moon' | 'asteroid';
+export type BodyType = 'planet' | 'moon' | 'asteroid' | 'gaseous';
 
 export interface BodyDef {
   id: string;
   name: string;
   type: BodyType;
+  /**
+   * The `world/kinds.js` preset this body was instantiated from (e.g.
+   * `'earth-like'`, `'ice-moon'`, `'c-type-asteroid'`) — a specialisation of
+   * `type` used for defaulting and to gate which biomes a chunk may roll.
+   * Purely informational once a body exists; absent for hand-authored bodies
+   * that didn't go through `instantiateBody()`.
+   */
+  kind?: string;
   /** Surface gravity, m/s^2. Affects fall damage and landing fuel. */
   gravity: number;
   /** Solar irradiance multiplier vs Earth orbit (gameplay-scaled). */
@@ -155,6 +166,17 @@ export interface BodyDef {
    * Airless bodies get solar storms and meteor showers; Mars gets dust.
    */
   weather?: Partial<Record<WeatherType, number>>;
+  /**
+   * Environmental data a *host* game owns and hands in — e.g. a solar-system
+   * sim's own model of a planet's real temperature — so it can steer a
+   * TakeOn scene without re-deriving climate from scratch. Absent = the body
+   * generates exactly as it always has (biome selection falls back to the
+   * flat regolith/dust/silica skin). `temperature` is a gameplay-scaled mean
+   * surface value (loosely °C); `tempVariance` (0..1) is how much it swings
+   * pole-to-equator or day-to-night, used to spread biomes across chunks
+   * instead of picking one uniform biome for the whole body.
+   */
+  climate?: { temperature: number; tempVariance?: number };
   terrain: {
     roughness: number; // 0..1 — vertical amplitude (and frequency, unless `noise` is set)
     craters: number; // approx count
@@ -178,6 +200,14 @@ export interface BodyDef {
      * band of rarer ones. See `world/terrain.js`'s `OreBand`.
      */
     bands?: OreBand[];
+    /**
+     * Divide the surface into a `CHUNK_SIZE` grid of independently-seeded
+     * regions, each rolling one biome from `world/biomes.js` (gated by
+     * `climate` and the body's `kind`) instead of the single continuous
+     * regolith/dust/silica skin every shipped body uses. Absent/false keeps
+     * that original skin byte-identical. See `world/biomes.js`.
+     */
+    biomes?: boolean;
   };
   description: string;
 }

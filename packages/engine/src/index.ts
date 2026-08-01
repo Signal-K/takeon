@@ -33,7 +33,25 @@ export { RECIPES, getRecipe } from './sim/recipes.js';
 export { WEATHER_INFO } from './sim/weather.js';
 
 export { VoxelWorld } from './world/world.js';
+export {
+  registerWorldLayer,
+  unregisterWorldLayer,
+  listWorldLayerIds,
+  type LayerGenerator,
+} from './world/layers.js';
 export { generateTerrain, findLandingSite, skinBiome } from './world/terrain.js';
+export {
+  CHUNK_SIZE,
+  registerBiome,
+  unregisterBiome,
+  getBiome,
+  listBiomes,
+  chunkCoords,
+  chunkBiome,
+  biomeAt,
+  pickBiomeMaterial,
+  type Biome,
+} from './world/biomes.js';
 export { generateAnomalies } from './world/anomalies.js';
 export {
   MATERIALS,
@@ -44,6 +62,17 @@ export {
   registerResource,
 } from './world/materials.js';
 export { BODIES } from './world/bodies.js';
+export {
+  registerBodyKind,
+  unregisterBodyKind,
+  getBodyKind,
+  listBodyKinds,
+  bodyKindChain,
+  resolveBodyKind,
+  allowedBiomesForKind,
+  type BodyKind,
+  type BodyKindDefaults,
+} from './world/kinds.js';
 export {
   getBody,
   listBodies,
@@ -69,6 +98,7 @@ export {
   createBodyDraft,
   cloneBody,
   forkBody,
+  instantiateBody,
   validateBody,
   builtinBodyIds,
   parseBodyJson,

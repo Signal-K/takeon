@@ -12,7 +12,12 @@
     "seed": 1969,
     "palette": {
       "sky": "#2c2650",
-      "skyNight": "#0a0920"
+      "skyNight": "#0a0920",
+      "tint": [
+        0.82,
+        0.84,
+        0.9
+      ]
     },
     "terrain": {
       "roughness": 0.45,
@@ -25,6 +30,10 @@
       "iron": 0.3,
       "copper": 0.15,
       "titanium": 0.55
+    },
+    "weather": {
+      "solar-storm": 0.9,
+      "meteor-shower": 1.1
     },
     "description": "Close, well-lit and gentle. Titanium in the maria, ice in shadowed polar craters."
   },
@@ -41,7 +50,12 @@
     "seed": 4212,
     "palette": {
       "sky": "#d97e4a",
-      "skyNight": "#221026"
+      "skyNight": "#221026",
+      "tint": [
+        1.06,
+        0.9,
+        0.8
+      ]
     },
     "terrain": {
       "roughness": 0.6,
@@ -54,6 +68,11 @@
       "iron": 0.62,
       "copper": 0.23,
       "titanium": 0.15
+    },
+    "weather": {
+      "dust-devil": 2.2,
+      "dust-storm": 0.8,
+      "meteor-shower": 0.3
     },
     "description": "Rusty canyons and dust. Iron-rich, with polar ice and long, dim days."
   },
@@ -70,13 +89,22 @@
     "seed": 1610,
     "palette": {
       "sky": "#2b4a8f",
-      "skyNight": "#0c1230"
+      "skyNight": "#0c1230",
+      "tint": [
+        0.78,
+        0.95,
+        1.12
+      ]
     },
     "terrain": {
       "roughness": 0.3,
       "craters": 2,
       "iceCaps": 0.85,
       "oreRichness": 0.25
+    },
+    "weather": {
+      "cryo-fog": 1.6,
+      "meteor-shower": 0.4
     },
     "description": "A shell of fractured ice over a hidden ocean. Solar power is scarce out here."
   },
@@ -93,13 +121,23 @@
     "seed": 1801,
     "palette": {
       "sky": "#3d3178",
-      "skyNight": "#100b2c"
+      "skyNight": "#100b2c",
+      "tint": [
+        0.88,
+        0.9,
+        0.97
+      ]
     },
     "terrain": {
       "roughness": 0.5,
       "craters": 12,
       "iceCaps": 0.2,
       "oreRichness": 0.55
+    },
+    "weather": {
+      "solar-storm": 0.7,
+      "meteor-shower": 0.8,
+      "cryo-fog": 0.5
     },
     "description": "The belt’s dwarf planet. Bright salt flats, buried brines and easy launches."
   },
@@ -116,7 +154,12 @@
     "seed": 1999,
     "palette": {
       "sky": "#2f2266",
-      "skyNight": "#0c0824"
+      "skyNight": "#0c0824",
+      "tint": [
+        0.72,
+        0.72,
+        0.78
+      ]
     },
     "terrain": {
       "roughness": 0.85,
@@ -124,6 +167,10 @@
       "iceCaps": 0,
       "oreRichness": 0.7,
       "irregular": true
+    },
+    "weather": {
+      "solar-storm": 1.1,
+      "meteor-shower": 1.4
     },
     "description": "A rubble pile you could jump off of. Rich, rough and unforgiving to wheels."
   },
@@ -140,7 +187,12 @@
     "seed": 1979,
     "palette": {
       "sky": "#a85a2e",
-      "skyNight": "#1c0d20"
+      "skyNight": "#1c0d20",
+      "tint": [
+        1.12,
+        1.02,
+        0.68
+      ]
     },
     "terrain": {
       "roughness": 0.75,
@@ -149,6 +201,215 @@
       "oreRichness": 0.6,
       "sulfurFields": 0.5
     },
+    "weather": {
+      "solar-storm": 1.3,
+      "meteor-shower": 1.5
+    },
     "description": "Volcanic and sulfur-stained. Steep terrain chews through durability."
+  },
+  {
+    "id": "terra",
+    "name": "Terra",
+    "type": "planet",
+    "kind": "earth-like",
+    "gravity": 9.8,
+    "solarFlux": 1,
+    "dayLength": 480,
+    "deltaV": 20,
+    "size": 128,
+    "maxHeight": 16,
+    "seed": 2024,
+    "palette": {
+      "sky": "#6fa8dc",
+      "skyNight": "#0b1a3a",
+      "tint": [
+        1,
+        1.02,
+        0.98
+      ]
+    },
+    "climate": {
+      "temperature": 14,
+      "tempVariance": 0.55
+    },
+    "terrain": {
+      "roughness": 0.35,
+      "craters": 1,
+      "iceCaps": 0.12,
+      "oreRichness": 0.2,
+      "biomes": true
+    },
+    "minerals": {
+      "iron": 0.4,
+      "copper": 0.35,
+      "titanium": 0.25
+    },
+    "weather": {},
+    "description": "A temperate, breathable-coded world. Grassland, forest and tundra spread across seeded chunks instead of one uniform skin."
+  },
+  {
+    "id": "kepler-rust",
+    "name": "Kepler Rust",
+    "type": "planet",
+    "kind": "rocky-planet",
+    "gravity": 4.2,
+    "solarFlux": 0.4,
+    "dayLength": 540,
+    "deltaV": 58,
+    "size": 112,
+    "maxHeight": 18,
+    "seed": 3141,
+    "palette": {
+      "sky": "#b85c38",
+      "skyNight": "#1c0f1f",
+      "tint": [
+        1.05,
+        0.88,
+        0.78
+      ]
+    },
+    "climate": {
+      "temperature": -45,
+      "tempVariance": 0.6
+    },
+    "terrain": {
+      "roughness": 0.6,
+      "craters": 7,
+      "iceCaps": 0.15,
+      "oreRichness": 0.4,
+      "biomes": true
+    },
+    "minerals": {
+      "iron": 0.55,
+      "copper": 0.25,
+      "titanium": 0.2
+    },
+    "weather": {
+      "dust-devil": 1.8,
+      "dust-storm": 0.5,
+      "meteor-shower": 0.4
+    },
+    "description": "A rustier, colder cousin of Mars. Redrock desert, crater highlands and polar tundra, by chunk."
+  },
+  {
+    "id": "frostmoon",
+    "name": "Frostmoon",
+    "type": "moon",
+    "kind": "ice-moon",
+    "gravity": 1.2,
+    "solarFlux": 0.12,
+    "dayLength": 900,
+    "deltaV": 78,
+    "size": 96,
+    "maxHeight": 12,
+    "seed": 733,
+    "palette": {
+      "sky": "#274b8f",
+      "skyNight": "#0a1230",
+      "tint": [
+        0.8,
+        0.94,
+        1.1
+      ]
+    },
+    "climate": {
+      "temperature": -170,
+      "tempVariance": 0.25
+    },
+    "terrain": {
+      "roughness": 0.3,
+      "craters": 2,
+      "iceCaps": 0.9,
+      "oreRichness": 0.3,
+      "sulfurFields": 0.15,
+      "biomes": true
+    },
+    "weather": {
+      "cryo-fog": 1.8,
+      "meteor-shower": 0.3
+    },
+    "description": "Another ice-shelled moon. Icefield and sulfur-stained cryovolcanic vents split by chunk."
+  },
+  {
+    "id": "ironrock",
+    "name": "Ironrock",
+    "type": "asteroid",
+    "kind": "m-type-asteroid",
+    "gravity": 0.32,
+    "solarFlux": 0.18,
+    "dayLength": 190,
+    "deltaV": 60,
+    "size": 72,
+    "maxHeight": 12,
+    "seed": 5150,
+    "palette": {
+      "sky": "#39306b",
+      "skyNight": "#0e0b26",
+      "tint": [
+        0.9,
+        0.9,
+        0.95
+      ]
+    },
+    "climate": {
+      "temperature": -85,
+      "tempVariance": 0.15
+    },
+    "terrain": {
+      "roughness": 0.55,
+      "craters": 4,
+      "iceCaps": 0,
+      "oreRichness": 0.75,
+      "irregular": true,
+      "biomes": true
+    },
+    "minerals": {
+      "iron": 0.62,
+      "copper": 0.13,
+      "titanium": 0.25
+    },
+    "weather": {
+      "solar-storm": 0.8,
+      "meteor-shower": 1.2
+    },
+    "description": "A nickel-iron-rich M-type — the richest ore in this catalog, metallic-sheened regolith on top."
+  },
+  {
+    "id": "skyhaven",
+    "name": "Skyhaven",
+    "type": "gaseous",
+    "kind": "gaseous",
+    "gravity": 22,
+    "solarFlux": 0.1,
+    "dayLength": 300,
+    "deltaV": 95,
+    "size": 96,
+    "maxHeight": 10,
+    "seed": 8080,
+    "palette": {
+      "sky": "#8892b0",
+      "skyNight": "#1a1c2e",
+      "tint": [
+        0.85,
+        0.87,
+        1.02
+      ]
+    },
+    "climate": {
+      "temperature": -140,
+      "tempVariance": 0.3
+    },
+    "terrain": {
+      "roughness": 0.15,
+      "craters": 0,
+      "iceCaps": 0,
+      "oreRichness": 0.15,
+      "biomes": true
+    },
+    "weather": {
+      "dust-storm": 2.5,
+      "solar-storm": 1
+    },
+    "description": "Not a landing in reality — TakeOn plays a gas giant as a storm-lashed cloud platform, its gameplay \"surface\"."
   }
 ]

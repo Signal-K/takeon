@@ -42,7 +42,12 @@ Runtime verification recipe: `.claude/skills/verify/SKILL.md`.
   stores only voxel `edits` + entity state (`MissionState`). Never persist raw
   voxels. **Anything that changes generation output must be opt-in per body** —
   that is why `terrain.noise` exists; `test/noise.test.ts` asserts the shipped
-  bodies stay byte-identical.
+  bodies stay byte-identical. Same rule for `terrain.biomes` (chunked biome
+  skins, `world/biomes.ts`) and `world/kinds.ts` (planet/moon/asteroid/gaseous
+  preset inheritance + `instantiateBody()` for host-supplied properties like
+  real temperature) — both additive, both opt-in. `world/layers.ts` is the
+  seam for a *module* to add a second world grid (caves, sky); core registers
+  none, so mining stays top-down deposits + ice. See `docs/ENGINE.md`.
 - The engine has **zero runtime dependencies** and must keep working without
   DOM access for tests (canvas bits are guarded; `OffscreenCanvas` fallback).
 - Web ↔ storage goes through `SyncAdapter` (`net/sync.ts`) only. The web app

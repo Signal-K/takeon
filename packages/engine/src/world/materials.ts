@@ -102,6 +102,30 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     colors: ['#f6d743', '#c9ad2e', '#9c8722'],
     jitter: 0.1,
   },
+  [Material.Grass]: {
+    id: Material.Grass,
+    name: 'Grass',
+    hardness: 1,
+    yields: { resource: 'regolith', amount: 1 },
+    colors: ['#7ec850', '#5a9c3a', '#3f7228'],
+    jitter: 0.06,
+  },
+  [Material.Sand]: {
+    id: Material.Sand,
+    name: 'Sand',
+    hardness: 1,
+    yields: { resource: 'silica', amount: 1 },
+    colors: ['#e8c77e', '#c9a35c', '#a37f42'],
+    jitter: 0.05,
+  },
+  [Material.Snow]: {
+    id: Material.Snow,
+    name: 'Snow',
+    hardness: 1,
+    yields: { resource: 'ice', amount: 1 },
+    colors: ['#f4f9ff', '#d6e6f2', '#b3cfe0'],
+    jitter: 0.03,
+  },
 };
 
 export const RESOURCE_NAMES: Record<ResourceKey, string> = {

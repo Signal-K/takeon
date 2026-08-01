@@ -139,11 +139,62 @@ The editor exposes all of this: a *Noise field* group in the inspector, a live
 preview of the exact field the generator will use, and a blue-noise **Scatter**
 preview.
 
+## Kinds, chunked biomes and world layers
+
+Three related, independently opt-in systems for landscapes that vary by more
+than one noise config:
+
+**Kinds** (`world/kinds.ts`) are an inheritable preset tree above `BodyDef` —
+`body` → `planet` → `rocky-planet` / `earth-like`, `body` → `moon` →
+`ice-moon` / `rocky-moon`, `body` → `asteroid` → `c/m/s-type-asteroid`,
+`body` → `gaseous`. `BodyType` ('planet'/'moon'/'asteroid'/'gaseous') is the
+coarse category gameplay branches on; a *kind* bundles the physics/palette/
+weather/climate defaults for a flavour of it, inheriting from its parent so
+you only override what's different:
+
+```ts
+import { instantiateBody } from '@takeon/engine';
+
+// A host's own solar-system sim hands in the one thing it actually knows —
+// this body's real temperature — and gets back a concrete, generatable body.
+const body = instantiateBody('rocky-planet', {
+  id: 'kepler-186f', name: 'Kepler-186f', seed: 42,
+  climate: { temperature: -63 },
+});
+```
+
+**Chunked biomes** (`world/biomes.ts`, opt in with `terrain.biomes: true`)
+divide the surface into a `CHUNK_SIZE` (16) grid, each chunk independently
+seeded and rolling one `Biome` — a small surface/subsurface material list,
+gated by the body's `kind` (`allowedBiomesForKind`) and, if set, `climate`
+(a per-chunk temperature sampled around `climate.temperature`, swung by
+`climate.tempVariance`). Ore veins stay `OreBand`'s job — a biome only
+dresses the top couple of surface voxels, so the "skin" and the "mineral
+economy underneath" stay independent, composable layers. Absent the flag, a
+body keeps the original single-skin generation byte-for-byte.
+
+**World layers** (`world/layers.ts`) are the seam for a second grid
+alongside the surface world — a cave layer, a sky layer — for a *module*
+built on top of TakeOn, not core itself: core registers none, so mining
+stays exactly what it is today (top-down, deposits and ice). A module calls
+`registerWorldLayer(id, (body, seed, world) => yourData)`; `generateTerrain`
+runs every registered generator and attaches the result to
+`world.layers[id]`, opaque to core. Deterministic like the rest of
+generation, so it needs no persistence of its own.
+
+See [LANDNAM.md](LANDNAM.md) for how this maps onto a specific host game's
+scenes.
+
 ## Registries — the extension points
 
 | Registry | Add with | Used for |
 |---|---|---|
 | Destinations | `registerBody(def)` | Editor drafts, backend rows, host worlds |
+| Body kinds | `registerBodyKind(kind)` | New planet/moon/asteroid presets to `instantiateBody()` |
+| Biomes | `registerBiome(biome)` | New chunk-scale surface skins |
+| World layers | `registerWorldLayer(id, fn)` | A module adding an underground/sky grid |
+| Materials/resources | `registerMaterial`/`registerResource` | New voxel materials and cargo keys |
+| Structures | `registerStructure(def)` | New buildable structures |
 | Rover parts | `registerRoverPart(part)` | New hardware on the rover sprite |
 | Flat painters | `registerFlatPainter(kind, fn)` | Drawing new entity kinds in 2D |
 | UI components | `<TakeOnUIProvider components={…}>` | Replacing any HUD component ([UI.md](UI.md)) |

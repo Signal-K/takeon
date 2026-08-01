@@ -85,6 +85,7 @@ function DefaultMapsPanel({ body, world, version, maxClimb, from, onPickTile }: 
       from: from ?? undefined,
       marker: { axis: 'y', index: row },
       pin: from,
+      body,
     });
   }, [view, world, version, maxClimb, from, row, body]);
 

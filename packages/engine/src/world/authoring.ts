@@ -1,6 +1,7 @@
 import type { BodyDef, BodyType, WeatherType } from '../types.js';
 import { DEFAULT_NOISE, FRACTAL_KINDS, NOISE_TYPES } from '../util/noise/index.js';
 import { BODIES } from './bodies.js';
+import { listBodyKinds, mergeDefaults, resolveBodyKind, type BodyKindDefaults } from './kinds.js';
 
 /**
  * Authoring support for destinations: drafts, validation, a field schema and
@@ -24,7 +25,7 @@ export const WEATHER_TYPES: WeatherType[] = [
   'cryo-fog',
 ];
 
-export const BODY_TYPES: BodyType[] = ['planet', 'moon', 'asteroid'];
+export const BODY_TYPES: BodyType[] = ['planet', 'moon', 'asteroid', 'gaseous'];
 
 /** A blank-but-playable destination, ready to be tweaked in an inspector. */
 export function createBodyDraft(partial: Partial<BodyDef> = {}): BodyDef {
@@ -53,9 +54,10 @@ export function cloneBody(def: BodyDef): BodyDef {
   return {
     ...def,
     palette: { ...def.palette, tint: def.palette.tint ? ([...def.palette.tint] as [number, number, number]) : undefined },
-    terrain: { ...def.terrain },
+    terrain: { ...def.terrain, bands: def.terrain.bands ? def.terrain.bands.map((b) => ({ ...b, minerals: { ...b.minerals } })) : undefined },
     minerals: def.minerals ? { ...def.minerals } : undefined,
     weather: def.weather ? { ...def.weather } : undefined,
+    climate: def.climate ? { ...def.climate } : undefined,
   };
 }
 
@@ -67,6 +69,19 @@ export function forkBody(def: BodyDef, id: string, name?: string): BodyDef {
   return copy;
 }
 
+/**
+ * Build a concrete, generatable destination from a `world/kinds.js` preset —
+ * the seam a host game uses to hand TakeOn real planetary data. The kind's
+ * full ancestry (e.g. `earth-like` → `planet` → `body`) is merged root-first,
+ * then `overrides` (typically at least `id`, `name`, `seed`, and anything the
+ * host's own model knows — a real `climate.temperature`) wins on top.
+ */
+export function instantiateBody(kindId: string, overrides: Partial<BodyDef> & { id: string; name: string }): BodyDef {
+  const defaults = resolveBodyKind(kindId);
+  const merged = mergeDefaults(defaults, overrides as BodyKindDefaults);
+  return createBodyDraft({ ...merged, kind: kindId } as Partial<BodyDef>);
+}
+
 function mergeBody(base: BodyDef, patch: Partial<BodyDef>): BodyDef {
   const out = cloneBody(base);
   Object.assign(out, patch);
@@ -74,6 +89,7 @@ function mergeBody(base: BodyDef, patch: Partial<BodyDef>): BodyDef {
   if (patch.terrain) out.terrain = { ...base.terrain, ...patch.terrain };
   if (patch.minerals) out.minerals = { ...base.minerals, ...patch.minerals };
   if (patch.weather) out.weather = { ...base.weather, ...patch.weather };
+  if (patch.climate) out.climate = { ...base.climate, ...patch.climate };
   return out;
 }
 
@@ -84,6 +100,7 @@ export type BodyFieldKind = 'number' | 'text' | 'longtext' | 'color' | 'boolean'
 export type BodyFieldGroup =
   | 'identity'
   | 'physics'
+  | 'climate'
   | 'world'
   | 'terrain'
   | 'noise'
@@ -116,6 +133,11 @@ export interface BodyField {
 export const BODY_FIELD_GROUPS: { id: BodyFieldGroup; label: string; help: string }[] = [
   { id: 'identity', label: 'Identity', help: 'How the destination is named and described.' },
   { id: 'physics', label: 'Physics & orbit', help: 'Gravity, sunlight, day length and the fuel to get there.' },
+  {
+    id: 'climate',
+    label: 'Climate',
+    help: 'Environmental data a host game can hand in (e.g. real temperature). Drives biome selection when terrain.biomes is on.',
+  },
   { id: 'world', label: 'World', help: 'Grid size, vertical range and the generation seed.' },
   { id: 'terrain', label: 'Terrain', help: 'Feature parameters fed to the generator.' },
   {
@@ -138,12 +160,23 @@ export const BODY_FIELDS: BodyField[] = [
     group: 'identity',
     options: BODY_TYPES.map((t) => ({ value: t, label: t })),
   },
+  {
+    path: 'kind',
+    label: 'Kind (preset)',
+    kind: 'select',
+    group: 'identity',
+    options: [{ value: '', label: '— none —' }, ...listBodyKinds().map((k) => ({ value: k.id, label: k.label }))],
+    help: 'Which world/kinds.js preset this was instantiated from, if any — informational, and gates biome choices.',
+  },
   { path: 'description', label: 'Description', kind: 'longtext', group: 'identity' },
 
   { path: 'gravity', label: 'Gravity', kind: 'number', group: 'physics', min: 0.01, max: 25, step: 0.01, unit: 'm/s²', help: 'Scales fall damage and landing fuel.' },
   { path: 'solarFlux', label: 'Solar flux', kind: 'number', group: 'physics', min: 0, max: 2, step: 0.01, help: 'Relative to Earth orbit; scales solar charge rate.' },
   { path: 'dayLength', label: 'Day length', kind: 'number', group: 'physics', min: 0, max: 3000, step: 10, unit: 's', help: '0 = permanent daylight.' },
   { path: 'deltaV', label: 'Delta-v', kind: 'number', group: 'physics', min: 0, max: 200, step: 1, help: 'Fuel needed to reach and land here.' },
+
+  { path: 'climate.temperature', label: 'Temperature', kind: 'number', group: 'climate', min: -250, max: 100, step: 1, unit: '°C', help: 'Gameplay-scaled mean surface temperature.' },
+  { path: 'climate.tempVariance', label: 'Temp. variance', kind: 'number', group: 'climate', min: 0, max: 1, step: 0.01, help: 'How much it swings pole-to-equator — spreads biomes across chunks.' },
 
   { path: 'size', label: 'Map size', kind: 'number', group: 'world', min: MIN_BODY_SIZE, max: MAX_BODY_SIZE, step: 8, unit: 'voxels', affectsTerrain: true },
   { path: 'maxHeight', label: 'Max height', kind: 'number', group: 'world', min: 4, max: 40, step: 1, unit: 'voxels', affectsTerrain: true },
@@ -156,6 +189,7 @@ export const BODY_FIELDS: BodyField[] = [
   { path: 'terrain.oreRichness', label: 'Ore richness', kind: 'number', group: 'terrain', min: 0, max: 1, step: 0.01, affectsTerrain: true },
   { path: 'terrain.sulfurFields', label: 'Sulfur fields', kind: 'number', group: 'terrain', min: 0, max: 1, step: 0.01, affectsTerrain: true },
   { path: 'terrain.irregular', label: 'Irregular (rubble pile)', kind: 'boolean', group: 'terrain', affectsTerrain: true, help: 'Carves a noisy radial silhouette with map-edge cliffs.' },
+  { path: 'terrain.biomes', label: 'Chunked biomes', kind: 'boolean', group: 'terrain', affectsTerrain: true, help: 'Divide the surface into seeded chunks, each rolling one biome (see world/biomes.js). Off = the original single skin.' },
 
   {
     path: 'terrain.noise.type',
@@ -259,6 +293,12 @@ export function validateBody(def: BodyDef): BodyValidation {
   }
   if (!def.name) errors.push('name is required');
   if (!BODY_TYPES.includes(def.type)) errors.push(`type must be one of ${BODY_TYPES.join(', ')}`);
+  if (def.climate && (!num(def.climate.temperature) || Number.isNaN(def.climate.temperature))) {
+    errors.push('climate.temperature must be a number');
+  }
+  if (def.climate?.tempVariance !== undefined && (!num(def.climate.tempVariance) || def.climate.tempVariance < 0 || def.climate.tempVariance > 1)) {
+    errors.push('climate.tempVariance must be between 0 and 1');
+  }
 
   if (!num(def.size) || def.size < MIN_BODY_SIZE || def.size > MAX_BODY_SIZE) {
     errors.push(`size must be between ${MIN_BODY_SIZE} and ${MAX_BODY_SIZE}`);
@@ -345,6 +385,9 @@ export function validateBody(def: BodyDef): BodyValidation {
   if (def.dayLength === 0) warnings.push('dayLength 0 means permanent daylight — solar rovers never run dry');
   if (def.weather && Object.values(def.weather).every((v) => !v)) {
     warnings.push('no weather events configured — the surface will feel static');
+  }
+  if (t?.biomes && !def.climate) {
+    warnings.push('terrain.biomes is on with no climate set — chunks roll from every registered biome, including climate-locked ones');
   }
 
   return { ok: errors.length === 0, errors, warnings };

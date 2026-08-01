@@ -1,7 +1,9 @@
 import { Material, type BodyDef, type OreBand } from '../types.js';
 import { fbm2, makeNoise } from '../util/noise/index.js';
 import { hash2, hash3, mulberry32 } from '../util/rng.js';
+import { biomeAt, pickBiomeMaterial } from './biomes.js';
 import { getDem, sampleDem, type DemPatch } from './dem/index.js';
+import { runWorldLayers } from './layers.js';
 import { VoxelWorld } from './world.js';
 
 /**
@@ -89,6 +91,7 @@ export function generateTerrain(body: BodyDef, seedOverride?: number): VoxelWorl
     }
   }
 
+  runWorldLayers(body, seed, world);
   return world;
 }
 
@@ -131,6 +134,10 @@ function pickMaterial(
   if (sulfurous && depth === 0) return Material.Sulfur;
 
   if (depth === 0) {
+    if (body.terrain.biomes) {
+      const biome = biomeAt(body, x, y, seed);
+      return pickBiomeMaterial(biome.surface, fbm2(x * 0.055, y * 0.055, seed + 5, 3));
+    }
     // Surface skin in large organic patches (not per-tile noise): silica
     // flats, dust basins and regolith uplands read as biome-like regions.
     const patch = fbm2(x * 0.055, y * 0.055, seed + 5, 3);
@@ -138,7 +145,13 @@ function pickMaterial(
     if (patch < 0.38 || z <= 2) return Material.Dust;
     return Material.Regolith;
   }
-  if (depth <= 2) return Material.Regolith;
+  if (depth <= 2) {
+    if (body.terrain.biomes) {
+      const biome = biomeAt(body, x, y, seed);
+      return pickBiomeMaterial(biome.subsurface ?? biome.surface, fbm2(x * 0.055, y * 0.055, seed + 9, 3));
+    }
+    return Material.Regolith;
+  }
   if (depth <= 5) return Material.Rock;
   return Material.Basalt;
 }

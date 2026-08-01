@@ -1,10 +1,13 @@
 import {
+  chunkBiome,
+  chunkCoords,
   heightField,
   MATERIALS,
   Material,
   reachableMask,
   renderCrossSection,
   slopeField,
+  type BodyDef,
   type VoxelWorld,
 } from '@takeon/engine';
 
@@ -18,7 +21,7 @@ import {
  * smoothing off so individual voxels stay legible.
  */
 
-export type MapKind = 'elevation' | 'slope' | 'surface' | 'ore' | 'reach';
+export type MapKind = 'elevation' | 'slope' | 'surface' | 'ore' | 'reach' | 'biome';
 
 export const MAP_KINDS: { id: MapKind; label: string; help: string }[] = [
   { id: 'elevation', label: 'Elevation', help: 'Column height — the heightmap the generator produced.' },
@@ -26,6 +29,7 @@ export const MAP_KINDS: { id: MapKind; label: string; help: string }[] = [
   { id: 'surface', label: 'Surface', help: 'Top-voxel material: the biome patches the player sees.' },
   { id: 'ore', label: 'Ore density', help: 'Ore voxels per column, including crystal.' },
   { id: 'reach', label: 'Drivable', help: 'Flood fill from the landing site with the current climb limit.' },
+  { id: 'biome', label: 'Biomes', help: 'Chunk-by-chunk biome assignment (needs terrain.biomes on). One flat colour per body otherwise.' },
 ];
 
 export interface PaintOptions {
@@ -37,6 +41,8 @@ export interface PaintOptions {
   marker?: { axis: 'x' | 'y'; index: number } | null;
   /** Tile to mark (the landing site by default). */
   pin?: { x: number; y: number } | null;
+  /** Required for the 'biome' map kind — biome selection reads climate/kind off the body, not the generated world. */
+  body?: BodyDef;
 }
 
 type RGB = [number, number, number];
@@ -118,12 +124,44 @@ function pickPainter(world: VoxelWorld, kind: MapKind, maxClimb: number, opts: P
       return [60 + t * 190, 50 + t * 90, 40];
     };
   }
+  if (kind === 'biome') {
+    const body = opts.body;
+    return (x, y) => {
+      const h = world.height(x, y);
+      if (h < 0) return VOID;
+      if (!body) return [90, 84, 110];
+      const { cx, cy } = chunkCoords(x, y);
+      return biomeColor(chunkBiome(body, cx, cy, body.seed).id);
+    };
+  }
   const mask = reachableMask(world, opts.from ?? { x: size >> 1, y: size >> 1 }, maxClimb);
   return (x, y) => {
     const h = world.height(x, y);
     if (h < 0) return VOID;
     return mask[y * size + x] ? [69, 180, 140] : [150, 80, 60];
   };
+}
+
+/** Stable, distinct colour per biome id — a string hash into HSL, not a lookup table, so custom biomes get one for free. */
+function biomeColor(id: string): RGB {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  const hue = h % 360;
+  return hslToRgb(hue, 0.55, 0.55);
+}
+
+function hslToRgb(h: number, s: number, l: number): RGB {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let [r, g, b] = [0, 0, 0];
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
 }
 
 /**
