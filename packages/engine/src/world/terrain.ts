@@ -1,7 +1,9 @@
-import { Material, type BodyDef } from '../types.js';
-import { fbm2 } from '../util/noise.js';
+import { Material, type BodyDef, type OreBand } from '../types.js';
+import { fbm2, makeNoise } from '../util/noise/index.js';
 import { hash2, hash3, mulberry32 } from '../util/rng.js';
+import { biomeAt, pickBiomeMaterial } from './biomes.js';
 import { getDem, sampleDem, type DemPatch } from './dem/index.js';
+import { runWorldLayers } from './layers.js';
 import { VoxelWorld } from './world.js';
 
 /**
@@ -32,6 +34,10 @@ export function generateTerrain(body: BodyDef, seedOverride?: number): VoxelWorl
 
   const freq = 0.035 + t.roughness * 0.03;
   const half = size / 2;
+  // Authored noise (perlin/simplex/worley/…) replaces the default elevation
+  // field. Bodies without a `noise` block keep the original value-fBm path
+  // exactly, so every shipped world regenerates byte-for-byte.
+  const field = t.noise ? makeNoise(t.noise, seed) : null;
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -44,9 +50,16 @@ export function generateTerrain(body: BodyDef, seedOverride?: number): VoxelWorl
         if (rr > 0.82 - wobble * 0.5 + wobble) continue; // void column
       }
 
-      let n = fbm2(x * freq, y * freq, seed, 4);
-      // Gentle large-scale relief on top of the detail noise.
-      n = n * 0.65 + fbm2(x * freq * 0.25, y * freq * 0.25, seed + 55, 2) * 0.35;
+      let n: number;
+      if (field) {
+        // The config owns frequency and octaves; roughness still scales the
+        // vertical amplitude below.
+        n = field(x, y);
+      } else {
+        n = fbm2(x * freq, y * freq, seed, 4);
+        // Gentle large-scale relief on top of the detail noise.
+        n = n * 0.65 + fbm2(x * freq * 0.25, y * freq * 0.25, seed + 55, 2) * 0.35;
+      }
       if (dem) {
         // Real topography carries the large-scale relief; procedural noise
         // only adds sub-DEM-resolution detail.
@@ -78,6 +91,7 @@ export function generateTerrain(body: BodyDef, seedOverride?: number): VoxelWorl
     }
   }
 
+  runWorldLayers(body, seed, world);
   return world;
 }
 
@@ -100,6 +114,8 @@ function pickMaterial(
     const rich = t.oreRichness;
     if (v > 1 - rich * 0.055 && depth >= 3) return Material.Crystal;
     if (v > 1 - rich * 0.16) {
+      const band = t.bands && pickBand(t.bands, depth, surface);
+      if (band) return pickFromBand(band, x, y, z, seed);
       // Vein composition weighted by the body's spectroscopy profile
       // (e.g. TES/GRS iron for Mars, Clementine/M3 TiO2 for lunar maria).
       const w = body.minerals ?? {};
@@ -118,6 +134,10 @@ function pickMaterial(
   if (sulfurous && depth === 0) return Material.Sulfur;
 
   if (depth === 0) {
+    if (body.terrain.biomes) {
+      const biome = biomeAt(body, x, y, seed);
+      return pickBiomeMaterial(biome.surface, fbm2(x * 0.055, y * 0.055, seed + 5, 3));
+    }
     // Surface skin in large organic patches (not per-tile noise): silica
     // flats, dust basins and regolith uplands read as biome-like regions.
     const patch = fbm2(x * 0.055, y * 0.055, seed + 5, 3);
@@ -125,9 +145,42 @@ function pickMaterial(
     if (patch < 0.38 || z <= 2) return Material.Dust;
     return Material.Regolith;
   }
-  if (depth <= 2) return Material.Regolith;
+  if (depth <= 2) {
+    if (body.terrain.biomes) {
+      const biome = biomeAt(body, x, y, seed);
+      return pickBiomeMaterial(biome.subsurface ?? biome.surface, fbm2(x * 0.055, y * 0.055, seed + 9, 3));
+    }
+    return Material.Regolith;
+  }
   if (depth <= 5) return Material.Rock;
   return Material.Basalt;
+}
+
+/**
+ * First band whose `[from, to]` fraction-of-column-depth range contains this
+ * voxel, or null if none does (falls back to the default flat mineral mix).
+ * `surface` is guaranteed >= 1 by the `depth >= 1` guard at the call site.
+ */
+function pickBand(bands: OreBand[], depth: number, surface: number): OreBand | null {
+  const frac = depth / surface;
+  for (const band of bands) {
+    if (frac >= band.from && frac <= band.to) return band;
+  }
+  return null;
+}
+
+/** Weighted-random material from a band's mineral mix, seeded per voxel. */
+function pickFromBand(band: OreBand, x: number, y: number, z: number, seed: number): Material {
+  const entries = Object.entries(band.minerals);
+  const total = entries.reduce((sum, [, weight]) => sum + (weight ?? 0), 0);
+  if (total <= 0) return Material.IronOre;
+  const roll = hash3(x, y, z, seed + 23) * total;
+  let acc = 0;
+  for (const [id, weight] of entries) {
+    acc += weight ?? 0;
+    if (roll < acc) return Number(id);
+  }
+  return Number(entries[entries.length - 1][0]);
 }
 
 /**

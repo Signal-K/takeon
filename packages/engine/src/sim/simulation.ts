@@ -72,6 +72,8 @@ export class Simulation {
   readonly events: EventBus;
   readonly seed: number;
   readonly missionId: string;
+  /** Deterministic landing tile for this world — the mission's home. */
+  readonly landingSite: Vec2;
 
   time = 0;
   rover: RoverState;
@@ -104,6 +106,7 @@ export class Simulation {
     this.world = generateTerrain(opts.body, this.seed);
     this.anomalies = generateAnomalies(opts.body, this.world, this.seed);
     this.weatherRng = mulberry32(this.seed ^ 0x77ea);
+    this.landingSite = findLandingSite(this.world);
 
     if (opts.resume) {
       const r = opts.resume;
@@ -137,7 +140,7 @@ export class Simulation {
         this.rover.upgrades!.mobility,
       );
     } else {
-      const site = findLandingSite(this.world);
+      const site = this.landingSite;
       const stats = computeStats(opts.spec);
       // Landing burns delta-v worth of fuel.
       const fuel = Math.max(0, stats.fuelCapacity - opts.body.deltaV);
@@ -879,7 +882,10 @@ export class Simulation {
           rig.buffer = {};
         }
         // Auto-fire once it holds a full load and the pad is fuelled.
-        const total = Object.values(s.buffer).reduce((a, b) => a + (b ?? 0), 0);
+        const total = (Object.values(s.buffer) as (number | undefined)[]).reduce(
+          (a: number, b) => a + (b ?? 0),
+          0,
+        );
         const ready = s.cooldownUntil == null || this.time >= s.cooldownUntil;
         if (ready && total >= AUTO_LAUNCH_THRESHOLD) {
           const manifest = s.buffer;

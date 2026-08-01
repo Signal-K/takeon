@@ -67,6 +67,16 @@ export const RESOURCE_VALUE: Record<ResourceKey, number> = {
   alloy: 32,
 };
 
+/**
+ * Price a custom resource key for mission payouts (`missionCredits`, and the
+ * PocketBase spoke's mirrored calculation — update both, same as any other
+ * `RESOURCE_VALUE` change). Pair with `registerResource` (`world/materials.js`)
+ * to also give the key a display name.
+ */
+export function registerResourceValue(key: ResourceKey, credits: number): void {
+  RESOURCE_VALUE[key] = credits;
+}
+
 export const DISCOVERY_CREDITS = 120;
 export const PHOTO_CREDITS_PER_QUALITY = 2;
 /** Enough for a full tier-1/2 science build (tool + camera + scanner). */

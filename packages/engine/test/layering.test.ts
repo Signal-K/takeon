@@ -27,9 +27,12 @@ const ALLOWED: Record<string, string[]> = {
   world: ['util'],
   net: ['parts', 'world', 'util'],
   sim: ['parts', 'world', 'util'],
-  render: ['sim', 'world', 'util'],
+  // The scene model flattens a running sim into renderer-agnostic entities,
+  // so it sits above sim and below every renderer.
+  scene: ['sim', 'world', 'util'],
+  render: ['scene', 'sim', 'world', 'util'],
   input: ['render'],
-  core: ['sim', 'render', 'input', 'audio', 'util'],
+  core: ['scene', 'sim', 'render', 'input', 'audio', 'util'],
 };
 
 function tsFiles(dir: string): string[] {

@@ -1,4 +1,4 @@
-import { hash2 } from './rng.js';
+import { hash2 } from '../rng.js';
 
 function smooth(t: number): number {
   return t * t * (3 - 2 * t);

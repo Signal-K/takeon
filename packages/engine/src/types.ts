@@ -1,5 +1,9 @@
 /** Shared engine types. */
 
+import type { NoiseConfig } from './util/noise/index.js';
+
+export type { NoiseConfig };
+
 export interface Vec2 {
   x: number;
   y: number;
@@ -11,23 +15,46 @@ export interface Vec3 {
   z: number;
 }
 
-/** Voxel material ids. 0 is always air. */
-export enum Material {
-  Air = 0,
-  Regolith = 1,
-  Rock = 2,
-  Basalt = 3,
-  Ice = 4,
-  IronOre = 5,
-  Silica = 6,
-  CopperOre = 7,
-  TitaniumOre = 8,
-  Crystal = 9,
-  Dust = 10,
-  Sulfur = 11,
-}
+/**
+ * Voxel material ids. 0 is always air.
+ *
+ * This is a plain object of numeric constants, not a TS `enum` — the `type
+ * Material = number` alias below means any number is a valid material id, so
+ * a host can mint its own ids (see `registerMaterial` in `world/materials.js`)
+ * without a cast or a fork. `Material.Air` / `Material.Regolith` / … still
+ * work exactly as before; only truly custom code that relied on TS enum
+ * reverse-mapping (`Material[5]`) or exhaustiveness checking would notice.
+ * Built-ins occupy 0–63; register custom materials at 64 or above so a body
+ * shared between games never collides with another host's ids.
+ */
+export const Material = {
+  Air: 0,
+  Regolith: 1,
+  Rock: 2,
+  Basalt: 3,
+  Ice: 4,
+  IronOre: 5,
+  Silica: 6,
+  CopperOre: 7,
+  TitaniumOre: 8,
+  Crystal: 9,
+  Dust: 10,
+  Sulfur: 11,
+  Grass: 12,
+  Sand: 13,
+  Snow: 14,
+} as const;
+export type Material = number;
 
-/** Mined resource keys (what ends up in cargo / inventory). */
+/** First id a host's custom materials should use; see `Material` above. */
+export const CUSTOM_MATERIAL_BASE = 64;
+
+/**
+ * Mined resource keys (what ends up in cargo / inventory). The built-ins are
+ * listed for autocomplete; `(string & {})` keeps the union open so a host can
+ * key its own resources (e.g. a mineral economy of platinum/palladium/…)
+ * without extending this type. See `registerResource` in `world/materials.js`.
+ */
 export type ResourceKey =
   | 'regolith'
   | 'stone'
@@ -42,7 +69,8 @@ export type ResourceKey =
   | 'iron-plate'
   | 'glass'
   | 'water'
-  | 'alloy';
+  | 'alloy'
+  | (string & {});
 
 /** A crafting/refining recipe. */
 export interface Recipe {
@@ -69,12 +97,39 @@ export interface MaterialDef {
   jitter: number;
 }
 
-export type BodyType = 'planet' | 'moon' | 'asteroid';
+/**
+ * One depth-stratified layer of ore composition, e.g. a shallow band rich in
+ * one mineral over a deeper band of rarer ones (topsoil/subsoil/bedrock).
+ * `from`/`to` are fractions of the column's own solid depth (0 = surface, 1 =
+ * the deepest voxel), so bands stay proportionate across bodies with very
+ * different `maxHeight`. Bands need not be contiguous or cover [0,1]; depth
+ * outside every band falls back to the default flat mineral split.
+ */
+export interface OreBand {
+  from: number;
+  to: number;
+  /** Relative weights among materials once a voxel has already rolled "this
+   * is ore" (via `terrain.oreRichness`) — bands choose which material wins,
+   * not whether a vein exists here at all. Auto-normalised; need not sum to 1. */
+  minerals: Record<Material, number>;
+  /** Display label for editor/host UI (e.g. "Topsoil"). */
+  label?: string;
+}
+
+export type BodyType = 'planet' | 'moon' | 'asteroid' | 'gaseous';
 
 export interface BodyDef {
   id: string;
   name: string;
   type: BodyType;
+  /**
+   * The `world/kinds.js` preset this body was instantiated from (e.g.
+   * `'earth-like'`, `'ice-moon'`, `'c-type-asteroid'`) — a specialisation of
+   * `type` used for defaulting and to gate which biomes a chunk may roll.
+   * Purely informational once a body exists; absent for hand-authored bodies
+   * that didn't go through `instantiateBody()`.
+   */
+  kind?: string;
   /** Surface gravity, m/s^2. Affects fall damage and landing fuel. */
   gravity: number;
   /** Solar irradiance multiplier vs Earth orbit (gameplay-scaled). */
@@ -111,8 +166,19 @@ export interface BodyDef {
    * Airless bodies get solar storms and meteor showers; Mars gets dust.
    */
   weather?: Partial<Record<WeatherType, number>>;
+  /**
+   * Environmental data a *host* game owns and hands in — e.g. a solar-system
+   * sim's own model of a planet's real temperature — so it can steer a
+   * TakeOn scene without re-deriving climate from scratch. Absent = the body
+   * generates exactly as it always has (biome selection falls back to the
+   * flat regolith/dust/silica skin). `temperature` is a gameplay-scaled mean
+   * surface value (loosely °C); `tempVariance` (0..1) is how much it swings
+   * pole-to-equator or day-to-night, used to spread biomes across chunks
+   * instead of picking one uniform biome for the whole body.
+   */
+  climate?: { temperature: number; tempVariance?: number };
   terrain: {
-    roughness: number; // 0..1
+    roughness: number; // 0..1 — vertical amplitude (and frequency, unless `noise` is set)
     craters: number; // approx count
     iceCaps: number; // 0..1 fraction of map edge covered by ice
     oreRichness: number; // 0..1
@@ -120,6 +186,28 @@ export interface BodyDef {
     sulfurFields?: number;
     /** Irregular island-shaped world (asteroids). */
     irregular?: boolean;
+    /**
+     * Elevation field. Absent = the original value-fBm terrain (what every
+     * shipped body uses); set it to author with perlin/simplex/worley/ridged
+     * fields, domain warp and custom octaves. See `util/noise`.
+     */
+    noise?: NoiseConfig;
+    /**
+     * Depth-stratified ore composition (topsoil/subsoil/bedrock, or however
+     * many layers a host wants). Absent = the original flat iron/copper/
+     * titanium split at every depth (what every shipped body uses); set it to
+     * author a real strata economy — a shallow band of one mineral, a deeper
+     * band of rarer ones. See `world/terrain.js`'s `OreBand`.
+     */
+    bands?: OreBand[];
+    /**
+     * Divide the surface into a `CHUNK_SIZE` grid of independently-seeded
+     * regions, each rolling one biome from `world/biomes.js` (gated by
+     * `climate` and the body's `kind`) instead of the single continuous
+     * regolith/dust/silica skin every shipped body uses. Absent/false keeps
+     * that original skin byte-identical. See `world/biomes.js`.
+     */
+    biomes?: boolean;
   };
   description: string;
 }
@@ -240,6 +328,13 @@ export interface Anomaly {
   documented: boolean;
 }
 
+/**
+ * Buildable structure kinds. The built-ins are listed for autocomplete;
+ * `(string & {})` keeps the union open so a host can register its own
+ * catalog (a settlement core, a research lab, a fuel depot — whatever its
+ * economy needs) without extending this type. See `registerStructure` in
+ * `sim/structures.js`.
+ */
 export type StructureType =
   | 'solar-array'
   | 'beacon'
@@ -250,7 +345,8 @@ export type StructureType =
   | 'habitat'
   | 'launch-pad'
   | 'generator'
-  | 'pylon';
+  | 'pylon'
+  | (string & {});
 
 /**
  * `functional` structures participate in the economy/power grid and are
@@ -385,6 +481,52 @@ export interface GameEvents {
   batteryEmpty: {};
   roverLost: { reason: string };
   stateChanged: {};
+  /** The active renderer changed (iso diorama ⇄ flat map). */
+  viewChanged: { view: 'iso' | 'flat' };
 }
 
 export type GameEventKey = keyof GameEvents;
+
+/**
+ * Every event key, at runtime. `GameEvents` is a type, so hosts that want to
+ * listen to everything (a debug console, analytics, quest hooks) need this
+ * list. Keep it in step with `GameEvents` — `test/engine.test.ts` checks that
+ * the emitter and this array agree.
+ */
+export const GAME_EVENT_KEYS = [
+  'tick',
+  'moved',
+  'blocked',
+  'mined',
+  'miningStarted',
+  'cargoFull',
+  'photo',
+  'scan',
+  'anomalyDocumented',
+  'built',
+  'buildFailed',
+  'rotated',
+  'rotateFailed',
+  'demolished',
+  'demolishFailed',
+  'crafted',
+  'craftFailed',
+  'blockPlaced',
+  'cargoLaunched',
+  'launchFailed',
+  'habitatComplete',
+  'upgraded',
+  'upgradeFailed',
+  'repaired',
+  'damaged',
+  'weather',
+  'meteorImpact',
+  'batteryEmpty',
+  'roverLost',
+  'stateChanged',
+  'viewChanged',
+] as const satisfies readonly GameEventKey[];
+
+/** Compile-time guard: adding a `GameEvents` key without listing it fails here. */
+type UnlistedEventKey = Exclude<GameEventKey, (typeof GAME_EVENT_KEYS)[number]>;
+export const GAME_EVENT_KEYS_ARE_EXHAUSTIVE: UnlistedEventKey extends never ? true : never = true;

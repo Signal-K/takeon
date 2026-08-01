@@ -283,250 +283,50 @@ input[type='color'] {
   background: none;
 }
 
-/* ── Mission view ───────────────────────────────────────────────────── */
+/* ── Mission & editor hosts ─────────────────────────────────────────── */
 
-.mission-root {
+/*
+ * The mission HUD and the editor ship their own styles (@takeon/ui,
+ * @takeon/editor). This app only supplies the fullscreen frames they mount
+ * into, so restyling the game is a matter of overriding --tk-* variables
+ * rather than editing this file.
+ */
+
+.mission-fullscreen,
+.editor-fullscreen {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  background: #000;
-  /* Sits above the site nav — missions are fullscreen. */
+  /* Sits above the site nav — missions and the editor are fullscreen. */
   z-index: 25;
 }
 
-.mission-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  outline: none;
+.editor-fullscreen {
+  top: 57px;
+  background: #eef1f6;
 }
 
-.hud-top {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  gap: 8px;
-  padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
-  align-items: center;
-  pointer-events: none;
-  z-index: 5;
+/* The editor is a light workspace; match the app bar above it so the page
+   doesn't read as two different products stacked together. */
+body:has(.editor-fullscreen) .topnav {
+  background: #ffffff;
+  border-bottom-color: #dbe2ec;
 }
 
-.hud-top > * {
-  pointer-events: auto;
+body:has(.editor-fullscreen) .topnav .logo {
+  color: #1b2532;
 }
 
-.meter {
-  flex: 1;
-  max-width: 170px;
-  background: rgba(20, 15, 50, 0.78);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 5px 8px;
-  font-size: 11px;
-  color: var(--text-dim);
+body:has(.editor-fullscreen) .topnav .chip {
+  background: #f7f9fc;
+  border-color: #dbe2ec;
+  color: #5d6b7d;
 }
 
-.meter .bar {
-  height: 6px;
-  border-radius: 3px;
-  background: #2b2461;
-  margin-top: 3px;
-  overflow: hidden;
-}
-
-.meter .bar > div {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.3s;
-}
-
-.hud-actions {
-  position: absolute;
-  right: 10px;
-  bottom: calc(14px + env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 5;
-}
-
-.action-btn {
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
-  background: rgba(30, 24, 73, 0.9);
-  border: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  gap: 2px;
-  color: var(--text-dim);
-  user-select: none;
-}
-
-.action-btn .ico {
-  font-size: 20px;
-  line-height: 1;
-}
-
-.action-btn:hover {
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-.dpad {
-  position: absolute;
-  left: 14px;
-  bottom: calc(14px + env(safe-area-inset-bottom));
-  display: grid;
-  grid-template-columns: repeat(3, 54px);
-  grid-template-rows: repeat(3, 54px);
-  gap: 4px;
-  z-index: 5;
-}
-
-.dpad button {
-  border-radius: 12px;
-  background: rgba(30, 24, 73, 0.9);
-  font-size: 20px;
-  padding: 0;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.dpad .blank {
-  visibility: hidden;
-}
-
-.toasts {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(96px + env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 6px;
-  z-index: 6;
-  pointer-events: none;
-  width: min(92vw, 420px);
-}
-
-.toast {
-  background: rgba(22, 17, 56, 0.93);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  animation: toast-in 0.2s ease-out;
-}
-
-.toast.warn { border-left-color: var(--warn); }
-.toast.good { border-left-color: var(--good); }
-.toast.bad { border-left-color: var(--bad); }
-
-@keyframes toast-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
-}
-
-.minimap {
-  position: absolute;
-  top: calc(52px + env(safe-area-inset-top));
-  right: 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: rgba(20, 15, 50, 0.86);
-  padding: 4px;
-  z-index: 5;
-}
-
-.tapmenu {
-  position: absolute;
-  z-index: 8;
-  min-width: 160px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background: rgba(22, 17, 56, 0.96);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 6px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
-}
-
-.tapmenu button {
-  padding: 9px 14px;
-  border-radius: 8px;
-  text-align: left;
-  font-size: 13px;
-}
-
-.tapmenu .hdr {
-  font-size: 11px;
-  color: var(--text-dim);
-  padding: 2px 6px;
-  font-family: ui-monospace, monospace;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(8, 5, 24, 0.74);
-  z-index: 30;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-
-@media (min-width: 700px) {
-  .modal-backdrop {
-    align-items: center;
-  }
-}
-
-.modal {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 14px 14px 0 0;
-  width: min(100%, 560px);
-  max-height: 80vh;
-  overflow-y: auto;
-  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-@media (min-width: 700px) {
-  .modal {
-    border-radius: 14px;
-  }
-}
-
-.build-option {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  text-align: left;
-}
-
-.build-option .info {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.build-option .info .desc {
-  font-size: 12px;
-  color: var(--text-dim);
+body:has(.editor-fullscreen) .topnav button {
+  background: #ffffff;
+  border-color: #c3cedd;
+  color: #1b2532;
 }
 
 .photo-grid {

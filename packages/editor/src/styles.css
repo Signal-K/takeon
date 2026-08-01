@@ -1,0 +1,839 @@
+/*
+ * @takeon/editor — tool chrome.
+ *
+ * Light by default (the toolbar toggles dark): authoring happens in daylight,
+ * and a bright shell makes the dark scene view read as a viewport into the
+ * game rather than more UI. Layout is one grid of identical cards — same
+ * header height, same footprint, same scroll behaviour — so panels stay in
+ * line instead of forming ragged sidebars.
+ *
+ * Class names are `tke-` prefixed; colours come from `--tke-*` so a host can
+ * retheme the tool the way `--tk-*` rethemes the game.
+ */
+
+/* Doubled class beats `.tk-scope { display: contents }` from @takeon/ui
+   regardless of which stylesheet the host imports first. */
+.tke-root.tke-root {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
+.tke-shell {
+  --tke-bg: #eef1f6;
+  --tke-card: #ffffff;
+  --tke-card-alt: #f7f9fc;
+  --tke-line: #dbe2ec;
+  --tke-line-strong: #c3cedd;
+  --tke-text: #1b2532;
+  --tke-dim: #5d6b7d;
+  --tke-accent: #0f8f86;
+  --tke-accent-soft: #e2f5f2;
+  --tke-good: #2f855a;
+  --tke-warn: #b7791f;
+  --tke-warn-soft: #fdf3e0;
+  --tke-bad: #c0392b;
+  --tke-bad-soft: #fdecea;
+  --tke-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.08);
+  --tke-scene: #05040f;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--tke-bg);
+  color: var(--tke-text);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+}
+
+.tke-shell[data-theme='dark'] {
+  --tke-bg: #0d1219;
+  --tke-card: #141b26;
+  --tke-card-alt: #101722;
+  --tke-line: #263243;
+  --tke-line-strong: #33445c;
+  --tke-text: #e6edf5;
+  --tke-dim: #93a4b8;
+  --tke-accent: #45e0c4;
+  --tke-accent-soft: rgba(69, 224, 196, 0.12);
+  --tke-good: #6fdc8c;
+  --tke-warn: #ffb03a;
+  --tke-warn-soft: rgba(255, 176, 58, 0.12);
+  --tke-bad: #ff6b6b;
+  --tke-bad-soft: rgba(255, 107, 107, 0.12);
+  --tke-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* Bare-element defaults for the tool's own controls, scoped by one class so
+   they outrank a host stylesheet's `button {}` (this repo's globals.css has
+   one) while still losing to every two-class `.tke-*` rule below.
+   `:not(.tk-mission *)` stops them at the boundary of the game HUD the editor
+   hosts in play mode — otherwise the mission's buttons get repainted as tool
+   chrome. */
+.tke-shell button:not(:where(.tk-mission *)) {
+  font: inherit;
+  color: var(--tke-text);
+  cursor: pointer;
+  background: var(--tke-card);
+  border: 1px solid var(--tke-line-strong);
+  border-radius: 7px;
+  padding: 6px 10px;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.tke-shell button:not(:where(.tk-mission *)):hover:not(:disabled) {
+  border-color: var(--tke-accent);
+  color: var(--tke-accent);
+}
+
+.tke-shell button:not(:where(.tk-mission *)):disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tke-shell button.tke-primary {
+  background: var(--tke-accent);
+  border-color: var(--tke-accent);
+  color: #fff;
+  font-weight: 600;
+  min-width: 90px;
+}
+
+.tke-shell button.tke-primary:hover:not(:disabled) {
+  color: #fff;
+  filter: brightness(1.08);
+}
+
+.tke-shell button.tke-playing {
+  background: var(--tke-bad);
+  border-color: var(--tke-bad);
+}
+
+/* Class-level specificity here on purpose: a host stylesheet that styles bare
+   `input[type=...]` (this repo's globals.css does) would otherwise win on
+   source order and paint the tool's fields in the site's colours. */
+.tke-shell :is(input[type='text'], input[type='number'], select, textarea):not(:where(.tk-mission *)) {
+  font: inherit;
+  color: var(--tke-text);
+  background: var(--tke-card);
+  border: 1px solid var(--tke-line-strong);
+  border-radius: 6px;
+  padding: 5px 7px;
+  width: 100%;
+}
+
+.tke-shell :is(h1, h2, h3, h4) {
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--tke-text);
+}
+
+.tke-shell input[type='color'] {
+  width: 34px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--tke-line-strong);
+  border-radius: 6px;
+  background: none;
+}
+
+.tke-shell input[type='range'] {
+  width: 100%;
+  accent-color: var(--tke-accent);
+}
+
+/* ── Toolbar ────────────────────────────────────────────────────────── */
+
+.tke-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  background: var(--tke-card);
+  border-bottom: 1px solid var(--tke-line);
+  flex-wrap: wrap;
+}
+
+.tke-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--tke-line);
+  margin: 0 4px;
+}
+
+.tke-spacer {
+  flex: 1;
+}
+
+.tke-status {
+  color: var(--tke-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.tke-inline-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tke-dim);
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.tke-inline-range input[type='range'] {
+  width: 88px;
+}
+
+/* ── Card grid ──────────────────────────────────────────────────────── */
+
+.tke-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(316px, 1fr));
+  grid-auto-rows: 332px;
+  gap: 14px;
+  padding: 14px;
+  align-content: start;
+}
+
+/* The scene is the one panel that earns extra room; everything else keeps
+   the base cell so rows stay aligned across the whole tool. */
+.tke-card-scene {
+  grid-column: span 2;
+  grid-row: span 2;
+}
+
+.tke-card-wide {
+  grid-column: span 2;
+}
+
+@media (max-width: 900px) {
+  .tke-card-scene,
+  .tke-card-wide {
+    grid-column: span 1;
+  }
+
+  .tke-card-scene {
+    grid-row: span 1;
+    min-height: 320px;
+  }
+}
+
+.tke-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--tke-card);
+  border: 1px solid var(--tke-line);
+  border-radius: 12px;
+  box-shadow: var(--tke-shadow);
+  overflow: hidden;
+}
+
+.tke-card-head {
+  flex: 0 0 auto;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--tke-line);
+  background: var(--tke-card-alt);
+}
+
+.tke-card-head h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tke-text);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tke-card-hint {
+  font-size: 10.5px;
+  color: var(--tke-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tke-card-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.tke-card-actions button {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.tke-card-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.tke-card-body-flush {
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+  background: var(--tke-scene);
+}
+
+/* ── Project tree ───────────────────────────────────────────────────── */
+
+.tke-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tke-browser-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.tke-browser-actions button {
+  flex: 1;
+  font-size: 11px;
+  padding: 5px 4px;
+}
+
+.tke-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px;
+}
+
+.tke-list .tke-list-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--tke-card-alt);
+}
+
+.tke-list .tke-list-item.tke-selected {
+  border-color: var(--tke-accent);
+  background: var(--tke-accent-soft);
+  color: var(--tke-accent);
+}
+
+.tke-list-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tke-list-text b {
+  font-size: 12.5px;
+}
+
+.tke-list-text em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--tke-dim);
+}
+
+.tke-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.tke-badge {
+  margin-left: auto;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tke-warn);
+  background: var(--tke-warn-soft);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+/* ── Inspector ──────────────────────────────────────────────────────── */
+
+.tke-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tke-group {
+  border: 1px solid var(--tke-line);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.tke-shell .tke-group-head {
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: var(--tke-card-alt);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tke-dim);
+  padding: 8px 10px;
+}
+
+.tke-shell .tke-group-head:hover {
+  color: var(--tke-accent);
+}
+
+.tke-caret {
+  display: inline-block;
+  width: 14px;
+}
+
+.tke-group-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.tke-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tke-field-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.tke-field-inline input[type='checkbox'] {
+  width: auto;
+  accent-color: var(--tke-accent);
+}
+
+.tke-field-label {
+  font-size: 11px;
+  color: var(--tke-dim);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tke-field-label em {
+  font-style: normal;
+  opacity: 0.75;
+}
+
+.tke-regen {
+  color: var(--tke-accent);
+  font-size: 10px;
+}
+
+.tke-number-row {
+  display: grid;
+  grid-template-columns: 1fr 70px;
+  gap: 8px;
+  align-items: center;
+}
+
+.tke-colour-row {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.tke-validation {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tke-error,
+.tke-warning {
+  font-size: 11px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  line-height: 1.45;
+}
+
+.tke-error {
+  color: var(--tke-bad);
+  background: var(--tke-bad-soft);
+  border: 1px solid currentColor;
+}
+
+.tke-warning {
+  color: var(--tke-warn);
+  background: var(--tke-warn-soft);
+  border: 1px solid currentColor;
+}
+
+.tke-hint {
+  font-size: 11px;
+  color: var(--tke-dim);
+  line-height: 1.5;
+}
+
+/* ── Viewport ───────────────────────────────────────────────────────── */
+
+.tke-viewport {
+  position: absolute;
+  inset: 0;
+}
+
+.tke-scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.tke-scene:active {
+  cursor: grabbing;
+}
+
+.tke-viewport-bar {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  background: rgba(12, 18, 28, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e6edf5;
+}
+
+.tke-viewport-bar button {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #e6edf5;
+  font-size: 11px;
+  padding: 4px 9px;
+}
+
+.tke-viewport-bar .tke-inline-range,
+.tke-viewport-bar .tke-hint {
+  color: #b9c7d6;
+}
+
+/* ── Maps ───────────────────────────────────────────────────────────── */
+
+.tke-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tke-tabs .tke-tab {
+  font-size: 11px;
+  padding: 4px 9px;
+  background: var(--tke-card-alt);
+}
+
+.tke-tabs .tke-tab.tke-selected {
+  border-color: var(--tke-accent);
+  background: var(--tke-accent-soft);
+  color: var(--tke-accent);
+}
+
+.tke-maps {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.tke-map {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--tke-line);
+  border-radius: 9px;
+  background: var(--tke-scene);
+  cursor: crosshair;
+  display: block;
+}
+
+.tke-slice {
+  width: 100%;
+  height: 86px;
+  border: 1px solid var(--tke-line);
+  border-radius: 9px;
+  background: var(--tke-scene);
+  display: block;
+}
+
+.tke-map-readout {
+  font-size: 11px;
+  color: var(--tke-dim);
+}
+
+.tke-map-readout code {
+  color: var(--tke-accent);
+  font-weight: 600;
+}
+
+/* ── Analysis ───────────────────────────────────────────────────────── */
+
+.tke-analysis h4 {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tke-dim);
+  margin: 14px 0 6px;
+}
+
+.tke-analysis h4:first-child {
+  margin-top: 0;
+}
+
+.tke-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 6px;
+}
+
+.tke-stat {
+  border: 1px solid var(--tke-line);
+  border-radius: 9px;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  background: var(--tke-card-alt);
+}
+
+.tke-stat b {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tke-stat em,
+.tke-stat-label {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--tke-dim);
+}
+
+.tke-stat.tke-good b { color: var(--tke-good); }
+.tke-stat.tke-warn b { color: var(--tke-warn); }
+.tke-stat.tke-bad b { color: var(--tke-bad); }
+
+.tke-histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 66px;
+  padding: 5px;
+  border: 1px solid var(--tke-line);
+  border-radius: 9px;
+  background: var(--tke-card-alt);
+}
+
+.tke-histogram .tke-bar {
+  flex: 1;
+  min-height: 1px;
+  background: var(--tke-accent);
+  border-radius: 2px 2px 0 0;
+  opacity: 0.85;
+}
+
+.tke-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tke-bars li {
+  display: grid;
+  grid-template-columns: 10px 84px 1fr 34px;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.tke-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.tke-bars-label {
+  color: var(--tke-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tke-bars-track {
+  height: 7px;
+  background: var(--tke-line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.tke-bars-fill {
+  display: block;
+  height: 100%;
+}
+
+.tke-bars-value {
+  text-align: right;
+  color: var(--tke-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.tke-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.tke-table td {
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--tke-line);
+}
+
+.tke-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Rover ──────────────────────────────────────────────────────────── */
+
+.tke-rover {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.tke-statlist {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px 12px;
+  font-size: 11px;
+}
+
+.tke-statlist > div {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--tke-line);
+  padding: 3px 0;
+}
+
+.tke-statlist dt {
+  color: var(--tke-dim);
+}
+
+.tke-statlist dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Console ────────────────────────────────────────────────────────── */
+
+.tke-console {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--tke-card);
+}
+
+.tke-console-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.tke-console-line b {
+  color: var(--tke-accent);
+  font-weight: 600;
+}
+
+.tke-console-line code {
+  color: var(--tke-dim);
+}
+
+/* ── Dialogs ────────────────────────────────────────────────────────── */
+
+.tke-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.5);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tke-dialog {
+  background: var(--tke-card);
+  border: 1px solid var(--tke-line);
+  border-radius: 14px;
+  padding: 16px;
+  width: min(92vw, 560px);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.25);
+}
+
+.tke-dialog h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--tke-text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.tke-dialog textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.tke-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.tke-empty {
+  color: var(--tke-dim);
+  font-size: 12px;
+}

@@ -2,8 +2,18 @@
 
 TakeOn's engine is a plain TypeScript library with no framework or asset
 dependencies — everything (terrain sprites, rover, structures, anomalies) is
-drawn procedurally into a canvas it owns. That makes three integration levels
-possible.
+drawn procedurally into a canvas it owns. That makes several integration levels
+possible: a bare canvas, a PixiJS stage, or — if your game is React —
+`@takeon/ui`, whose every component the host can replace ([UI.md](UI.md)).
+Worlds themselves are authored in `@takeon/editor` ([EDITOR.md](EDITOR.md)),
+and the engine's own structure — layers, scenes, views, entity parts, noise —
+is mapped in [ENGINE.md](ENGINE.md). For the Star Sailors ecosystem
+specifically, [LANDNAM.md](LANDNAM.md) maps Landnam's construction,
+underground and settlement/exploration scenes onto this API.
+
+Missions render in two built-in views: the isometric diorama and a top-down 2D
+map (`game.setView('flat')`). If neither suits your game, take
+`game.scene()` — a renderer-agnostic list of entities — and draw it yourself.
 
 ## 1. Drop-in canvas (any host)
 
@@ -65,6 +75,30 @@ frame, the sim advances, host-canvas input (keyboard + tap) routes into the
 game, and `mounted.destroy()` releases the sprite, texture, input and loop.
 
 Returned handle: `{ game, sprite, resize(w, h), destroy() }`.
+
+## 3. Inside a React app (`@takeon/ui`)
+
+```tsx
+import { TakeOnMission } from '@takeon/ui';
+import '@takeon/ui/styles.css';
+
+<TakeOnMission
+  body={getBody('mars')!}
+  spec={playerRover}
+  sync={myAdapter}
+  ui={{ components: { ActionBar: MyActionBar }, theme: { accent: '#ff8a3d' } }}
+  onEnd={({ credits }) => award(credits)}
+/>;
+```
+
+`MissionProvider` owns the engine loop, HUD state, toasts and persistence;
+every HUD component is resolved through a registry, so a host game can replace,
+wrap, restyle or extend any of them — or drop the stock HUD entirely and build
+its own from `useMission()`. Full guide: [UI.md](UI.md).
+
+Custom destinations authored in the editor (or fetched from your backend) are
+published with `registerBody(def)`; `getBody`/`listBodies` then resolve them
+everywhere, including in the launch screen and in saved missions.
 
 ## Events
 

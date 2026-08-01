@@ -19,6 +19,9 @@ jobs:
       - run: npm run build -w @takeon/engine
       - run: npm test -w @takeon/engine
       - run: npm run build -w @takeon/pixi
+      - run: npm run build -w @takeon/ui
+      - run: npm test -w @takeon/ui
+      - run: npm run build -w @takeon/editor
       - run: npm run build -w takeon-web
 
   backend:
@@ -32,7 +35,7 @@ jobs:
       - run: go build ./... && go vet ./... && go test ./...
         working-directory: pocketbase
 
-  # Publishes @takeon/engine and @takeon/pixi to npmjs.org when a v* tag is
+  # Publishes the @takeon packages to npmjs.org when a v* tag is
   # pushed. Requires the NPM_TOKEN repo secret (an npm automation token with
   # publish rights on the @takeon scope). Idempotent: versions already on the
   # registry are skipped, so re-running a tag build never fails on republish.
@@ -50,11 +53,13 @@ jobs:
       - run: npm install
       - run: npm run build -w @takeon/engine && npm test -w @takeon/engine
       - run: npm run build -w @takeon/pixi
+      - run: npm run build -w @takeon/ui && npm test -w @takeon/ui
+      - run: npm run build -w @takeon/editor
       - name: Publish packages not yet on the registry
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for pkg in @takeon/engine @takeon/pixi; do
+          for pkg in @takeon/engine @takeon/pixi @takeon/ui @takeon/editor; do
             version=$(npm pkg get version -w "$pkg" | node -e "process.stdin.once('data',d=>console.log(Object.values(JSON.parse(d))[0]))")
             if npm view "$pkg@$version" version >/dev/null 2>&1; then
               echo "$pkg@$version already published — skipping"

@@ -20,16 +20,22 @@ like [Landnam](https://github.com/Signal-K/planet-hunters-experiment-1) — via
 |---|---|
 | `packages/engine` | `@takeon/engine` — the whole game as a zero-dependency TypeScript library: voxel worlds, terrain gen, isometric renderer (Canvas 2D, chunk-cached), rover simulation, parts/customiser maths, actions, persistence adapters |
 | `packages/pixi-adapter` | `@takeon/pixi` — mounts a mission inside an existing PixiJS stage (v7/v8) |
-| `web` | Standalone Next.js app: garage, customiser, destination picker, mission HUD. Mobile-friendly (touch d-pad, pinch zoom, tap-to-drive) |
+| `packages/ui` | `@takeon/ui` — React mission shell and HUD. Every component is replaceable by the parent app ([docs/UI.md](docs/UI.md)) |
+| `packages/editor` | `@takeon/editor` — mountable world editor: inspector, scene view, terrain/noise maps, analysis, play mode ([docs/EDITOR.md](docs/EDITOR.md)) |
+| `web` | Standalone Next.js app: garage, customiser, destination picker, mission HUD, `/editor`. Mobile-friendly (touch d-pad, pinch zoom, tap-to-drive) |
+| `desktop` | Optional Electron shell to run the editor as a Mac/Windows/Linux app (not an npm workspace) |
 | `pocketbase` | Go PocketBase **spoke** backend (port 8094) following the Star Sailors hub-and-spoke pattern: JS `pb_migrations`, custom `/api/takeon/*` routes, auth delegated to the shared backend, discovery cross-post hook |
+| `docs/ENGINE.md` | How the engine is structured: layers, scenes, views, entity parts, noise, registries |
 | `docs/INTEGRATION.md` | How to embed TakeOn in Landnam / any PixiJS game, or behind your own storage |
+| `docs/UI.md` | Adapting/replacing the UI from a game built on TakeOn |
+| `docs/EDITOR.md` | The world editor: terrain, noise, maps, analysis, play mode |
 
 ## Quick start (no backend needed)
 
 ```bash
 npm install
-npm run build          # engine → pixi adapter → web
-npm run dev            # http://localhost:3400
+npm run build          # engine → pixi adapter → ui → editor → web
+npm run dev            # http://localhost:3400  (editor at /editor)
 ```
 
 The web app persists to `localStorage` when no backend is configured — fully
@@ -37,16 +43,18 @@ playable offline.
 
 ## Installing the packages
 
-`@takeon/engine` and `@takeon/pixi` publish to **npmjs.org** (not GitHub
+`@takeon/engine`, `@takeon/pixi`, `@takeon/ui` and `@takeon/editor` publish to **npmjs.org** (not GitHub
 Packages — its npm registry only hosts scopes matching the repo owner, i.e.
 `@signal-k/*`, and requires auth even for public installs):
 
 ```bash
 npm install @takeon/engine        # the whole game as a library
 npm install @takeon/pixi          # + the PixiJS mount adapter
+npm install @takeon/ui            # + the React HUD (overridable component registry)
+npm install @takeon/editor        # + the world editor component
 ```
 
-Releases are tag-driven: bump both package versions (lockstep), add a
+Releases are tag-driven: bump the package versions (lockstep), add a
 `CHANGELOG.md` entry, and push a `v*` tag — CI builds, tests, and publishes
 anything not already on the registry. The repo needs an `NPM_TOKEN` secret
 (npm automation token with publish rights on the `@takeon` scope).
@@ -62,8 +70,12 @@ anything not already on the registry. The repo needs an `NPM_TOKEN` secret
   gravity, sunlight and delta-v: your fuel capacity gates what you can reach,
   gravity scales fall damage, solar flux scales charging, day length drives the
   day/night cycle. Bennu is an irregular rubble pile with map-edge cliffs.
+- **Two views** — the isometric voxel diorama, or a top-down 2D map with
+  hillshading, contours, scanner reach and entity glyphs. Toggle from the HUD
+  (`⬔ / ▦`) or the editor; both draw the same scene, share one camera, and
+  support tap-to-drive and tile picking.
 - **On the surface** — drive (keys, touch d-pad, or tap-to-drive), rotate the
-  isometric perspective in 90° steps (R), mine the voxel terrain (materials
+  perspective in 90° steps (R), mine the voxel terrain (materials
   have hardness and yields; ores live in veins), photograph anomalies to
   document discoveries, scan to reveal them, build structures from cargo
   (solar array, nav beacon, auto-drill rig, supply cache, refinery, habitat
@@ -76,8 +88,24 @@ anything not already on the registry. The repo needs an `NPM_TOKEN` secret
   discoveries convert to credits. A rover that runs out of battery with no way
   to recharge — or breaks its chassis — is lost.
 
+The rover is drawn from **parts** rather than a fixed sprite: fitted modules,
+cargo load, charge level, hull damage, drilling and nightfall each add or
+change hardware on screen, and a host game can register its own parts.
+
 Worlds are generated deterministically from `(body, seed)`, so saves only
 persist voxel *edits* plus rover/structure state; resume is byte-faithful.
+
+## Noise and terrain fields
+
+Elevation can come from any of several fields — value, Perlin, simplex, Worley
+(craters or fractures) — stacked as fBm, ridged or billow, with domain warping,
+all described by one `NoiseConfig` on the body. Blue noise (Poisson-disk) is
+available for *placement*: evenly spread scatter with no clumps. The editor
+edits the config, previews the exact field the generator will use, and shows a
+blue-noise scatter preview.
+
+Bodies without a `noise` block keep the original field byte-for-byte, so
+existing saves stay valid. See [docs/ENGINE.md](docs/ENGINE.md).
 
 ## Real planetary data
 
@@ -149,10 +177,65 @@ mounted.game.events.on('anomalyDocumented', ({ anomaly }) => { /* award XP */ })
 See [docs/INTEGRATION.md](docs/INTEGRATION.md) for the event catalogue and how
 to supply a custom `SyncAdapter` so mission data lands in *your* database.
 
+## Editing worlds
+
+TakeOn ships a small game editor — project tree, scene view, inspector,
+terrain instruments and a play button — for designing destinations instead of
+hand-editing `bodies.ts`:
+
+```bash
+npm run dev            # http://localhost:3400/editor
+```
+
+Or as a desktop app on macOS:
+
+```bash
+npm run build && npm run start -w takeon-web
+cd desktop && npm install && npm start
+```
+
+One grid of uniform cards — scene, inspector, maps, analysis, rover,
+destinations, events — with light chrome by default (☾ toggles dark). Edit
+terrain, noise and mineral parameters with live regeneration; read the
+elevation / slope / surface / ore / drivability maps and a vertical
+cross-section; check the analysis numbers (relief, cliff fraction, drivable
+percentage, recoverable resources); then press ▶ Play to drive the world with
+the real HUD, in the same card. Drafts are published to the engine's body registry, so an edited
+world is immediately launchable from the garage. Export as `BodyDef` JSON or as
+a TypeScript literal for `world/bodies.ts`. Full guide:
+[docs/EDITOR.md](docs/EDITOR.md).
+
+## Building a game on top of TakeOn
+
+The HUD is a package (`@takeon/ui`) styled as pulp sci-fi instrumentation —
+hex cells, notched panel frames, segmented gauges, no web fonts or images — and
+every component in it is resolved through a registry, so a host game can
+replace, wrap, restyle or extend any part of the interface:
+
+```tsx
+<TakeOnMission
+  body={getBody('mars')!}
+  spec={playerRover}
+  sync={myAdapter}
+  ui={{
+    components: { ActionBar: MyActionBar },   // replace a component
+    labels: { 'action.mine': 'Dig' },         // reskin the words
+    slots: { 'hudBar.end': <MyQuestChip /> }, // inject extra chrome
+    theme: { accent: '#ff8a3d' },             // recolour via CSS variables
+  }}
+/>
+```
+
+`MissionProvider` owns the engine loop, HUD state, toasts and persistence and
+exposes them through hooks, so a game can also drop the stock HUD entirely and
+build its own from `useMission()`. Gameplay rules stay in the engine either
+way. See [docs/UI.md](docs/UI.md).
+
 ## Tests
 
 ```bash
-npm test               # engine unit tests (terrain determinism, sim, economy)
+npm test               # engine unit tests (terrain determinism, sim, economy,
+                       # authoring/registry/analysis) + @takeon/ui registry tests
 ```
 
 ## Performance notes

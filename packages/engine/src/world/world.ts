@@ -13,6 +13,15 @@ export class VoxelWorld {
   private heights: Int8Array;
   /** Sparse record of player edits for persistence: "x,y,z" -> material. */
   readonly edits: Record<string, number> = {};
+  /**
+   * Extension slot for a second "layer" of world data (an underground cave
+   * grid, a sky/atmosphere layer, …) that a module built on TakeOn wants to
+   * carry alongside this surface world. Core neither writes nor interprets
+   * this — see `world/layers.js`'s `registerWorldLayer`. Regenerates with
+   * everything else from `(BodyDef, seed)`, so nothing here needs its own
+   * persistence as long as a layer generator stays deterministic.
+   */
+  readonly layers: Record<string, unknown> = {};
   /** Bumped whenever any voxel changes; renderers watch this. */
   version = 0;
   /** Set by the renderer to receive per-column invalidations. */

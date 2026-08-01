@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
+import '@takeon/ui/styles.css';
+import '@takeon/editor/styles.css';
 import './globals.css';
 import { SyncProvider } from '../lib/sync-context';
 
@@ -27,6 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Link>
             <span className="chip">rover missions</span>
             <span className="spacer" />
+            <Link href="/editor">
+              <button title="World editor: terrain, noise, maps, play mode">🛠 Editor</button>
+            </Link>
             <Link href="/customize">
               <button>+ New rover</button>
             </Link>

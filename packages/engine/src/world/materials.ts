@@ -102,6 +102,30 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     colors: ['#f6d743', '#c9ad2e', '#9c8722'],
     jitter: 0.1,
   },
+  [Material.Grass]: {
+    id: Material.Grass,
+    name: 'Grass',
+    hardness: 1,
+    yields: { resource: 'regolith', amount: 1 },
+    colors: ['#7ec850', '#5a9c3a', '#3f7228'],
+    jitter: 0.06,
+  },
+  [Material.Sand]: {
+    id: Material.Sand,
+    name: 'Sand',
+    hardness: 1,
+    yields: { resource: 'silica', amount: 1 },
+    colors: ['#e8c77e', '#c9a35c', '#a37f42'],
+    jitter: 0.05,
+  },
+  [Material.Snow]: {
+    id: Material.Snow,
+    name: 'Snow',
+    hardness: 1,
+    yields: { resource: 'ice', amount: 1 },
+    colors: ['#f4f9ff', '#d6e6f2', '#b3cfe0'],
+    jitter: 0.03,
+  },
 };
 
 export const RESOURCE_NAMES: Record<ResourceKey, string> = {
@@ -119,3 +143,45 @@ export const RESOURCE_NAMES: Record<ResourceKey, string> = {
   water: 'Water',
   alloy: 'Ti-alloy',
 };
+
+/**
+ * Runtime material/resource registry.
+ *
+ * TakeOn ships a Mars-rover-flavoured catalog (regolith, iron, copper…), but a
+ * different game built on the engine — a precious-metals mining game, say —
+ * needs its own voxel materials and cargo resource keys. `Material` and
+ * `ResourceKey` are open types precisely so this doesn't require a fork:
+ * register new entries and every built-in lookup (`MATERIALS[id]`, terrain
+ * generation, both renderers, the editor's maps/analysis) picks them up with
+ * no other change, because `MATERIALS`/`RESOURCE_NAMES` are plain mutable
+ * objects, not closed enums.
+ *
+ * Use ids at or above `CUSTOM_MATERIAL_BASE` (64) so a body shared between
+ * hosts never collides with another game's custom materials.
+ */
+
+/** Add or replace a voxel material. Returns the id that was registered. */
+export function registerMaterial(def: MaterialDef): Material {
+  MATERIALS[def.id] = def;
+  return def.id;
+}
+
+/** Remove a registered material. Built-ins (id < `CUSTOM_MATERIAL_BASE`) refuse to unregister. */
+export function unregisterMaterial(id: Material): boolean {
+  if (id < 64 || !(id in MATERIALS)) return false;
+  delete MATERIALS[id];
+  return true;
+}
+
+/** Every material currently known, built-in and registered. */
+export function listMaterials(): MaterialDef[] {
+  return Object.values(MATERIALS);
+}
+
+/**
+ * Give a resource key a display name (`RESOURCE_NAMES[key]`). Pair with
+ * `registerResourceValue` (`net/sync.js`) to price it for mission payouts.
+ */
+export function registerResource(key: ResourceKey, name: string): void {
+  RESOURCE_NAMES[key] = name;
+}

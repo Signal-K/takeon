@@ -1,7 +1,12 @@
 import type { BodyDef, MissionState, RoverSpec, StructureType, Vec2 } from '../types.js';
 import { EventBus } from '../util/events.js';
 import { Simulation, TICK_DT } from '../sim/simulation.js';
+import { Camera } from '../render/camera.js';
+import { FlatRenderer } from '../render/flat.js';
 import { IsoRenderer } from '../render/renderer.js';
+import type { SceneView } from '../render/view.js';
+import { buildScene } from '../scene/build.js';
+import type { Scene, ViewKind } from '../scene/types.js';
 import { Controls } from '../input/controls.js';
 import { GameAudio } from '../audio/audio.js';
 
@@ -26,6 +31,9 @@ export interface RoverGameOptions {
   /** Disable the built-in synthesised audio (default enabled but silent
    * until `game.audio.unlock()` is called from a user gesture). */
   audio?: boolean;
+  /** Which view to open in: the isometric diorama or the flat 2D map.
+   * (Named `startView` because PixiJS hosts already pass a `view` canvas.) */
+  startView?: ViewKind;
 }
 
 /** A queued player order: drive somewhere, or go mine a specific column. */
@@ -41,14 +49,20 @@ export type RoverOrder =
 export class RoverGame {
   readonly events = new EventBus();
   readonly sim: Simulation;
-  readonly renderer: IsoRenderer;
+  /** The isometric ("3D" diorama) view. Always constructed. */
+  readonly iso: IsoRenderer;
+  /** Shared by every view, so input and host code keep one camera. */
+  readonly camera = new Camera();
   /** Synthesised audio director. Call `game.audio.unlock()` on first tap. */
   readonly audio: GameAudio;
+  private flatView: FlatRenderer | null = null;
+  private activeView: SceneView;
   private controls: Controls | null = null;
   private raf = 0;
   private acc = 0;
   private last = 0;
   private running = false;
+  private dpr = 1;
   private order: RoverOrder | null = null;
   private opts: RoverGameOptions;
 
@@ -61,7 +75,9 @@ export class RoverGame {
       seed: opts.seed,
       resume: opts.resume,
     });
-    this.renderer = new IsoRenderer(opts.canvas, this.sim);
+    this.iso = new IsoRenderer(opts.canvas, this.sim, this.camera);
+    this.activeView = this.iso;
+    if (opts.startView === 'flat') this.setView('flat');
     this.audio = new GameAudio({ enabled: opts.audio !== false });
     this.audio.startAmbient(this.sim.body.id);
     this.wireAudio();
@@ -150,6 +166,7 @@ export class RoverGame {
   }
 
   resize(cssW: number, cssH: number, dpr = 1): void {
+    this.dpr = dpr;
     this.renderer.resize(cssW, cssH, dpr);
   }
 
@@ -166,9 +183,58 @@ export class RoverGame {
     return this.sim.move(worldDir as 0 | 1 | 2 | 3);
   }
 
-  /** Rotate the isometric perspective by 90°. */
+  /** Rotate the perspective by 90° (both views understand rotation). */
   rotateView(): void {
     this.renderer.rotateClockwise();
+  }
+
+  /** The renderer currently drawing: iso diorama or flat map. */
+  get renderer(): SceneView {
+    return this.activeView;
+  }
+
+  /** Which view is live. */
+  get view(): ViewKind {
+    return this.activeView.kind;
+  }
+
+  /**
+   * Switch between the isometric diorama and the top-down 2D map. The camera
+   * is shared, so the new view opens on the same tile at a comparable zoom,
+   * and anything holding `game.camera` keeps working.
+   */
+  setView(kind: ViewKind): void {
+    if (kind === this.activeView.kind) return;
+    const centre = this.activeView.centreTile();
+    const follow = this.camera.follow;
+    this.activeView.deactivate();
+    if (kind === 'flat') {
+      if (!this.flatView) this.flatView = new FlatRenderer(this.opts.canvas, this.sim, this.camera);
+      this.activeView = this.flatView;
+    } else {
+      this.activeView = this.iso;
+    }
+    this.activeView.setRotation(this.iso.rotation);
+    this.activeView.activate();
+    this.activeView.resize(this.camera.viewW, this.camera.viewH, this.dpr);
+    this.activeView.focusTile(centre);
+    this.camera.follow = follow;
+    this.events.emit('viewChanged', { view: kind });
+  }
+
+  /** Toggle between the two built-in views. */
+  toggleView(): ViewKind {
+    this.setView(this.activeView.kind === 'iso' ? 'flat' : 'iso');
+    return this.activeView.kind;
+  }
+
+  /**
+   * The current frame as a renderer-agnostic scene description — entities,
+   * positions, facings and flags. Hosts that want to draw TakeOn with their
+   * own technology start here.
+   */
+  scene(): Scene {
+    return buildScene(this.sim, { view: this.view });
   }
 
   craft(recipeId: string): boolean {
