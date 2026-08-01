@@ -73,6 +73,11 @@ additive → minor, fixes → patch.
   whole palette is `--tk-*` variables.
 - View toggle in the HUD bar; `hud.view`, `actions.setView`/`toggleView` and a
   `view` prop on `MissionProvider`.
+- `ActionBar` decluttered: only capability-gated, frequent verbs (mine, photo,
+  scan) sit on the hotbar. Occasional actions (build, craft, place, repair,
+  deposit, hold) collapse behind a single "More" hex that opens `.tk-tray`, a
+  pop-up list that closes itself on selection, outside click or Escape. New
+  `ActionItem.menu` flag controls the split for custom action sets.
 
 ### @takeon/editor (new)
 

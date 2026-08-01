@@ -82,7 +82,7 @@ Keys (exported as `SLOT_KEYS`):
 | `MissionCanvas` | The render surface (mounting it boots the engine) |
 | `HudBar` | Top status strip |
 | `DPad` | Touch drive pad |
-| `ActionBar` | Mine / photo / scan / build / craft / place / repair / deposit / hold |
+| `ActionBar` | Mine / photo / scan on the hotbar directly; build / craft / place / repair / deposit / hold behind one "More" tray |
 | `Minimap` | Corner map |
 | `TileMenu` | Tap-a-tile context menu |
 | `BuildPanel`, `CraftPanel`, `CargoPanel`, `EndMissionDialog` | Modal panels |

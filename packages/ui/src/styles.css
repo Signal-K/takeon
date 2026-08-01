@@ -412,6 +412,91 @@ button.tk-chip:hover {
   font-size: 9px;
 }
 
+/* The tray opener reads as a distinct "more" control, not just another tool,
+   so a dashed ring marks it apart from the honeycomb around it. */
+.tk-action-more {
+  box-shadow: inset 0 0 0 1px var(--tk-border), inset 0 0 0 3px transparent;
+}
+
+.tk-action-more[aria-expanded='true'] {
+  color: var(--tk-accent);
+  background: var(--tk-panel-raised);
+  box-shadow: inset 0 0 0 1px var(--tk-accent);
+}
+
+/* Invisible click-catcher so an outside tap closes the tray; sits under it
+   but above everything else, and never dims the scene the way a modal does. */
+.tk-tray-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  background: transparent;
+}
+
+/* Pop-up list of the less-frequent actions, anchored above the honeycomb so
+   it never covers the d-pad or the thing you're driving toward. */
+.tk-tray {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 10px;
+  z-index: 7;
+  min-width: 176px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--tk-panel-solid);
+  border: 1px solid var(--tk-border);
+  border-right: 2px solid var(--tk-accent);
+  padding: 8px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+}
+
+.tk-tray-head {
+  font-size: 10px;
+  color: var(--tk-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  padding: 2px 10px 6px;
+  border-bottom: 1px solid var(--tk-border);
+  margin-bottom: 4px;
+}
+
+.tk-tray button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--tk-text);
+  background: none;
+  border: 1px solid transparent;
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tk-tray button:hover {
+  border-color: var(--tk-hairline);
+  color: var(--tk-accent);
+  background: rgba(95, 227, 216, 0.07);
+}
+
+.tk-tray-icon {
+  font-size: 15px;
+  width: 1.2em;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .tk-tray {
+    min-width: 156px;
+  }
+}
+
 /* ── Survey map ─────────────────────────────────────────────────────── */
 
 .tk-minimap {

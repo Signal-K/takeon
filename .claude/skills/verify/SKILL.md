@@ -49,12 +49,16 @@ before `next build` (env is inlined at build time).
 3. Mission: wait `.tk-hudbar .tk-meter` (power/hull/hold gauges); canvas is
    `.tk-canvas`. Click the canvas for the tile menu (`.tk-tilemenu`, with
    "Drive here" / "Mine …"), or use `.tk-dpad button[aria-label^="Drive"]`.
-   Action buttons are the hex cells `.tk-action:has-text("Mine")` etc. —
-   Photo/Scan only render when the rover carries those modules. Modals close
-   via `.tk-modal-close` or the footer `button:has-text("Close")`.
+   The hotbar (`.tk-actions`) only shows the frequent, capability-gated verbs
+   directly — `.tk-action:has-text("Mine")` / `"Photo"` / `"Scan"` — plus one
+   `.tk-action-more` hex. Everything occasional (Build/Craft/Place/Repair/
+   Deposit/Hold) is behind it: click `.tk-action-more` to open `.tk-tray`, then
+   `.tk-tray button:has-text("Build")` etc. The tray closes itself after any
+   click, on outside click, or on Escape. Modals close via `.tk-modal-close` or
+   the footer `button:has-text("Close")`.
 4. Mining yield appears as `.tk-toast-good` with `+N <resource>`; cargo meter is
-   the 3rd `.tk-hudbar .tk-meter`; `.tk-action:has-text("Hold")` opens the cargo
-   table (`.tk-table tbody tr`).
+   the 3rd `.tk-hudbar .tk-meter`; open the tray and click
+   `.tk-tray button:has-text("Hold")` for the cargo table (`.tk-table tbody tr`).
 5. Resume: go `/` — active mission card has `button:has-text("Resume mission")`;
    cargo must survive the round-trip.
 6. End: `.tk-hudbar button:has-text("End")` → modal → `.tk-btn-primary` → back
