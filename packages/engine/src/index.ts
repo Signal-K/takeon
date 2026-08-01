@@ -82,7 +82,36 @@ export {
 export { PARTS, getPart } from './parts/catalog.js';
 export { computeStats, canReach, defaultSpec } from './parts/assembly.js';
 
-export { IsoRenderer, type ViewRotation } from './render/renderer.js';
+export { IsoRenderer } from './render/renderer.js';
+export { FlatRenderer, FLAT_TILE } from './render/flat.js';
+export { type SceneView, type ViewRotation } from './render/view.js';
+export {
+  registerFlatPainter,
+  getFlatPainter,
+  listFlatPainterKinds,
+  type FlatPainter,
+  type FlatPaintContext,
+} from './render/flat-painters.js';
+export {
+  drawRover,
+  registerRoverPart,
+  unregisterRoverPart,
+  listRoverParts,
+  roverPaintContext,
+  ROVER_SCALE,
+  type RoverPart,
+  type RoverPaintContext,
+} from './render/rover.js';
+
+// Scene model: the renderer-agnostic description of a frame.
+export { buildScene, type BuildSceneOptions } from './scene/build.js';
+export {
+  entitiesOfKind,
+  type Scene,
+  type SceneEntity,
+  type SceneEntityKind,
+  type ViewKind,
+} from './scene/types.js';
 export { registerDem, getDem, sampleDem, type DemPatch } from './world/dem/index.js';
 export { Camera } from './render/camera.js';
 export { TILE_W, TILE_H, TILE_Z, project } from './render/sprites.js';
@@ -103,7 +132,28 @@ export {
 } from './net/sync.js';
 
 export { mulberry32, hash2, hash3, makeId } from './util/rng.js';
-export { valueNoise2, fbm2 } from './util/noise.js';
+export {
+  valueNoise2,
+  fbm2,
+  perlin2,
+  simplex2,
+  worley2,
+  poissonDisk,
+  scatterPoints,
+  blueNoiseMask,
+  blueNoise2,
+  clearBlueNoiseCache,
+  makeNoise,
+  fractal2,
+  describeNoise,
+  DEFAULT_NOISE,
+  NOISE_TYPES,
+  FRACTAL_KINDS,
+  type NoiseConfig,
+  type NoiseType,
+  type FractalKind,
+  type WorleyMode,
+} from './util/noise/index.js';
 
 // Framework-agnostic objective/mission module contract (offline-first).
 export {

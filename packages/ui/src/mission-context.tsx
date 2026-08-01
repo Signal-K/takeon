@@ -28,6 +28,7 @@ import {
   type StructureType,
   type SyncAdapter,
   type Vec2,
+  type ViewKind,
 } from '@takeon/engine';
 
 /**
@@ -71,6 +72,8 @@ export interface MissionHud {
   /** Which action buttons the fitted parts support. */
   can: { mine: boolean; photo: boolean; scan: boolean };
   mobility: number;
+  /** Which renderer is live: the iso diorama or the flat 2D map. */
+  view: ViewKind;
   structures: number;
   anomalies: { total: number; scanned: number; documented: number };
   order: RoverOrder | null;
@@ -101,6 +104,10 @@ export interface MissionActions {
   launchCargo(): void;
   upgradeMobility(): void;
   rotateView(): void;
+  /** Switch renderer: 'iso' diorama or 'flat' top-down map. */
+  setView(view: ViewKind): void;
+  /** Flip between the two built-in views; returns the new one. */
+  toggleView(): ViewKind;
   centreCamera(): void;
   demolish(id: string): void;
   rotateStructure(id: string): void;
@@ -152,6 +159,8 @@ export interface MissionProviderProps {
   audio?: boolean;
   /** Built-in event toasts. Default true. */
   toasts?: boolean;
+  /** Which renderer to open in. Default the isometric diorama. */
+  view?: ViewKind;
   onReady?(game: RoverGame): void;
   onPhoto?(dataUrl: string | null, meta: PhotoMeta): void;
   onSave?(state: MissionState): void | Promise<void>;
@@ -177,6 +186,7 @@ export function MissionProvider(props: MissionProviderProps) {
     controls = true,
     audio = true,
     toasts: toastsEnabled = true,
+    view,
     children,
   } = props;
 
@@ -220,6 +230,7 @@ export function MissionProvider(props: MissionProviderProps) {
         resume,
         controls,
         audio,
+        startView: view,
         onPhoto: (dataUrl, meta) => {
           toast(`📷 ${meta.caption}`, 'good');
           cb.current.onPhoto?.(dataUrl, meta);
@@ -290,7 +301,7 @@ export function MissionProvider(props: MissionProviderProps) {
     // Restarting a mission is a remount concern: only the render surface and
     // the identity of the world/rover may trigger a reboot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvas, body.id, spec.id, resume?.id, seed, controls, audio, sync]);
+  }, [canvas, body.id, spec.id, resume?.id, seed, controls, audio, view, sync]);
 
   const actions = useMemo<MissionActions>(() => {
     const g = () => gameRef.current;
@@ -311,6 +322,8 @@ export function MissionProvider(props: MissionProviderProps) {
       launchCargo: () => g()?.launchCargo(),
       upgradeMobility: () => g()?.upgradeMobility(),
       rotateView: () => g()?.rotateView(),
+      setView: (view) => g()?.setView(view),
+      toggleView: () => g()?.toggleView() ?? 'iso',
       centreCamera: () => g()?.setCameraFollow(true),
       deposit: () => {
         const moved = g()?.deposit() ?? 0;
@@ -446,6 +459,7 @@ function sampleHud(game: RoverGame): MissionHud {
       scan: r.stats.scanRadius > 0,
     },
     mobility: r.upgrades?.mobility ?? 0,
+    view: game.view,
     structures: game.sim.structures.length,
     anomalies: {
       total: anomalies.length,

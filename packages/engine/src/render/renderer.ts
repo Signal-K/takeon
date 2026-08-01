@@ -3,12 +3,14 @@ import type { Simulation } from '../sim/simulation.js';
 import { DIRS } from '../sim/simulation.js';
 import { POWER_RANGE } from '../sim/structures.js';
 import { Camera } from './camera.js';
-import { drawAnomaly, drawLaunch, drawRover, drawStructure } from './entities.js';
+import type { SceneView, ViewRotation } from './view.js';
+import { drawAnomaly, drawLaunch, drawStructure } from './entities.js';
+import { drawRover } from './rover.js';
 import { project, TILE_H, TILE_W, TILE_Z, shade } from './sprites.js';
 import { MATERIALS } from '../world/materials.js';
 import { skinBiome } from '../world/terrain.js';
 import { hash2, hash3 } from '../util/rng.js';
-import { fbm2 } from '../util/noise.js';
+import { fbm2 } from '../util/noise/index.js';
 
 interface Particle {
   x: number;
@@ -92,7 +94,7 @@ interface Chunk {
   dirty: boolean;
 }
 
-export type ViewRotation = 0 | 1 | 2 | 3;
+export type { ViewRotation } from './view.js';
 
 type Proj = (x: number, y: number, z: number) => { x: number; y: number };
 
@@ -105,8 +107,9 @@ type Proj = (x: number, y: number, z: number) => { x: number; y: number };
  * Terrain is composited from cached per-chunk canvases (rebuilt only when
  * voxels change). The camera rotates in 90° steps via a rotated view layer.
  */
-export class IsoRenderer {
-  readonly camera = new Camera();
+export class IsoRenderer implements SceneView {
+  readonly kind = 'iso' as const;
+  readonly camera: Camera;
   rotation: ViewRotation = 0;
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -135,19 +138,17 @@ export class IsoRenderer {
   private frameEma = 16;
   private lastQualityMs = 0;
 
-  constructor(canvas: HTMLCanvasElement, sim: Simulation) {
+  constructor(canvas: HTMLCanvasElement, sim: Simulation, camera: Camera = new Camera()) {
     this.canvas = canvas;
     this.sim = sim;
+    this.camera = camera;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('takeon: could not acquire 2d context');
     this.ctx = ctx;
     this.chunksPerSide = Math.ceil(sim.world.size / CHUNK);
     this.initChunks();
     this.initStars();
-    sim.world.onColumnChange = (x, y) => {
-      const v = this.toView(x, y);
-      this.invalidateViewColumn(Math.round(v.x), Math.round(v.y));
-    };
+    this.activate();
     const r = sim.rover;
     const v = this.toView(r.pos.x, r.pos.y);
     this.camera.centerOnTile(v.x, v.y, sim.world.height(r.pos.x, r.pos.y));
@@ -1435,6 +1436,36 @@ export class IsoRenderer {
   }
 
   /** Render a photo of the area around the rover; returns a JPEG data URL. */
+  /** Claim world invalidation and rebuild caches; see `SceneView`. */
+  activate(): void {
+    this.sim.world.onColumnChange = (x, y) => {
+      const v = this.toView(x, y);
+      this.invalidateViewColumn(Math.round(v.x), Math.round(v.y));
+    };
+    for (const c of this.chunks) c.dirty = true;
+    this.camera.minZoom = 1.3;
+    this.camera.maxZoom = 5.5;
+    this.camera.zoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, this.camera.zoom));
+  }
+
+  deactivate(): void {
+    if (this.sim.world.onColumnChange) this.sim.world.onColumnChange = null;
+  }
+
+  /** The world tile at the centre of the viewport. */
+  centreTile(): Vec2 {
+    const centre = this.pickTile(this.cssW / 2, this.cssH / 2);
+    if (centre) return centre;
+    const r = this.sim.rover;
+    return { x: r.pos.x, y: r.pos.y };
+  }
+
+  /** Point the camera at a tile in iso projection. */
+  focusTile(tile: Vec2): void {
+    const v = this.toView(tile.x, tile.y);
+    this.camera.centerOnTile(v.x, v.y, Math.max(0, this.sim.world.height(tile.x, tile.y)));
+  }
+
   capturePhoto(): string | null {
     if (typeof document === 'undefined') return null;
     const w = 480;

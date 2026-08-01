@@ -1,4 +1,5 @@
 import type { BodyDef, BodyType, WeatherType } from '../types.js';
+import { DEFAULT_NOISE, FRACTAL_KINDS, NOISE_TYPES } from '../util/noise/index.js';
 import { BODIES } from './bodies.js';
 
 /**
@@ -80,7 +81,15 @@ function mergeBody(base: BodyDef, patch: Partial<BodyDef>): BodyDef {
 
 export type BodyFieldKind = 'number' | 'text' | 'longtext' | 'color' | 'boolean' | 'select';
 
-export type BodyFieldGroup = 'identity' | 'physics' | 'world' | 'terrain' | 'minerals' | 'weather' | 'palette';
+export type BodyFieldGroup =
+  | 'identity'
+  | 'physics'
+  | 'world'
+  | 'terrain'
+  | 'noise'
+  | 'minerals'
+  | 'weather'
+  | 'palette';
 
 export interface BodyField {
   /** Dotted path into the BodyDef, e.g. `terrain.roughness`. */
@@ -94,6 +103,12 @@ export interface BodyField {
   unit?: string;
   options?: { value: string; label: string }[];
   help?: string;
+  /**
+   * Value an editor should show when the field is absent — the effective
+   * default the engine would use. Without it, optional numeric fields read as
+   * 0 in an inspector and writing one silently zeroes a real default.
+   */
+  defaultValue?: number | string | boolean;
   /** True when changing it invalidates a generated world. */
   affectsTerrain?: boolean;
 }
@@ -102,7 +117,12 @@ export const BODY_FIELD_GROUPS: { id: BodyFieldGroup; label: string; help: strin
   { id: 'identity', label: 'Identity', help: 'How the destination is named and described.' },
   { id: 'physics', label: 'Physics & orbit', help: 'Gravity, sunlight, day length and the fuel to get there.' },
   { id: 'world', label: 'World', help: 'Grid size, vertical range and the generation seed.' },
-  { id: 'terrain', label: 'Terrain', help: 'Noise and feature parameters fed to the generator.' },
+  { id: 'terrain', label: 'Terrain', help: 'Feature parameters fed to the generator.' },
+  {
+    id: 'noise',
+    label: 'Noise field',
+    help: 'The elevation field. Leave the type blank to keep the original value-fBm terrain.',
+  },
   { id: 'minerals', label: 'Mineralogy', help: 'Relative ore-vein weights (spectroscopy-informed).' },
   { id: 'weather', label: 'Weather', help: 'Expected events per ~10 game-minutes. 0 disables.' },
   { id: 'palette', label: 'Palette', help: 'Sky colours and the per-channel terrain tint.' },
@@ -136,6 +156,31 @@ export const BODY_FIELDS: BodyField[] = [
   { path: 'terrain.oreRichness', label: 'Ore richness', kind: 'number', group: 'terrain', min: 0, max: 1, step: 0.01, affectsTerrain: true },
   { path: 'terrain.sulfurFields', label: 'Sulfur fields', kind: 'number', group: 'terrain', min: 0, max: 1, step: 0.01, affectsTerrain: true },
   { path: 'terrain.irregular', label: 'Irregular (rubble pile)', kind: 'boolean', group: 'terrain', affectsTerrain: true, help: 'Carves a noisy radial silhouette with map-edge cliffs.' },
+
+  {
+    path: 'terrain.noise.type',
+    label: 'Type',
+    kind: 'select',
+    group: 'noise',
+    affectsTerrain: true,
+    options: [{ value: '', label: '— classic (value fBm) —' }, ...NOISE_TYPES.map((t) => ({ value: t.id, label: t.label }))],
+    help: NOISE_TYPES.map((t) => `${t.label}: ${t.help}`).join(' '),
+  },
+  {
+    path: 'terrain.noise.fractal',
+    label: 'Fractal',
+    kind: 'select',
+    group: 'noise',
+    affectsTerrain: true,
+    options: FRACTAL_KINDS.map((f) => ({ value: f.id, label: f.label })),
+    defaultValue: DEFAULT_NOISE.fractal,
+    help: FRACTAL_KINDS.map((f) => `${f.label}: ${f.help}`).join(' '),
+  },
+  { path: 'terrain.noise.frequency', label: 'Frequency', kind: 'number', group: 'noise', min: 0.005, max: 0.3, step: 0.005, affectsTerrain: true, defaultValue: DEFAULT_NOISE.frequency, help: 'Cycles per tile — higher means smaller features.' },
+  { path: 'terrain.noise.octaves', label: 'Octaves', kind: 'number', group: 'noise', min: 1, max: 8, step: 1, affectsTerrain: true, defaultValue: DEFAULT_NOISE.octaves },
+  { path: 'terrain.noise.lacunarity', label: 'Lacunarity', kind: 'number', group: 'noise', min: 1.2, max: 4, step: 0.1, affectsTerrain: true, defaultValue: DEFAULT_NOISE.lacunarity, help: 'Frequency multiplier per octave.' },
+  { path: 'terrain.noise.gain', label: 'Gain', kind: 'number', group: 'noise', min: 0.1, max: 0.9, step: 0.05, affectsTerrain: true, defaultValue: DEFAULT_NOISE.gain, help: 'Amplitude multiplier per octave.' },
+  { path: 'terrain.noise.warp', label: 'Domain warp', kind: 'number', group: 'noise', min: 0, max: 20, step: 0.5, affectsTerrain: true, defaultValue: DEFAULT_NOISE.warp, help: 'Displaces samples by a second field — erosion-like distortion. 0 = off.' },
 
   { path: 'minerals.iron', label: 'Iron', kind: 'number', group: 'minerals', min: 0, max: 1, step: 0.01, affectsTerrain: true },
   { path: 'minerals.copper', label: 'Copper', kind: 'number', group: 'minerals', min: 0, max: 1, step: 0.01, affectsTerrain: true },
@@ -238,6 +283,24 @@ export function validateBody(def: BodyDef): BodyValidation {
       errors.push('terrain.sulfurFields must be between 0 and 1');
     }
     if (!num(t.craters) || t.craters < 0) errors.push('terrain.craters must be 0 or more');
+    const n = t.noise;
+    if (n) {
+      if (n.type && !NOISE_TYPES.some((x) => x.id === n.type)) errors.push(`unknown noise type "${n.type}"`);
+      if (n.fractal && !FRACTAL_KINDS.some((x) => x.id === n.fractal)) {
+        errors.push(`unknown fractal "${n.fractal}"`);
+      }
+      if (n.frequency !== undefined && (!num(n.frequency) || n.frequency <= 0)) {
+        errors.push('terrain.noise.frequency must be greater than 0');
+      }
+      if (n.octaves !== undefined && (!num(n.octaves) || n.octaves < 1 || n.octaves > 12)) {
+        errors.push('terrain.noise.octaves must be between 1 and 12');
+      }
+      if (n.warp !== undefined && (!num(n.warp) || n.warp < 0)) errors.push('terrain.noise.warp must be 0 or more');
+      if (n.type === 'blue' || n.type === 'white') {
+        warnings.push(`${n.type} noise has no smooth relief — expect a spiky, dithered heightfield`);
+      }
+      if ((n.octaves ?? 4) > 6) warnings.push('more than 6 octaves costs generation time for detail you cannot see');
+    }
   }
 
   if (!def.palette || !HEX.test(def.palette.sky ?? '')) errors.push('palette.sky must be a hex colour');

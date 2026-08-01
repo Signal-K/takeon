@@ -1,4 +1,11 @@
-import { analyzeTerrain, type BodyDef, type BodyField, type RoverGame, type RoverSpec } from '@takeon/engine';
+import {
+  analyzeTerrain,
+  type BodyDef,
+  type BodyField,
+  type RoverGame,
+  type RoverSpec,
+  type ViewKind,
+} from '@takeon/engine';
 import { MissionProvider, MissionScreen, TakeOnUIProvider, type TakeOnUIConfig } from '@takeon/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnalysisPanel } from './panels/AnalysisPanel.js';
@@ -63,6 +70,7 @@ export function TakeOnEditor({
   const [mode, setMode] = useState<'edit' | 'play'>('edit');
   const [theme, setTheme] = useState<EditorTheme>(initialTheme);
   const [maxClimb, setMaxClimb] = useState(2);
+  const [view, setView] = useState<ViewKind>('iso');
   const [time, setTime] = useState(0);
   const [lines, setLines] = useState<ConsoleLine[]>([]);
 
@@ -147,7 +155,11 @@ export function TakeOnEditor({
         <div className="tke-grid">
           <EditorCard
             title={mode === 'play' ? `Play — ${editor.body.name}` : `Scene — ${editor.body.name}`}
-            hint={mode === 'play' ? 'live mission' : 'drag pan · wheel zoom · R rotate · F frame'}
+            hint={
+              mode === 'play'
+                ? 'live mission'
+                : `${view === 'iso' ? '3D diorama' : '2D map'} · drag pan · wheel zoom · R rotate · F frame`
+            }
             className="tke-card-scene"
             flush
           >
@@ -158,6 +170,7 @@ export function TakeOnEditor({
                 spec={editor.spec}
                 audio={false}
                 autosaveMs={0}
+                view={view}
                 onReady={(game) => {
                   playGame.current = game;
                 }}
@@ -166,7 +179,15 @@ export function TakeOnEditor({
                 <MissionScreen />
               </MissionProvider>
             ) : (
-              <Viewport sim={sim} version={version} generating={generating} time={time} onTimeChange={setTime} />
+              <Viewport
+                sim={sim}
+                version={version}
+                generating={generating}
+                time={time}
+                onTimeChange={setTime}
+                view={view}
+                onViewChange={setView}
+              />
             )}
           </EditorCard>
 

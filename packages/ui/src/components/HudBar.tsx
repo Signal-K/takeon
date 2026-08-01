@@ -17,6 +17,7 @@ export interface HudBarProps {
 function DefaultHudBar({ show, className, style }: HudBarProps) {
   const { hud, actions, minimapVisible, setMinimapVisible, setPanel } = useMission();
   const rotateLabel = useLabel('hud.rotate', 'Rotate view (R)');
+  const viewLabel = useLabel('hud.view', 'Switch between the 3D diorama and the 2D map');
   const mapLabel = useLabel('hud.map', 'Toggle map');
   const endLabel = useLabel('hud.end', 'End');
   const batteryLabel = useLabel('hud.battery', 'Power');
@@ -66,6 +67,15 @@ function DefaultHudBar({ show, className, style }: HudBarProps) {
 
       <span className="tk-spacer" />
       <Slot name="hudBar.end" />
+      <button
+        type="button"
+        className="tk-btn tk-btn-icon"
+        onClick={() => actions.toggleView()}
+        title={viewLabel}
+        aria-label={viewLabel}
+      >
+        {hud.view === 'flat' ? '▦' : '⬔'}
+      </button>
       <button type="button" className="tk-btn tk-btn-icon" onClick={actions.rotateView} title={rotateLabel}>
         ⟳
       </button>

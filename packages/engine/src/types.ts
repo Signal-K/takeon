@@ -1,5 +1,9 @@
 /** Shared engine types. */
 
+import type { NoiseConfig } from './util/noise/index.js';
+
+export type { NoiseConfig };
+
 export interface Vec2 {
   x: number;
   y: number;
@@ -112,7 +116,7 @@ export interface BodyDef {
    */
   weather?: Partial<Record<WeatherType, number>>;
   terrain: {
-    roughness: number; // 0..1
+    roughness: number; // 0..1 — vertical amplitude (and frequency, unless `noise` is set)
     craters: number; // approx count
     iceCaps: number; // 0..1 fraction of map edge covered by ice
     oreRichness: number; // 0..1
@@ -120,6 +124,12 @@ export interface BodyDef {
     sulfurFields?: number;
     /** Irregular island-shaped world (asteroids). */
     irregular?: boolean;
+    /**
+     * Elevation field. Absent = the original value-fBm terrain (what every
+     * shipped body uses); set it to author with perlin/simplex/worley/ridged
+     * fields, domain warp and custom octaves. See `util/noise`.
+     */
+    noise?: NoiseConfig;
   };
   description: string;
 }
@@ -385,6 +395,8 @@ export interface GameEvents {
   batteryEmpty: {};
   roverLost: { reason: string };
   stateChanged: {};
+  /** The active renderer changed (iso diorama ⇄ flat map). */
+  viewChanged: { view: 'iso' | 'flat' };
 }
 
 export type GameEventKey = keyof GameEvents;
@@ -426,6 +438,7 @@ export const GAME_EVENT_KEYS = [
   'batteryEmpty',
   'roverLost',
   'stateChanged',
+  'viewChanged',
 ] as const satisfies readonly GameEventKey[];
 
 /** Compile-time guard: adding a `GameEvents` key without listing it fails here. */

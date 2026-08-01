@@ -88,7 +88,10 @@ function Field({ field, body, onPatch }: { field: BodyField; body: BodyDef; onPa
     return (
       <label className="tke-field" title={field.help}>
         <span className="tke-field-label">{field.label}</span>
-        <select value={String(raw ?? '')} onChange={(e) => onPatch(field.path, e.target.value)}>
+        <select
+          value={String(raw ?? field.defaultValue ?? '')}
+          onChange={(e) => onPatch(field.path, e.target.value)}
+        >
           {field.options?.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
@@ -130,7 +133,9 @@ function Field({ field, body, onPatch }: { field: BodyField; body: BodyDef; onPa
     );
   }
 
-  const value = typeof raw === 'number' ? raw : 0;
+  // Absent optional fields show the engine's effective default, so a slider
+  // never reads 0 for something that actually defaults to 0.5.
+  const value = typeof raw === 'number' ? raw : typeof field.defaultValue === 'number' ? field.defaultValue : 0;
   const bounded = field.min !== undefined && field.max !== undefined;
   return (
     <label className="tke-field" title={field.help}>

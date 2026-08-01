@@ -1,4 +1,4 @@
-import { IsoRenderer, type Simulation } from '@takeon/engine';
+import { Camera, FlatRenderer, IsoRenderer, type SceneView, type Simulation, type ViewKind } from '@takeon/engine';
 import { createSlot } from '@takeon/ui';
 import { useEffect, useRef, useState } from 'react';
 
@@ -9,29 +9,42 @@ export interface ViewportProps {
   /** Game seconds used for lighting; drives the day/night preview. */
   time: number;
   onTimeChange(time: number): void;
+  /** Which renderer to draw with. */
+  view?: ViewKind;
+  onViewChange?(view: ViewKind): void;
 }
 
 /**
- * Scene view: the real isometric renderer drawing the real generated world,
+ * Scene view: the engine's own renderers drawing the real generated world,
  * with editor camera controls (drag to pan, wheel to zoom, R to rotate) and a
  * time-of-day scrub so lighting can be judged without playing.
+ *
+ * Both views are the same scene: `3D` is the isometric voxel diorama, `2D` is
+ * the top-down map with hillshading — the one you want when laying out routes
+ * or reading terrain. The camera is shared, so toggling keeps your place.
  *
  * The simulation is not ticked here — nothing moves, nothing drains — so what
  * you see is purely the authored world.
  */
-function DefaultViewport({ sim, version, generating, time, onTimeChange }: ViewportProps) {
+function DefaultViewport({ sim, version, generating, time, onTimeChange, view = 'iso', onViewChange }: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rendererRef = useRef<IsoRenderer | null>(null);
+  const rendererRef = useRef<SceneView | null>(null);
+  // One camera for the panel's lifetime: switching views keeps the framing.
+  const cameraRef = useRef<Camera>(new Camera());
   const [rotation, setRotation] = useState(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !sim) return;
 
-    const renderer = new IsoRenderer(canvas, sim);
+    const camera = cameraRef.current;
+    const renderer: SceneView =
+      view === 'flat' ? new FlatRenderer(canvas, sim, camera) : new IsoRenderer(canvas, sim, camera);
+    renderer.activate();
     rendererRef.current = renderer;
-    renderer.camera.follow = false;
-    renderer.camera.centerOnTile(sim.rover.pos.x, sim.rover.pos.y, sim.world.height(sim.rover.pos.x, sim.rover.pos.y));
+    camera.follow = false;
+    renderer.focusTile(sim.rover.pos);
+    setRotation(renderer.rotation);
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
@@ -60,7 +73,7 @@ function DefaultViewport({ sim, version, generating, time, onTimeChange }: Viewp
     };
     const onMove = (e: PointerEvent) => {
       if (!dragging) return;
-      renderer.camera.panBy(e.clientX - lastX, e.clientY - lastY);
+      camera.panBy(e.clientX - lastX, e.clientY - lastY);
       lastX = e.clientX;
       lastY = e.clientY;
     };
@@ -72,20 +85,14 @@ function DefaultViewport({ sim, version, generating, time, onTimeChange }: Viewp
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-      renderer.camera.setZoom(renderer.camera.zoom * factor, e.clientX - rect.left, e.clientY - rect.top);
+      camera.setZoom(camera.zoom * factor, e.clientX - rect.left, e.clientY - rect.top);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'r' || e.key === 'R') {
         renderer.rotateClockwise();
         setRotation(renderer.rotation);
       }
-      if (e.key === 'f' || e.key === 'F') {
-        renderer.camera.centerOnTile(
-          sim.rover.pos.x,
-          sim.rover.pos.y,
-          sim.world.height(sim.rover.pos.x, sim.rover.pos.y),
-        );
-      }
+      if (e.key === 'f' || e.key === 'F') renderer.focusTile(sim.rover.pos);
     };
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointermove', onMove);
@@ -96,6 +103,7 @@ function DefaultViewport({ sim, version, generating, time, onTimeChange }: Viewp
 
     return () => {
       cancelAnimationFrame(raf);
+      renderer.deactivate();
       window.removeEventListener('resize', resize);
       observer?.disconnect();
       canvas.removeEventListener('pointerdown', onDown);
@@ -106,7 +114,7 @@ function DefaultViewport({ sim, version, generating, time, onTimeChange }: Viewp
       window.removeEventListener('keydown', onKey);
       rendererRef.current = null;
     };
-  }, [sim, version]);
+  }, [sim, version, view]);
 
   // Lighting follows the scrubbed time; the sim itself never advances here.
   useEffect(() => {
@@ -121,6 +129,14 @@ function DefaultViewport({ sim, version, generating, time, onTimeChange }: Viewp
       <div className="tke-viewport-bar">
         <button
           type="button"
+          onClick={() => onViewChange?.(view === 'iso' ? 'flat' : 'iso')}
+          title={view === 'iso' ? 'Switch to the 2D map' : 'Switch to the 3D diorama'}
+          disabled={!onViewChange}
+        >
+          {view === 'iso' ? '⬔ 3D' : '▦ 2D'}
+        </button>
+        <button
+          type="button"
           onClick={() => {
             rendererRef.current?.rotateClockwise();
             setRotation(rendererRef.current?.rotation ?? 0);
@@ -129,18 +145,7 @@ function DefaultViewport({ sim, version, generating, time, onTimeChange }: Viewp
         >
           ⟳ {rotation * 90}°
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (!sim) return;
-            rendererRef.current?.camera.centerOnTile(
-              sim.rover.pos.x,
-              sim.rover.pos.y,
-              sim.world.height(sim.rover.pos.x, sim.rover.pos.y),
-            );
-          }}
-          title="Frame the landing site (F)"
-        >
+        <button type="button" onClick={() => sim && rendererRef.current?.focusTile(sim.rover.pos)} title="Frame the landing site (F)">
           ◎ Frame
         </button>
         {dayLength > 0 && (

@@ -1,4 +1,13 @@
-import { fbm2, MATERIALS, skinBiome, type BodyDef, type VoxelWorld } from '@takeon/engine';
+import {
+  describeNoise,
+  fbm2,
+  makeNoise,
+  MATERIALS,
+  scatterPoints,
+  skinBiome,
+  type BodyDef,
+  type VoxelWorld,
+} from '@takeon/engine';
 import { createSlot } from '@takeon/ui';
 import { useEffect, useRef, useState } from 'react';
 import { MAP_KINDS, mapPointToTile, paintCrossSection, paintField, paintMap, type MapKind } from '../maps.js';
@@ -13,7 +22,7 @@ export interface MapsPanelProps {
   onPickTile?(tile: { x: number; y: number }): void;
 }
 
-type View = MapKind | 'noise';
+type View = MapKind | 'noise' | 'scatter';
 
 /**
  * Top-down instrumentation: the elevation/slope/material/ore/drivability maps,
@@ -35,14 +44,39 @@ function DefaultMapsPanel({ body, world, version, maxClimb, from, onPickTile }: 
     const canvas = mapRef.current;
     if (!canvas) return;
     if (view === 'noise') {
-      // Same frequency the terrain generator uses, so the preview is the
-      // field that actually shapes this world.
-      const freq = 0.035 + body.terrain.roughness * 0.03;
+      // Exactly the field the generator will use: the body's own noise config
+      // when it has one, otherwise the classic value-fBm path.
       const size = body.size;
-      paintField(canvas, size, (x, y) => {
-        const n = fbm2(x * freq, y * freq, body.seed, 4);
-        return n * 0.65 + fbm2(x * freq * 0.25, y * freq * 0.25, body.seed + 55, 2) * 0.35;
-      });
+      if (body.terrain.noise?.type) {
+        const field = makeNoise(body.terrain.noise, body.seed);
+        paintField(canvas, size, field);
+      } else {
+        const freq = 0.035 + body.terrain.roughness * 0.03;
+        paintField(canvas, size, (x, y) => {
+          const n = fbm2(x * freq, y * freq, body.seed, 4);
+          return n * 0.65 + fbm2(x * freq * 0.25, y * freq * 0.25, body.seed + 55, 2) * 0.35;
+        });
+      }
+      return;
+    }
+    if (view === 'scatter') {
+      // Blue-noise placement preview: evenly spread, never clumped — what you
+      // want for boulders, flora, sample sites or survey points.
+      const size = body.size;
+      paintField(canvas, size, () => 0.06);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const rect = canvas.getBoundingClientRect();
+        const scale = Math.min(rect.width, rect.height) / size;
+        const ox = (rect.width - size * scale) / 2;
+        const oy = (rect.height - size * scale) / 2;
+        ctx.fillStyle = '#5fe3d8';
+        for (const p of scatterPoints(size, Math.round((size * size) / 45), body.seed)) {
+          ctx.beginPath();
+          ctx.arc(ox + p.x * scale, oy + p.y * scale, Math.max(1, scale * 0.7), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
       return;
     }
     if (!world) return;
@@ -80,11 +114,20 @@ function DefaultMapsPanel({ body, world, version, maxClimb, from, onPickTile }: 
           type="button"
           className={view === 'noise' ? 'tke-tab tke-selected' : 'tke-tab'}
           onClick={() => setView('noise')}
-          title="Raw fBm field at the generator's frequency, before craters and clamping."
+          title="The raw elevation field this body generates from, before craters and clamping."
         >
           Noise
         </button>
+        <button
+          type="button"
+          className={view === 'scatter' ? 'tke-tab tke-selected' : 'tke-tab'}
+          onClick={() => setView('scatter')}
+          title="Blue-noise (Poisson-disk) placement: evenly spread points with no clumps."
+        >
+          Scatter
+        </button>
       </div>
+      {view === 'noise' && <div className="tke-hint">{describeNoise(body.terrain.noise)}</div>}
 
       <canvas
         ref={mapRef}

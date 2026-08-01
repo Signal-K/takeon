@@ -37,6 +37,31 @@ additive → minor, fixes → patch.
   (`classNames`, `theme`), relabel (`labels`) or extend (`slots`) any part of
   the interface. See `docs/UI.md`.
 
+### @takeon/engine — engine structure
+
+- **Scene layer** (`scene/`): `buildScene(sim)` flattens a running mission into
+  renderer-agnostic entities (position, height, facing, variant, flags), so a
+  host can draw TakeOn with its own technology. Enforced in the layering test.
+- **View abstraction** (`render/view.ts`): `SceneView` — draw, pick, resize,
+  rotate, photo, minimap — implemented by the isometric renderer and by a new
+  **`FlatRenderer`**: a top-down 2D map with hillshading, contour shading, grid,
+  scanner reach, home pin and entity glyphs, rasterised once per world change.
+  `RoverGame.setView('iso' | 'flat')` / `toggleView()` switch at runtime on a
+  shared camera; `startView` picks the initial one.
+- **Entity parts**: the rover moved to `render/rover.ts` and is now assembled
+  from registered parts (`registerRoverPart`, `listRoverParts`) with
+  build/state conditions, plus new detail — cargo crates that stack with the
+  hold, a charge LED strip, hull scorch and sparks, a status strobe, drilling
+  chips, a sweeping dish, a pulsing scanner tip, solar glint and RTG heat glow.
+  The 2D view has a painter registry per entity kind (`registerFlatPainter`).
+- **Noise library** (`util/noise/`): Perlin, simplex, Worley (F1 / F2−F1 /
+  cells), white, and blue noise (void-and-cluster mask, Poisson-disk sampling,
+  `scatterPoints`); `fbm`/`ridged`/`billow` fractals, domain warp, and a
+  `NoiseConfig` + `makeNoise` factory. Bodies opt in via `terrain.noise`;
+  without it the shipped worlds regenerate byte-for-byte.
+- `Simulation.landingSite`, `BodyField.defaultValue` (so inspectors show the
+  effective default instead of 0), and a `viewChanged` game event.
+
 ### @takeon/ui — visual direction
 
 - New default skin: a pulp sci-fi homage (Out There: Ω). Hex cells for the
@@ -46,6 +71,8 @@ additive → minor, fixes → patch.
 - `Meter` gained `tone`, `Modal` gained a title bar with a close control, and
   `Chip` gained `tone`; all still overridable through the registry, and the
   whole palette is `--tk-*` variables.
+- View toggle in the HUD bar; `hud.view`, `actions.setView`/`toggleView` and a
+  `view` prop on `MissionProvider`.
 
 ### @takeon/editor (new)
 
@@ -59,6 +86,9 @@ additive → minor, fixes → patch.
   footprint, each scrolling internally) instead of sidebars, so panels stay in
   line at every width. Chrome is light by default with a dark toggle
   (remembered); the scene stays dark either way.
+- Scene card switches between the 3D diorama and the 2D map; the inspector
+  gained a *Noise field* group; Maps gained a live preview of the body's actual
+  noise field and a blue-noise **Scatter** preview.
 
 ### web
 

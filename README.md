@@ -25,6 +25,7 @@ like [Landnam](https://github.com/Signal-K/planet-hunters-experiment-1) — via
 | `web` | Standalone Next.js app: garage, customiser, destination picker, mission HUD, `/editor`. Mobile-friendly (touch d-pad, pinch zoom, tap-to-drive) |
 | `desktop` | Optional Electron shell to run the editor as a Mac/Windows/Linux app (not an npm workspace) |
 | `pocketbase` | Go PocketBase **spoke** backend (port 8094) following the Star Sailors hub-and-spoke pattern: JS `pb_migrations`, custom `/api/takeon/*` routes, auth delegated to the shared backend, discovery cross-post hook |
+| `docs/ENGINE.md` | How the engine is structured: layers, scenes, views, entity parts, noise, registries |
 | `docs/INTEGRATION.md` | How to embed TakeOn in Landnam / any PixiJS game, or behind your own storage |
 | `docs/UI.md` | Adapting/replacing the UI from a game built on TakeOn |
 | `docs/EDITOR.md` | The world editor: terrain, noise, maps, analysis, play mode |
@@ -69,8 +70,12 @@ anything not already on the registry. The repo needs an `NPM_TOKEN` secret
   gravity, sunlight and delta-v: your fuel capacity gates what you can reach,
   gravity scales fall damage, solar flux scales charging, day length drives the
   day/night cycle. Bennu is an irregular rubble pile with map-edge cliffs.
+- **Two views** — the isometric voxel diorama, or a top-down 2D map with
+  hillshading, contours, scanner reach and entity glyphs. Toggle from the HUD
+  (`⬔ / ▦`) or the editor; both draw the same scene, share one camera, and
+  support tap-to-drive and tile picking.
 - **On the surface** — drive (keys, touch d-pad, or tap-to-drive), rotate the
-  isometric perspective in 90° steps (R), mine the voxel terrain (materials
+  perspective in 90° steps (R), mine the voxel terrain (materials
   have hardness and yields; ores live in veins), photograph anomalies to
   document discoveries, scan to reveal them, build structures from cargo
   (solar array, nav beacon, auto-drill rig, supply cache, refinery, habitat
@@ -83,8 +88,24 @@ anything not already on the registry. The repo needs an `NPM_TOKEN` secret
   discoveries convert to credits. A rover that runs out of battery with no way
   to recharge — or breaks its chassis — is lost.
 
+The rover is drawn from **parts** rather than a fixed sprite: fitted modules,
+cargo load, charge level, hull damage, drilling and nightfall each add or
+change hardware on screen, and a host game can register its own parts.
+
 Worlds are generated deterministically from `(body, seed)`, so saves only
 persist voxel *edits* plus rover/structure state; resume is byte-faithful.
+
+## Noise and terrain fields
+
+Elevation can come from any of several fields — value, Perlin, simplex, Worley
+(craters or fractures) — stacked as fBm, ridged or billow, with domain warping,
+all described by one `NoiseConfig` on the body. Blue noise (Poisson-disk) is
+available for *placement*: evenly spread scatter with no clumps. The editor
+edits the config, previews the exact field the generator will use, and shows a
+blue-noise scatter preview.
+
+Bodies without a `noise` block keep the original field byte-for-byte, so
+existing saves stay valid. See [docs/ENGINE.md](docs/ENGINE.md).
 
 ## Real planetary data
 

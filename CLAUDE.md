@@ -19,7 +19,15 @@ Runtime verification recipe: `.claude/skills/verify/SKILL.md`.
 ## Architecture rules
 
 - **All gameplay rules live in `packages/engine/src/sim/` and `parts/`** —
-  renderer and web UI only observe. The sim is deterministic, fixed 10 Hz.
+  renderers and web UI only observe. The sim is deterministic, fixed 10 Hz.
+- **Layers are enforced**: `util → world → sim → scene → render → input`, with
+  `core` on top (`test/layering.test.ts` fails on an upward import). `scene/`
+  flattens a frame into renderer-agnostic entities; `render/` has two views
+  (`IsoRenderer`, `FlatRenderer`) behind the `SceneView` interface. Architecture
+  overview: `docs/ENGINE.md`.
+- **Entity art is componentised**: the rover is a list of registered parts
+  (`render/rover.ts`, `registerRoverPart`), the 2D view has a painter per entity
+  kind (`registerFlatPainter`). Add hardware as a part, not as more branches.
 - **UI lives in `packages/ui` (`@takeon/ui`), never in `web/`.** Every
   component is registered by key via `createSlot` and resolved through
   `TakeOnUIProvider`, so a parent app (Landnam, the editor, the Next.js app)
@@ -32,7 +40,9 @@ Runtime verification recipe: `.claude/skills/verify/SKILL.md`.
   is only a UI over them.
 - Worlds regenerate deterministically from `(BodyDef, seed)`; persistence
   stores only voxel `edits` + entity state (`MissionState`). Never persist raw
-  voxels.
+  voxels. **Anything that changes generation output must be opt-in per body** —
+  that is why `terrain.noise` exists; `test/noise.test.ts` asserts the shipped
+  bodies stay byte-identical.
 - The engine has **zero runtime dependencies** and must keep working without
   DOM access for tests (canvas bits are guarded; `OffscreenCanvas` fallback).
 - Web ↔ storage goes through `SyncAdapter` (`net/sync.ts`) only. The web app
@@ -66,6 +76,8 @@ Runtime verification recipe: `.claude/skills/verify/SKILL.md`.
   keep both or Next/tsc will disagree.
 - New `GameEvents` keys must be added to `GAME_EVENT_KEYS` (`types.ts`); a
   compile-time guard fails the build otherwise, and the UI firehose iterates it.
+- `RoverGameOptions.startView` (not `view`) picks the initial renderer —
+  `@takeon/pixi`'s mount options already use `view` for the host canvas.
 - React packages build with `tsc`; stylesheets are copied by
   `scripts/copy-assets.mjs` (tsc ignores CSS). Their `exports` maps need a
   `default` condition or Next's webpack resolver rejects the package path.

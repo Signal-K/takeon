@@ -1,5 +1,5 @@
 import { Material, type BodyDef } from '../types.js';
-import { fbm2 } from '../util/noise.js';
+import { fbm2, makeNoise } from '../util/noise/index.js';
 import { hash2, hash3, mulberry32 } from '../util/rng.js';
 import { getDem, sampleDem, type DemPatch } from './dem/index.js';
 import { VoxelWorld } from './world.js';
@@ -32,6 +32,10 @@ export function generateTerrain(body: BodyDef, seedOverride?: number): VoxelWorl
 
   const freq = 0.035 + t.roughness * 0.03;
   const half = size / 2;
+  // Authored noise (perlin/simplex/worley/…) replaces the default elevation
+  // field. Bodies without a `noise` block keep the original value-fBm path
+  // exactly, so every shipped world regenerates byte-for-byte.
+  const field = t.noise ? makeNoise(t.noise, seed) : null;
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -44,9 +48,16 @@ export function generateTerrain(body: BodyDef, seedOverride?: number): VoxelWorl
         if (rr > 0.82 - wobble * 0.5 + wobble) continue; // void column
       }
 
-      let n = fbm2(x * freq, y * freq, seed, 4);
-      // Gentle large-scale relief on top of the detail noise.
-      n = n * 0.65 + fbm2(x * freq * 0.25, y * freq * 0.25, seed + 55, 2) * 0.35;
+      let n: number;
+      if (field) {
+        // The config owns frequency and octaves; roughness still scales the
+        // vertical amplitude below.
+        n = field(x, y);
+      } else {
+        n = fbm2(x * freq, y * freq, seed, 4);
+        // Gentle large-scale relief on top of the detail noise.
+        n = n * 0.65 + fbm2(x * freq * 0.25, y * freq * 0.25, seed + 55, 2) * 0.35;
+      }
       if (dem) {
         // Real topography carries the large-scale relief; procedural noise
         // only adds sub-DEM-resolution detail.

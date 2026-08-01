@@ -59,7 +59,11 @@ before `next build` (env is inlined at build time).
    cargo must survive the round-trip.
 6. End: `.tk-hudbar button:has-text("End")` → modal → `.tk-btn-primary` → back
    on `/` with the credits chip updated.
-7. Canvas paint check: sample `getImageData` for >10 distinct colors.
+7. Canvas paint check: sample `getImageData` for >10 distinct colors. The iso
+   view paints ~1000 distinct colours at 1600×1000; the flat map ~100+.
+8. Views: `.tk-hudbar button[title*="2D map"]` switches to the top-down map
+   (`game.view === 'flat'`), the same button (`title*="3D diorama"`) switches
+   back. Tile picking, tap-to-drive and the tile menu work in both.
 
 ### Editor (`/editor`)
 
@@ -81,6 +85,12 @@ tab-switching between Maps/Analysis/Rover. Chrome is light by default.
    scene card (`.tk-hudbar .tk-meter` = 3). Drive with the d-pad; engine events
    land in `.tke-console-line`. `.tke-primary:has-text("Stop")` returns.
 6. Scene view is `.tke-scene` (drag to pan, wheel to zoom, R rotates).
+   `.tke-viewport-bar button:has-text("3D")` switches it to the 2D map (the
+   button then reads "2D"); the card hint says which is live.
+9. Noise: the inspector has a *Noise field* group (7 fields). Setting type +
+   fractal regenerates the world, and the Maps `Noise` tab previews the exact
+   field with a caption from `describeNoise`; `Scatter` previews blue-noise
+   placement.
 7. Theme toggle: `.tke-toolbar button[title*="dark chrome"]` / `[title*="light
    chrome"]`, persisted in `localStorage` under `takeon.editor.theme`.
 8. Layout check worth keeping: every `.tke-card-head` should measure the same

@@ -5,7 +5,13 @@ dependencies — everything (terrain sprites, rover, structures, anomalies) is
 drawn procedurally into a canvas it owns. That makes several integration levels
 possible: a bare canvas, a PixiJS stage, or — if your game is React —
 `@takeon/ui`, whose every component the host can replace ([UI.md](UI.md)).
-Worlds themselves are authored in `@takeon/editor` ([EDITOR.md](EDITOR.md)).
+Worlds themselves are authored in `@takeon/editor` ([EDITOR.md](EDITOR.md)),
+and the engine's own structure — layers, scenes, views, entity parts, noise —
+is mapped in [ENGINE.md](ENGINE.md).
+
+Missions render in two built-in views: the isometric diorama and a top-down 2D
+map (`game.setView('flat')`). If neither suits your game, take
+`game.scene()` — a renderer-agnostic list of entities — and draw it yourself.
 
 ## 1. Drop-in canvas (any host)
 
