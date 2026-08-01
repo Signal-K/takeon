@@ -531,6 +531,45 @@ button.tk-chip:hover {
   color: var(--tk-text-dim);
 }
 
+/* ── Cross-section (underground) view ──────────────────────────────── */
+
+.tk-cross-section {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 96px;
+  padding: 6px;
+  background: var(--tk-panel);
+  border: 1px solid var(--tk-border);
+  clip-path: polygon(
+    var(--tk-notch) 0,
+    100% 0,
+    100% calc(100% - var(--tk-notch)),
+    calc(100% - var(--tk-notch)) 100%,
+    0 100%,
+    0 var(--tk-notch)
+  );
+}
+
+.tk-cross-section-canvas {
+  display: block;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.tk-cross-section-label {
+  display: block;
+  margin-top: 4px;
+  text-align: center;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: var(--tk-text-dim);
+}
+
 /* ── Tile menu ──────────────────────────────────────────────────────── */
 
 .tk-tilemenu {

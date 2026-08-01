@@ -45,7 +45,10 @@ export function buildScene(sim: Simulation, opts: BuildSceneOptions = {}): Scene
       data: {
         powered: sim.powered.has(structure.id),
         progress: structure.progress ?? 1,
-        buffered: Object.values(structure.buffer).reduce((sum, qty) => sum + (qty ?? 0), 0),
+        buffered: (Object.values(structure.buffer) as (number | undefined)[]).reduce(
+          (sum: number, qty) => sum + (qty ?? 0),
+          0,
+        ),
       },
       ref: structure,
     });

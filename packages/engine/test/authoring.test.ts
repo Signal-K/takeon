@@ -129,6 +129,32 @@ describe('body authoring', () => {
     expect(src.startsWith('{')).toBe(true);
     expect(src.trimEnd().endsWith('}')).toBe(true);
   });
+
+  it('serialises nested terrain config (noise, bands) as real objects, not [object Object]', () => {
+    const withNoiseAndBands = createBodyDraft({
+      terrain: {
+        roughness: 0.5,
+        craters: 2,
+        iceCaps: 0,
+        oreRichness: 0.5,
+        noise: { type: 'simplex', frequency: 0.07 },
+        bands: [{ from: 0, to: 1, minerals: { 5: 1 } }],
+      },
+    });
+    const ts = bodyToTypeScript(withNoiseAndBands);
+    expect(ts).not.toContain('[object Object]');
+    expect(ts).toContain('noise: {"type":"simplex"');
+    expect(ts).toContain('bands: [{"from":0');
+    // What comes out must itself be a valid JS object literal.
+    // eslint-disable-next-line no-new-func
+    expect(() => new Function(`return ${ts}`)()).not.toThrow();
+
+    const json = bodyToJson(withNoiseAndBands);
+    const { body: reparsed, validation } = parseBodyJson(json);
+    expect(validation.ok).toBe(true);
+    expect(reparsed!.terrain.noise).toEqual(withNoiseAndBands.terrain.noise);
+    expect(reparsed!.terrain.bands).toEqual(withNoiseAndBands.terrain.bands);
+  });
 });
 
 describe('terrain analysis', () => {

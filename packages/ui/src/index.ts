@@ -52,6 +52,7 @@ export { HudBar, type HudBarProps } from './components/HudBar.js';
 export { DPad, type DPadProps } from './components/DPad.js';
 export { ActionBar, DEFAULT_ACTIONS, type ActionBarProps, type ActionItem } from './components/ActionBar.js';
 export { Minimap, type MinimapProps } from './components/Minimap.js';
+export { CrossSectionView, type CrossSectionViewProps } from './components/CrossSectionView.js';
 export { TileMenu, type TileMenuProps } from './components/TileMenu.js';
 export { BuildPanel, describeCargo, type BuildPanelProps } from './components/BuildPanel.js';
 export { CraftPanel, type CraftPanelProps } from './components/CraftPanel.js';
@@ -71,6 +72,7 @@ export const SLOT_KEYS = [
   'DPad',
   'ActionBar',
   'Minimap',
+  'CrossSectionView',
   'TileMenu',
   'BuildPanel',
   'CraftPanel',

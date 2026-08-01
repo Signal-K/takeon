@@ -1,9 +1,9 @@
 import {
-  crossSection,
   heightField,
   MATERIALS,
   Material,
   reachableMask,
+  renderCrossSection,
   slopeField,
   type VoxelWorld,
 } from '@takeon/engine';
@@ -126,30 +126,20 @@ function pickPainter(world: VoxelWorld, kind: MapKind, maxClimb: number, opts: P
   };
 }
 
-/** Vertical slice, drawn with the real material palette. */
+/**
+ * Vertical slice, drawn with the real material palette — this is also the
+ * "underground scene" mechanic: `@takeon/engine`'s `renderCrossSection` (the
+ * same function this delegates to) is host-usable directly, and
+ * `@takeon/ui`'s `<CrossSectionView>` wraps it as a live, mission-driven
+ * panel, not just an editor tool.
+ */
 export function paintCrossSection(
   canvas: HTMLCanvasElement,
   world: VoxelWorld,
   axis: 'x' | 'y',
   index: number,
 ): void {
-  const slice = crossSection(world, axis, index);
-  const w = slice.length;
-  const h = slice.height;
-  const buffer = new Uint8ClampedArray(w * h * 4);
-  for (let z = 0; z < h; z++) {
-    for (let i = 0; i < w; i++) {
-      const m = slice.cells[z][i];
-      // Rows are painted top-down: the highest voxel is the first image row.
-      const px = ((h - 1 - z) * w + i) * 4;
-      const [r, g, b] = m === Material.Air ? [14, 11, 32] : hexToRgb(MATERIALS[m].colors[0]);
-      buffer[px] = r;
-      buffer[px + 1] = g;
-      buffer[px + 2] = b;
-      buffer[px + 3] = 255;
-    }
-  }
-  blit(canvas, new ImageData(buffer, w, h));
+  renderCrossSection(canvas, world, axis, index);
 }
 
 /** Raw 2D noise preview, for tuning frequency/octaves before generating. */

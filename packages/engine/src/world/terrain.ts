@@ -1,4 +1,4 @@
-import { Material, type BodyDef } from '../types.js';
+import { Material, type BodyDef, type OreBand } from '../types.js';
 import { fbm2, makeNoise } from '../util/noise/index.js';
 import { hash2, hash3, mulberry32 } from '../util/rng.js';
 import { getDem, sampleDem, type DemPatch } from './dem/index.js';
@@ -111,6 +111,8 @@ function pickMaterial(
     const rich = t.oreRichness;
     if (v > 1 - rich * 0.055 && depth >= 3) return Material.Crystal;
     if (v > 1 - rich * 0.16) {
+      const band = t.bands && pickBand(t.bands, depth, surface);
+      if (band) return pickFromBand(band, x, y, z, seed);
       // Vein composition weighted by the body's spectroscopy profile
       // (e.g. TES/GRS iron for Mars, Clementine/M3 TiO2 for lunar maria).
       const w = body.minerals ?? {};
@@ -139,6 +141,33 @@ function pickMaterial(
   if (depth <= 2) return Material.Regolith;
   if (depth <= 5) return Material.Rock;
   return Material.Basalt;
+}
+
+/**
+ * First band whose `[from, to]` fraction-of-column-depth range contains this
+ * voxel, or null if none does (falls back to the default flat mineral mix).
+ * `surface` is guaranteed >= 1 by the `depth >= 1` guard at the call site.
+ */
+function pickBand(bands: OreBand[], depth: number, surface: number): OreBand | null {
+  const frac = depth / surface;
+  for (const band of bands) {
+    if (frac >= band.from && frac <= band.to) return band;
+  }
+  return null;
+}
+
+/** Weighted-random material from a band's mineral mix, seeded per voxel. */
+function pickFromBand(band: OreBand, x: number, y: number, z: number, seed: number): Material {
+  const entries = Object.entries(band.minerals);
+  const total = entries.reduce((sum, [, weight]) => sum + (weight ?? 0), 0);
+  if (total <= 0) return Material.IronOre;
+  const roll = hash3(x, y, z, seed + 23) * total;
+  let acc = 0;
+  for (const [id, weight] of entries) {
+    acc += weight ?? 0;
+    if (roll < acc) return Number(id);
+  }
+  return Number(entries[entries.length - 1][0]);
 }
 
 /**

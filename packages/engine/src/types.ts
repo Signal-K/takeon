@@ -15,23 +15,43 @@ export interface Vec3 {
   z: number;
 }
 
-/** Voxel material ids. 0 is always air. */
-export enum Material {
-  Air = 0,
-  Regolith = 1,
-  Rock = 2,
-  Basalt = 3,
-  Ice = 4,
-  IronOre = 5,
-  Silica = 6,
-  CopperOre = 7,
-  TitaniumOre = 8,
-  Crystal = 9,
-  Dust = 10,
-  Sulfur = 11,
-}
+/**
+ * Voxel material ids. 0 is always air.
+ *
+ * This is a plain object of numeric constants, not a TS `enum` — the `type
+ * Material = number` alias below means any number is a valid material id, so
+ * a host can mint its own ids (see `registerMaterial` in `world/materials.js`)
+ * without a cast or a fork. `Material.Air` / `Material.Regolith` / … still
+ * work exactly as before; only truly custom code that relied on TS enum
+ * reverse-mapping (`Material[5]`) or exhaustiveness checking would notice.
+ * Built-ins occupy 0–63; register custom materials at 64 or above so a body
+ * shared between games never collides with another host's ids.
+ */
+export const Material = {
+  Air: 0,
+  Regolith: 1,
+  Rock: 2,
+  Basalt: 3,
+  Ice: 4,
+  IronOre: 5,
+  Silica: 6,
+  CopperOre: 7,
+  TitaniumOre: 8,
+  Crystal: 9,
+  Dust: 10,
+  Sulfur: 11,
+} as const;
+export type Material = number;
 
-/** Mined resource keys (what ends up in cargo / inventory). */
+/** First id a host's custom materials should use; see `Material` above. */
+export const CUSTOM_MATERIAL_BASE = 64;
+
+/**
+ * Mined resource keys (what ends up in cargo / inventory). The built-ins are
+ * listed for autocomplete; `(string & {})` keeps the union open so a host can
+ * key its own resources (e.g. a mineral economy of platinum/palladium/…)
+ * without extending this type. See `registerResource` in `world/materials.js`.
+ */
 export type ResourceKey =
   | 'regolith'
   | 'stone'
@@ -46,7 +66,8 @@ export type ResourceKey =
   | 'iron-plate'
   | 'glass'
   | 'water'
-  | 'alloy';
+  | 'alloy'
+  | (string & {});
 
 /** A crafting/refining recipe. */
 export interface Recipe {
@@ -71,6 +92,25 @@ export interface MaterialDef {
   colors: [string, string, string];
   /** 0..1 amount of per-voxel color jitter for texture. */
   jitter: number;
+}
+
+/**
+ * One depth-stratified layer of ore composition, e.g. a shallow band rich in
+ * one mineral over a deeper band of rarer ones (topsoil/subsoil/bedrock).
+ * `from`/`to` are fractions of the column's own solid depth (0 = surface, 1 =
+ * the deepest voxel), so bands stay proportionate across bodies with very
+ * different `maxHeight`. Bands need not be contiguous or cover [0,1]; depth
+ * outside every band falls back to the default flat mineral split.
+ */
+export interface OreBand {
+  from: number;
+  to: number;
+  /** Relative weights among materials once a voxel has already rolled "this
+   * is ore" (via `terrain.oreRichness`) — bands choose which material wins,
+   * not whether a vein exists here at all. Auto-normalised; need not sum to 1. */
+  minerals: Record<Material, number>;
+  /** Display label for editor/host UI (e.g. "Topsoil"). */
+  label?: string;
 }
 
 export type BodyType = 'planet' | 'moon' | 'asteroid';
@@ -130,6 +170,14 @@ export interface BodyDef {
      * fields, domain warp and custom octaves. See `util/noise`.
      */
     noise?: NoiseConfig;
+    /**
+     * Depth-stratified ore composition (topsoil/subsoil/bedrock, or however
+     * many layers a host wants). Absent = the original flat iron/copper/
+     * titanium split at every depth (what every shipped body uses); set it to
+     * author a real strata economy — a shallow band of one mineral, a deeper
+     * band of rarer ones. See `world/terrain.js`'s `OreBand`.
+     */
+    bands?: OreBand[];
   };
   description: string;
 }
@@ -250,6 +298,13 @@ export interface Anomaly {
   documented: boolean;
 }
 
+/**
+ * Buildable structure kinds. The built-ins are listed for autocomplete;
+ * `(string & {})` keeps the union open so a host can register its own
+ * catalog (a settlement core, a research lab, a fuel depot — whatever its
+ * economy needs) without extending this type. See `registerStructure` in
+ * `sim/structures.js`.
+ */
 export type StructureType =
   | 'solar-array'
   | 'beacon'
@@ -260,7 +315,8 @@ export type StructureType =
   | 'habitat'
   | 'launch-pad'
   | 'generator'
-  | 'pylon';
+  | 'pylon'
+  | (string & {});
 
 /**
  * `functional` structures participate in the economy/power grid and are

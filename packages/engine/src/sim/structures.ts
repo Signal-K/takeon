@@ -65,6 +65,42 @@ export const STRUCTURES: Record<StructureType, StructureDef> = {
   },
 };
 
+/**
+ * Runtime structure registry.
+ *
+ * `StructureType` is an open string type so a host's own construction
+ * catalog — a settlement core, a research lab, a fuel depot, whatever its
+ * economy needs — can be added without forking the engine. `STRUCTURES` is a
+ * plain mutable object, so registering (or replacing) an entry here is picked
+ * up everywhere a structure type is looked up: `Simulation.build()`, the
+ * build menu (`@takeon/ui`'s `BuildPanel`), the flat view's entity glyphs
+ * (register a matching `registerFlatPainter('structure', …)` variant keyed
+ * off `entity.variant` for a custom look), and save/load.
+ */
+
+/** Add or replace a structure definition. Returns the type that was registered. */
+export function registerStructure(def: StructureDef): StructureType {
+  STRUCTURES[def.type] = def;
+  return def.type;
+}
+
+/** Remove a registered structure type. The 10 built-ins refuse to unregister. */
+export function unregisterStructure(type: StructureType): boolean {
+  if (type in BUILTIN_STRUCTURE_TYPES) return false;
+  if (!(type in STRUCTURES)) return false;
+  delete STRUCTURES[type];
+  return true;
+}
+
+/** Every structure definition currently known, built-in and registered. */
+export function listStructures(): StructureDef[] {
+  return Object.values(STRUCTURES);
+}
+
+const BUILTIN_STRUCTURE_TYPES: Record<string, true> = Object.fromEntries(
+  Object.keys(STRUCTURES).map((type) => [type, true as const]),
+);
+
 /** Structure footprint must be flat within this height spread. */
 export const BUILD_RADIUS = 2;
 export const SOLAR_ARRAY_RANGE = 4;

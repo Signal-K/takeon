@@ -882,7 +882,10 @@ export class Simulation {
           rig.buffer = {};
         }
         // Auto-fire once it holds a full load and the pad is fuelled.
-        const total = Object.values(s.buffer).reduce((a, b) => a + (b ?? 0), 0);
+        const total = (Object.values(s.buffer) as (number | undefined)[]).reduce(
+          (a: number, b) => a + (b ?? 0),
+          0,
+        );
         const ready = s.cooldownUntil == null || this.time >= s.cooldownUntil;
         if (ready && total >= AUTO_LAUNCH_THRESHOLD) {
           const manifest = s.buffer;

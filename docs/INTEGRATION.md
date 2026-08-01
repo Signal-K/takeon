@@ -7,7 +7,9 @@ possible: a bare canvas, a PixiJS stage, or — if your game is React —
 `@takeon/ui`, whose every component the host can replace ([UI.md](UI.md)).
 Worlds themselves are authored in `@takeon/editor` ([EDITOR.md](EDITOR.md)),
 and the engine's own structure — layers, scenes, views, entity parts, noise —
-is mapped in [ENGINE.md](ENGINE.md).
+is mapped in [ENGINE.md](ENGINE.md). For the Star Sailors ecosystem
+specifically, [LANDNAM.md](LANDNAM.md) maps Landnam's construction,
+underground and settlement/exploration scenes onto this API.
 
 Missions render in two built-in views: the isometric diorama and a top-down 2D
 map (`game.setView('flat')`). If neither suits your game, take

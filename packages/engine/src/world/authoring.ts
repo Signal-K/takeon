@@ -301,6 +301,28 @@ export function validateBody(def: BodyDef): BodyValidation {
       }
       if ((n.octaves ?? 4) > 6) warnings.push('more than 6 octaves costs generation time for detail you cannot see');
     }
+    const bands = t.bands;
+    if (bands) {
+      bands.forEach((band, i) => {
+        const label = band.label ? `"${band.label}"` : `#${i}`;
+        if (!num(band.from) || band.from < 0 || band.from > 1) {
+          errors.push(`terrain.bands[${label}].from must be between 0 and 1`);
+        }
+        if (!num(band.to) || band.to < 0 || band.to > 1) {
+          errors.push(`terrain.bands[${label}].to must be between 0 and 1`);
+        }
+        if (num(band.from) && num(band.to) && band.from > band.to) {
+          errors.push(`terrain.bands[${label}].from must not be greater than .to`);
+        }
+        const total = Object.values(band.minerals ?? {}).reduce((sum, w) => sum + (num(w) ? w : 0), 0);
+        if (total <= 0) errors.push(`terrain.bands[${label}] needs at least one mineral with a positive weight`);
+      });
+      for (let i = 1; i < bands.length; i++) {
+        if (bands[i].from < bands[i - 1].to) warnings.push('terrain.bands overlap — the earlier band always wins the overlap');
+      }
+      const covered = bands.reduce((sum, b) => sum + Math.max(0, b.to - b.from), 0);
+      if (covered < 0.99) warnings.push('terrain.bands leave depth uncovered — those voxels fall back to the default mineral mix');
+    }
   }
 
   if (!def.palette || !HEX.test(def.palette.sky ?? '')) errors.push('palette.sky must be a hex colour');
@@ -397,6 +419,6 @@ export function bodyToTypeScript(def: BodyDef): string {
 function entries(obj: Record<string, unknown>): string {
   return Object.entries(obj)
     .filter(([, v]) => v !== undefined)
-    .map(([k, v]) => `${k}: ${typeof v === 'string' ? JSON.stringify(v) : v}`)
+    .map(([k, v]) => `${k}: ${typeof v === 'number' || typeof v === 'boolean' ? v : JSON.stringify(v)}`)
     .join(', ');
 }

@@ -17,6 +17,9 @@ export { GameAudio, type GameAudioOptions } from './audio/audio.js';
 export { Simulation, TICK_RATE, TICK_DT, DIRS, type SimOptions } from './sim/simulation.js';
 export {
   STRUCTURES,
+  registerStructure,
+  unregisterStructure,
+  listStructures,
   SOLAR_ARRAY_RANGE,
   LAUNCH_COOLDOWN,
   MAX_MOBILITY_UPGRADE,
@@ -32,7 +35,14 @@ export { WEATHER_INFO } from './sim/weather.js';
 export { VoxelWorld } from './world/world.js';
 export { generateTerrain, findLandingSite, skinBiome } from './world/terrain.js';
 export { generateAnomalies } from './world/anomalies.js';
-export { MATERIALS, RESOURCE_NAMES } from './world/materials.js';
+export {
+  MATERIALS,
+  RESOURCE_NAMES,
+  registerMaterial,
+  unregisterMaterial,
+  listMaterials,
+  registerResource,
+} from './world/materials.js';
 export { BODIES } from './world/bodies.js';
 export {
   getBody,
@@ -84,6 +94,12 @@ export { computeStats, canReach, defaultSpec } from './parts/assembly.js';
 
 export { IsoRenderer } from './render/renderer.js';
 export { FlatRenderer, FLAT_TILE } from './render/flat.js';
+export {
+  crossSectionImage,
+  renderCrossSection,
+  type CrossSectionImage,
+  type CrossSectionPaintOptions,
+} from './render/cross-section.js';
 export { type SceneView, type ViewRotation } from './render/view.js';
 export {
   registerFlatPainter,
@@ -126,6 +142,7 @@ export {
   PocketBaseSync,
   missionCredits,
   RESOURCE_VALUE,
+  registerResourceValue,
   DISCOVERY_CREDITS,
   PHOTO_CREDITS_PER_QUALITY,
   STARTING_CREDITS,
