@@ -1,5 +1,9 @@
 # TakeOn — agent notes
 
+## Desk-first agent workflow
+
+Desk is the sole project-management system for TakeOn. Before changing code, resolve the relevant Desk ticket or create one with `create_ticket`. During work, update it when scope, status, blockers, or decisions change. Before finishing, add implementation evidence and tests with `add_comment`, move it to the correct Desk status, attach useful file references with `attach_file_ref`, and include the Desk key in the commit subject or body. Never use Knowns, `.knowns`, Plate, or workspace ticket Markdown as a replacement for Desk ticket state. If no Desk key exists, stop before committing and create or resolve the ticket.
+
 Isometric voxel rover game. npm workspaces monorepo + Go PocketBase spoke.
 
 ## Commands
