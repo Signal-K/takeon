@@ -105,29 +105,30 @@ function mountDemo(): () => void {
   const root = document.querySelector<HTMLElement>('[data-demo]'); const canvas = document.querySelector<HTMLCanvasElement>('#mission-canvas'); const config = root ? demos[root.dataset.demo as DemoId] : undefined;
   if (!root || !canvas || !config) return () => undefined;
   const status = document.querySelector<HTMLOutputElement>('#mission-status'); const position = document.querySelector<HTMLElement>('#mission-position'); const telemetry = document.querySelector<HTMLElement>('#mission-telemetry'); const routeReadout = document.querySelector<HTMLOutputElement>('#route-readout');
-  let game: RoverGame | undefined; let pendingDirection: (0 | 1 | 2 | 3) | undefined; let routeMode = false; let waypoints: Vec2[] = []; let telemetryTimer = 0; let gamepadFrame = 0; let lastGamepadMove = 0; let pressedButtons: boolean[] = []; let disposeGame = () => undefined;
-  const setStatus = (message: string, tone: 'ready' | 'warning' | 'success' = 'ready') => { if (status) { status.textContent = message; status.dataset.tone = tone; } };
-  const updateRoute = () => { if (!routeReadout || !game) return; const steps = game.plannedRoute().length; routeReadout.textContent = routeMode ? `Route design mode · ${waypoints.length} waypoint${waypoints.length === 1 ? '' : 's'} · ${steps} safe steps.` : steps ? `Driving ${steps} safe route steps · tap Set route to add a waypoint.` : 'Tap terrain for a safe route, or Set route to place waypoints.'; };
+  let game: RoverGame | undefined; let directionQueue: (0 | 1 | 2 | 3)[] = []; let routeMode = false; let waypoints: Vec2[] = []; let telemetryTimer = 0; let gamepadFrame = 0; let lastGamepadMove = 0; let pressedButtons: boolean[] = []; let disposeGame = () => undefined;
+  const pulse = (element: HTMLElement | null) => element?.animate([{ opacity: 0.55, transform: 'translateY(4px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 180, easing: 'ease-out' });
+  const setStatus = (message: string, tone: 'ready' | 'warning' | 'success' = 'ready') => { if (status) { status.textContent = message; status.dataset.tone = tone; pulse(status); } };
+  const updateRoute = () => { if (!routeReadout || !game) return; const steps = game.plannedRoute().length; const next = routeMode ? `Route design mode · ${waypoints.length} waypoint${waypoints.length === 1 ? '' : 's'} · ${steps} safe steps.` : steps ? `Driving ${steps} safe route steps · tap Set route to add a waypoint.` : 'Tap terrain for a safe route, or Set route to place waypoints.'; if (routeReadout.textContent !== next) { routeReadout.textContent = next; pulse(routeReadout); } };
   const updateTelemetry = () => { if (!game) return; const rover = game.sim.rover; if (position) position.textContent = `Tile ${rover.pos.x}, ${rover.pos.y}`; if (telemetry) telemetry.textContent = `Battery ${Math.round(rover.battery)} · cargo ${rover.cargoUsed}/${rover.stats.cargoCapacity}`; updateRoute(); };
   const resize = () => { const bounds = canvas.getBoundingClientRect(); game?.resize(bounds.width, bounds.height, Math.min(2, window.devicePixelRatio || 1)); };
-  const drive = (direction: 0 | 1 | 2 | 3) => { if (!game) return; if (game.sim.rover.moveFrom || game.sim.rover.mining) { pendingDirection = direction; setStatus('Drive command queued until the rover is clear.'); return; } routeMode = false; waypoints = []; if (game.move(direction)) setStatus('Driving across the surface.', 'success'); };
+  const drive = (direction: 0 | 1 | 2 | 3) => { if (!game) return; if (game.sim.rover.moveFrom || game.sim.rover.mining) { if (directionQueue.length < 10) directionQueue.push(direction); setStatus(`${directionQueue.length} drive command${directionQueue.length === 1 ? '' : 's'} queued.`); return; } routeMode = false; waypoints = []; if (game.move(direction)) setStatus('Driving across the surface.', 'success'); };
   const startGame = () => {
-    disposeGame(); routeMode = false; waypoints = [];
+    disposeGame(); routeMode = false; waypoints = []; directionQueue = [];
     game = createRoverGame({ canvas, body: config.body, spec: config.spec, seed: config.body.seed, audio: false, controls: false });
     const off = [
-      game.events.on('blocked', ({ reason }) => { if (reason !== 'busy') { pendingDirection = undefined; setStatus(reason === 'cliff' ? 'That slope is too steep. Plot a route around it.' : reason === 'edge' ? 'That route leaves the field boundary.' : 'Battery is too low for that action.', 'warning'); } }),
+      game.events.on('blocked', ({ reason }) => { if (reason !== 'busy') { directionQueue = []; setStatus(reason === 'cliff' ? 'That slope is too steep. Plot a route around it.' : reason === 'edge' ? 'That route leaves the field boundary.' : 'Battery is too low for that action.', 'warning'); } }),
       game.events.on('miningStarted', () => setStatus('Working the exposed surface.', 'success')),
       game.events.on('mined', ({ resource, amount }) => setStatus(resource ? `Collected ${amount} ${resource}.` : 'Regolith cleared.', 'success')),
       game.events.on('scan', ({ found }) => setStatus(found.length ? `Field check found ${found.length} nearby signal${found.length === 1 ? '' : 's'}.` : 'Field check complete. No new signal nearby.', 'success')),
       game.events.on('photo', () => setStatus('Field record captured.', 'success')),
-      game.events.on('tick', () => { if (pendingDirection !== undefined && !game?.sim.rover.moveFrom && !game?.sim.rover.mining) { const direction = pendingDirection; pendingDirection = undefined; drive(direction); } }),
+      game.events.on('tick', () => { if (directionQueue.length && !game?.sim.rover.moveFrom && !game?.sim.rover.mining) { const direction = directionQueue.shift(); if (direction !== undefined) drive(direction); } }),
     ];
     resize(); game.start(); updateTelemetry(); setStatus(`Ready: ${config.scene}.`); disposeGame = () => { off.forEach(stop => stop()); game?.dispose(); game = undefined; };
   };
   const runAction = (action: ActionId) => {
     if (!game) return;
     if (action === 'route') { routeMode = !routeMode; setStatus(routeMode ? 'Route design enabled. Tap terrain to add waypoints; each leg is checked for safe slopes.' : 'Route design closed. The active safe path will continue.'); updateRoute(); return; }
-    if (action === 'clear-route') { game.cancelOrder(); routeMode = false; waypoints = []; setStatus('Route cleared.'); updateRoute(); return; }
+    if (action === 'clear-route') { game.cancelOrder(); directionQueue = []; routeMode = false; waypoints = []; setStatus('Route cleared.'); updateRoute(); return; }
     if (action === 'mine') { if (!game.mine()) setStatus('Move beside an exposed tile before extracting.', 'warning'); return; }
     if (action === 'scan') { game.scan(); return; } if (action === 'photo') { game.photo(); return; }
     if (action === 'rotate') { game.rotateView(); setStatus('View reoriented.', 'success'); return; } if (action === 'recover') startGame();

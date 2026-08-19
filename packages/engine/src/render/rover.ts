@@ -133,12 +133,15 @@ export function drawRover(
   daylight: number,
   screenFacing?: 0 | 1 | 2 | 3,
   time = 0,
+  /** Small presentation-only lean while the vehicle turns between directions. */
+  turnLean = 0,
 ): void {
   const p = roverPaintContext(rover, daylight, screenFacing, time);
   const ordered = listRoverParts();
 
   ctx.save();
   ctx.translate(x, y);
+  ctx.rotate(turnLean);
   ctx.scale(s * ROVER_SCALE * p.flip, s * ROVER_SCALE);
   ctx.lineJoin = 'round';
 

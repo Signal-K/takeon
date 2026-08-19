@@ -149,6 +149,7 @@ export class RoverGame {
         this.acc -= TICK_DT;
       }
       this.sim.interpolateRender(this.acc);
+      this.iso.setRoute(this.route);
       this.renderer.draw();
       this.raf = requestAnimationFrame(frame);
     };

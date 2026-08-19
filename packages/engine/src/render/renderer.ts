@@ -129,6 +129,10 @@ export class IsoRenderer implements SceneView {
   private lastDrawMs = 0;
   /** Smooth per-frame clock for animation (sim.time only ticks at 10 Hz). */
   private renderTime = 0;
+  /** Host-planned route, drawn as a presentation-only surface overlay. */
+  private route: readonly Vec2[] = [];
+  /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
+  private visualFacing = 0;
   // ── Adaptive resolution ───────────────────────────────────────────────
   private cssW = 800;
   private cssH = 600;
@@ -157,6 +161,12 @@ export class IsoRenderer implements SceneView {
     this.spawnFlora();
     this.spawnFlyers();
     this.lastDrawMs = nowMs();
+    this.visualFacing = sim.rover.facing;
+  }
+
+  /** Show a host-planned route without storing it in world state or a save. */
+  setRoute(route: readonly Vec2[]): void {
+    this.route = route;
   }
 
   /** Material colour with the body's identity tint applied (grey Moon,
@@ -751,6 +761,7 @@ export class IsoRenderer implements SceneView {
       const pulse = 0.35 + (Math.sin(sim.time * 10) + 1) * 0.2;
       this.strokeTilePolygon(rover.mining.pos.x, rover.mining.pos.y, `rgba(255,179,71,${pulse})`);
     }
+    this.drawRoute(rover.renderPos);
 
     // Entities in view-space diagonal order.
     type Ent = { s: number; draw: () => void };
@@ -778,9 +789,12 @@ export class IsoRenderer implements SceneView {
     {
       const p = camera.toScreen(...projXY(rv.x, rv.y, rz + 0.55));
       const screenFacing = (((rover.facing - this.rotation) % 4) + 4) % 4;
+      const shortestTurn = ((screenFacing - this.visualFacing + 6) % 4) - 2;
+      this.visualFacing += shortestTurn * Math.min(1, Math.max(0.08, frameMs / 95));
+      const turnLean = Math.max(-0.22, Math.min(0.22, (this.visualFacing - screenFacing) * 0.22));
       ents.push({
         s: rv.x + rv.y,
-        draw: () => drawRover(ctx, p.x, p.y, camera.zoom, rover, daylight, screenFacing as 0 | 1 | 2 | 3, this.renderTime),
+        draw: () => drawRover(ctx, p.x, p.y, camera.zoom, rover, daylight, screenFacing as 0 | 1 | 2 | 3, this.renderTime, turnLean),
       });
     }
     // Wind strength for flora sway — stiffens in dust weather.
@@ -1380,6 +1394,38 @@ export class IsoRenderer implements SceneView {
         this.drawColumnV(ctx, u, v, proj, camera.zoom, true);
       }
     }
+  }
+
+  /** Dashed route and waypoint markers, projected onto the current surface. */
+  private drawRoute(from: Vec2): void {
+    if (this.route.length === 0) return;
+    const { ctx, camera } = this;
+    const points = [from, ...this.route].map(pos => {
+      const v = this.toView(pos.x, pos.y);
+      const z = this.surfaceZ(pos.x, pos.y) + 0.58;
+      return camera.toScreen(...projXY(v.x, v.y, z));
+    });
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(175,255,219,0.92)';
+    ctx.lineWidth = Math.max(1.3, camera.zoom * 1.15);
+    ctx.setLineDash([5 * camera.zoom, 5 * camera.zoom]);
+    ctx.lineDashOffset = -this.renderTime * 16;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i];
+      const final = i === points.length - 1;
+      ctx.fillStyle = final ? '#f6c96a' : '#a9f6d7';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(2.6, camera.zoom * (final ? 3.5 : 2.6)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   private strokeTilePolygon(x: number, y: number, style: string): void {
