@@ -9,14 +9,17 @@ engine mount, while the other routes make the host-game boundary visible.
 - `/demo` — the small, local Mars baseline using `@takeon/engine`.
 - `/demos` — entry point for the runnable host-specific scenes. A host only
   gets an entry here if it actually has field/terrain gameplay — TakeOn is a
-  scene layer (world, terrain, rover), not a UI skin for every host app.
+  scene layer (world, terrain, rover), not a UI skin for every Star Sailors
+  product. Atlas (astronomy companion) and Saily/The Daily Transit (a daily
+  citizen-science puzzle website, NYT-Games-style) don't have that gameplay
+  and are not demo hosts here.
 - `/demos/landnam` — Shackleton Rim surface operations: a lunar Prospector,
-  programme-to-field language, and a Landnam-specific hotbar.
-- `/demos/saily` — Cloudspotting Mars context: a compact evidence scene that
-  returns to Saily's daily game loop.
+  programme-to-field language, and a Landnam-specific hotbar. Currently the
+  only host demo, since Landnam is the only Star Sailors game that actually
+  plays TakeOn's rover/terrain sim today.
 - `/field/:host` — a dedicated full-window version of each host scene; the
   demo pages open it in a new tab.
-- `/ecosystem` — host roles across Landnam, Saily and shared services.
+- `/ecosystem` — host roles across Landnam and shared services.
 - `/landnam` — the Landnam command-deck → TakeOn field-sandbox handoff.
 - `/language` — how UI density and visual language shift as TakeOn usage grows.
 

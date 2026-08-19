@@ -1,8 +1,8 @@
 import './styles.css';
 import { createRoverGame, defaultSpec, getBody, type BodyDef, type RoverGame, type RoverSpec, type Vec2 } from '@takeon/engine';
 
-type DemoId = 'takeon' | 'landnam' | 'saily';
-type Route = '/' | '/demo' | '/demos' | '/demos/landnam' | '/demos/saily' | '/field/landnam' | '/field/saily' | '/ecosystem' | '/landnam' | '/language';
+type DemoId = 'takeon' | 'landnam';
+type Route = '/' | '/demo' | '/demos' | '/demos/landnam' | '/field/landnam' | '/ecosystem' | '/landnam' | '/language';
 type ActionId = 'route' | 'clear-route' | 'mine' | 'scan' | 'photo' | 'rotate' | 'recover';
 
 type HostDemo = {
@@ -31,21 +31,13 @@ const demos: Record<DemoId, HostDemo> = {
     metrics: ['Site Access / Shackleton Rim', 'Prospector / field lab', 'Cargo / programme ledger'],
     actions: [{ id: 'route', label: 'Plot traverse' }, { id: 'scan', label: 'Survey', key: 'X' }, { id: 'mine', label: 'Extract', key: 'E' }, { id: 'photo', label: 'Document', key: 'P' }],
   },
-  saily: {
-    id: 'saily', eyebrow: 'SAILY / CLOUDSPOTTING MARS', title: 'Ares Cloud Review', scene: 'Context for a daily game round', caption: 'SAILY / EXPLAINER FIELD SCENE',
-    body: { ...mars, id: 'saily-ares', name: 'Ares Cloud Review', palette: { sky: '#9a6285', skyNight: '#160e2e', tint: [0.88, 0.82, 1.08] }, weather: {}, terrain: { ...mars.terrain, roughness: 0.25, craters: 2 } },
-    spec: { ...defaultSpec(), id: 'saily-reviewer', name: 'Cloud Review Rover', chassis: 'chassis-scout', wheels: 'wheels-rigid', power: 'power-solar-s', battery: 'batt-cell', modules: ['cam-pano', 'scan-short'], color: '#f09abb' },
-    premise: 'Saily’s Daily Transit and Cloudspotting Mars remain compact, accessible science games. This optional scene makes the place and evidence behind one round tangible, then returns the player to the explainer.', returnLabel: 'Return to daily game',
-    metrics: ['Round / Cloudspotting Mars', 'Evidence / image + context', 'Return / daily puzzle loop'],
-    actions: [{ id: 'route', label: 'Follow review path' }, { id: 'scan', label: 'Inspect', key: 'X' }, { id: 'photo', label: 'Record', key: 'P' }, { id: 'rotate', label: 'Reframe view' }],
-  },
 };
 
 let disposeDemo: (() => void) | undefined;
 const routes: Record<Route, { label: string }> = {
   '/': { label: 'Atlas' }, '/demo': { label: 'TakeOn demo' }, '/demos': { label: 'Host demos' },
-  '/demos/landnam': { label: 'Landnam field demo' }, '/demos/saily': { label: 'Saily field demo' },
-  '/field/landnam': { label: 'Landnam field view' }, '/field/saily': { label: 'Saily field view' },
+  '/demos/landnam': { label: 'Landnam field demo' },
+  '/field/landnam': { label: 'Landnam field view' },
   '/ecosystem': { label: 'Ecosystem' }, '/landnam': { label: 'Landnam' }, '/language': { label: 'UI language' },
 };
 
@@ -54,15 +46,15 @@ function link(route: Route, label: string, className = ''): string { return `<a 
 function shell(route: Route, content: string): string {
   const active = (path: Route) => route === path ? 'is-active' : '';
   if (route.startsWith('/field/')) return `<div class="field-window">${content}</div>`;
-  return `<div class="site-shell"><header class="topbar">${link('/', '<span class="mark">T/O</span><span>TakeOn Atlas</span>', 'brand')}<nav aria-label="Primary navigation"><a href="/demos" data-route class="${active('/demos')}">Playable demos</a><a href="/ecosystem" data-route class="${active('/ecosystem')}">Ecosystem</a><a href="/landnam" data-route class="${active('/landnam')}">Landnam</a><a href="/language" data-route class="${active('/language')}">UI language</a></nav></header><main>${content}</main><footer><span>Static by design.</span><span>One engine · many host games.</span></footer></div>`;
+  return `<div class="site-shell"><header class="topbar">${link('/', '<span class="mark">T/O</span><span>TakeOn Atlas</span>', 'brand')}<nav aria-label="Primary navigation"><a href="/demos" data-route class="${active('/demos')}">Playable demos</a><a href="/ecosystem" data-route class="${active('/ecosystem')}">Ecosystem</a><a href="/landnam" data-route class="${active('/landnam')}">Landnam</a><a href="/language" data-route class="${active('/language')}">UI language</a></nav></header><main>${content}</main><footer><span>Static by design.</span><span>One engine · one game today.</span></footer></div>`;
 }
 
 function home(): string {
-  return `<section class="hero"><div class="hero-copy"><p class="eyebrow">BUILD / LAUNCH / EXPLORE</p><h1>The shared layer where Star Sailors games become places.</h1><p class="lede">TakeOn is not another destination. It is the compact building, rover, terrain and field-mission layer that a host game can reveal when a plan becomes something a player can inhabit.</p><div class="actions">${link('/demos', 'Explore host demos', 'button primary')}${link('/landnam', 'See the Landnam handoff', 'button')}</div></div><div class="hero-diagram" aria-label="TakeOn connects host games to a shared field layer"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="system-node node-landnam"><span>LANDNAM</span><small>programme</small></div><div class="core-node"><span>TAKEON</span><small>field layer</small></div><div class="system-node node-saily"><span>SAILY</span><small>return</small></div></div></section><section class="principles"><article><span class="index">01</span><h2>Host-first</h2><p>Each game owns its world, progression and voice. TakeOn accepts a body, rover and persistence adapter; it does not own the player.</p></article><article><span class="index">02</span><h2>Field-real</h2><p>A command on a board can become a rover, a landscape, a cache, a route and the pleasure of doing the work.</p></article><article><span class="index">03</span><h2>Quiet by default</h2><p>The engine is deterministic and dependency-free. A host only pays for a mission while it is actually mounted.</p></article></section>`;
+  return `<section class="hero"><div class="hero-copy"><p class="eyebrow">BUILD / LAUNCH / EXPLORE</p><h1>The shared field layer Landnam turns into a place.</h1><p class="lede">TakeOn is not another destination. It is the compact building, rover, terrain and field-mission layer Landnam reveals when a programme decision becomes something a player can inhabit. It is built host-neutral so another Star Sailors game could adopt it later — none do yet.</p><div class="actions">${link('/demos', 'Play the Landnam demo', 'button primary')}${link('/landnam', 'See the Landnam handoff', 'button')}</div></div><div class="hero-diagram" aria-label="TakeOn connects Landnam to a shared field layer"><div class="orbit orbit-one"></div><div class="system-node node-landnam"><span>LANDNAM</span><small>programme</small></div><div class="core-node"><span>TAKEON</span><small>field layer</small></div></div></section><section class="principles"><article><span class="index">01</span><h2>Host-first</h2><p>Each game owns its world, progression and voice. TakeOn accepts a body, rover and persistence adapter; it does not own the player.</p></article><article><span class="index">02</span><h2>Field-real</h2><p>A command on a board can become a rover, a landscape, a cache, a route and the pleasure of doing the work.</p></article><article><span class="index">03</span><h2>Quiet by default</h2><p>The engine is deterministic and dependency-free. A host only pays for a mission while it is actually mounted.</p></article></section>`;
 }
 
 function demoCards(): string {
-  return `<section class="page-heading"><p class="eyebrow">ACTUAL HOST-SPECIFIC SCENES</p><h1>One engine. Different games, scenes and hotbars.</h1><p class="lede">Each runnable demo uses a different world configuration, rover assembly, field language and action bar. They are not cosmetic skins of one Mars screen.</p></section><section class="demo-cards">${(['landnam', 'saily'] as DemoId[]).map(id => { const d = demos[id]; return `<article class="demo-card demo-card-${id}"><p class="eyebrow">${d.eyebrow}</p><h2>${d.title}</h2><p>${d.premise}</p><div class="demo-card-metrics">${d.metrics.map(metric => `<span>${metric}</span>`).join('')}</div>${link(`/demos/${id}` as Route, `Open ${id} demo`, 'button')}</article>`; }).join('')}</section>`;
+  return `<section class="page-heading"><p class="eyebrow">THE ACTUAL HOST-SPECIFIC SCENE</p><h1>One engine. One game, today.</h1><p class="lede">Landnam is the only Star Sailors game that currently mounts TakeOn's rover/terrain sim. The demo below uses a real world configuration, rover assembly, field language and action bar — not a cosmetic skin on a generic Mars screen. It's the only demo here because it's the only host that actually needs one.</p></section><section class="demo-cards">${(['landnam'] as DemoId[]).map(id => { const d = demos[id]; return `<article class="demo-card demo-card-${id}"><p class="eyebrow">${d.eyebrow}</p><h2>${d.title}</h2><p>${d.premise}</p><div class="demo-card-metrics">${d.metrics.map(metric => `<span>${metric}</span>`).join('')}</div>${link(`/demos/${id}` as Route, `Open ${id} demo`, 'button')}</article>`; }).join('')}</section>`;
 }
 
 function missionDemo(id: DemoId, full = false): string {
@@ -72,7 +64,7 @@ function missionDemo(id: DemoId, full = false): string {
 }
 
 function ecosystem(): string {
-  return `<section class="page-heading"><p class="eyebrow">ONE MODULE / MANY NARRATIVES</p><h1>TakeOn is the field layer.</h1><p class="lede">The shared contract stays small. What changes is the reason a player enters it, the scene they enter and what returns to the host.</p></section><section class="ecosystem-grid"><article class="host-card landnam-card"><p class="eyebrow">RESOURCE-MANAGEMENT GAME</p><h2>Landnam</h2><p><b>Host owns:</b> programme, budgets, rockets, facilities, targets and client commitments.</p><p><b>TakeOn reveals:</b> lunar terrain, field construction, cargo routes and the satisfaction of a working site.</p><span class="handoff">Mission board → launch → surface operations → logistics</span>${link('/demos/landnam', 'Play the Landnam scene', 'text-link')}</article><article class="host-card saily-card"><p class="eyebrow">EXPLAINER / RETURN LAYER</p><h2>Saily</h2><p><b>Host owns:</b> accessible explanation and the compact Daily Transit game loop.</p><p><b>TakeOn reveals:</b> the place and evidence behind an optional science-game scene, then returns to the explainer.</p><span class="handoff">Daily game → understandable place → return story</span>${link('/demos/saily', 'Play the Saily scene', 'text-link')}</article><article class="host-card shared-card"><p class="eyebrow">SHARED STAR SAILORS</p><h2>Mission identity</h2><p>Observation/task identity, consent, privacy, provenance, consensus and partner export stay above the engine.</p><span class="handoff">Shared task → host-specific play → trusted outcome</span></article></section>`;
+  return `<section class="page-heading"><p class="eyebrow">ONE MODULE / ONE HOST TODAY</p><h1>TakeOn is the field layer.</h1><p class="lede">The shared contract stays small: a body, a rover and a persistence adapter in, a mounted scene out. Landnam is the only host using it today — the contract is what holds when the next one does.</p></section><section class="ecosystem-grid"><article class="host-card landnam-card"><p class="eyebrow">RESOURCE-MANAGEMENT GAME</p><h2>Landnam</h2><p><b>Host owns:</b> programme, budgets, rockets, facilities, targets and client commitments.</p><p><b>TakeOn reveals:</b> lunar terrain, field construction, cargo routes and the satisfaction of a working site.</p><span class="handoff">Mission board → launch → surface operations → logistics</span>${link('/demos/landnam', 'Play the Landnam scene', 'text-link')}</article><article class="host-card shared-card"><p class="eyebrow">SHARED STAR SAILORS</p><h2>Mission identity</h2><p>Observation/task identity, consent, privacy, provenance, consensus and partner export stay above the engine.</p><span class="handoff">Shared task → host-specific play → trusted outcome</span></article></section>`;
 }
 
 function landnam(): string {
@@ -87,7 +79,6 @@ function page(route: Route): string {
   if (route === '/demo') return missionDemo('takeon');
   if (route === '/demos') return demoCards();
   if (route === '/demos/landnam' || route === '/field/landnam') return missionDemo('landnam', route.startsWith('/field/'));
-  if (route === '/demos/saily' || route === '/field/saily') return missionDemo('saily', route.startsWith('/field/'));
   if (route === '/ecosystem') return ecosystem(); if (route === '/landnam') return landnam(); if (route === '/language') return language(); return home();
 }
 
