@@ -43,7 +43,7 @@ const mounted = mountRoverGame({
   width: 800, height: 600,
   body: getBody('mars'), spec: defaultSpec(),
 });
-mounted.game.start(); // in a real app the host loop advances the sim
+mounted.start(); // attaches both the game loop and Pixi presentation
 
 // A real app.ticker fires these once per frame. We pump them by hand so the
 // example is deterministic (no reliance on requestAnimationFrame timing).
@@ -51,9 +51,15 @@ for (let i = 0; i < 10; i++) for (const fn of tickFns) fn();
 
 const mountOk =
   stage.children.includes(mounted.sprite) &&         // sprite added to the stage
-  mounted.sprite.texture._updates === 10 &&          // texture refreshed each frame
+  mounted.sprite.texture._updates >= 1 &&            // first texture upload happened
+  tickFns.length === 1 &&                            // ticker attached only while active
   mounted.sprite.width === 800;
 console.log(mountOk ? 'MOUNT OK' : 'MOUNT FAILED', { updates: mounted.sprite.texture._updates });
+
+mounted.pause();
+const pauseOk = tickFns.length === 0 && !mounted.isRunning();
+console.log(pauseOk ? 'PAUSE OK' : 'PAUSE FAILED');
+mounted.resume();
 
 mounted.destroy();
 const teardownOk = stage.children.length === 0 && tickFns.length === 0 && mounted.sprite._destroyed;

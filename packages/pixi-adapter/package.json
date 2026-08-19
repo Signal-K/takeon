@@ -1,6 +1,6 @@
 {
   "name": "@takeon/pixi",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "Mount the TakeOn rover game inside a PixiJS application (e.g. Landnam).",
   "license": "MIT",
   "type": "module",

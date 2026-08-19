@@ -169,9 +169,10 @@ const mounted = mountRoverGame({
   body: getBody('mars')!,
   spec: playerRover,         // a RoverSpec, e.g. from your own DB
 });
-mounted.game.start();
+mounted.start();
 mounted.game.events.on('anomalyDocumented', ({ anomaly }) => { /* award XP */ });
-// later: mounted.destroy();
+// later: mounted.pause(); // hidden tab/panel — removes the ticker callback
+// finally: mounted.destroy();
 ```
 
 See [docs/INTEGRATION.md](docs/INTEGRATION.md) for the event catalogue and how

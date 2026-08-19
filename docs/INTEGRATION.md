@@ -57,7 +57,7 @@ const mounted = mountRoverGame({
   width: 800, height: 600, x: 40, y: 60,
   body: getBody('ceres')!, spec: rover,
 });
-mounted.game.start();
+mounted.start();
 ```
 
 Works against pixi v7 and v8 (structural typing; no hard dependency). `view`
@@ -66,15 +66,16 @@ your own Pixi UI buttons).
 
 `mountRoverGame` touches only a tiny structural slice of Pixi —
 `Texture.from(canvas)`, `new Sprite(texture)` with mutable `x/y/width/height`,
-`stage.addChild/removeChild`, and `ticker.add/remove` (called each frame to
-refresh the texture; it handles v7 `texture.update()`, v8
-`texture.source.update()` and `baseTexture.update()`). Because that's the
-whole contract, the mount is verifiable with a **mock** Pixi namespace — no
-WebGL needed: a stub confirms the sprite is added, the texture pumps every
-frame, the sim advances, host-canvas input (keyboard + tap) routes into the
-game, and `mounted.destroy()` releases the sprite, texture, input and loop.
+`stage.addChild/removeChild`, and `ticker.add/remove`. `mounted.start()`
+attaches its presentation callback and starts the game; `pause()` / `stop()`
+stop the simulation and remove that callback completely. While active, canvas
+uploads default to 30 fps (configurable with `presentationFps`) while the
+simulation remains fixed at 10 Hz. It handles v7 `texture.update()`, v8
+`texture.source.update()` and `baseTexture.update()`. Because that's the whole
+contract, the mount is verifiable with a **mock** Pixi namespace — no WebGL
+needed.
 
-Returned handle: `{ game, sprite, resize(w, h), destroy() }`.
+Returned handle: `{ game, sprite, resize(w, h), start(), pause(), resume(), stop(), isRunning(), destroy() }`.
 
 ## 3. Inside a React app (`@takeon/ui`)
 

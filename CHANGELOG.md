@@ -9,6 +9,13 @@ additive → minor, fixes → patch.
 
 ## Unreleased
 
+### @takeon/pixi
+
+- `MountedRoverGame` now exposes `start`, `stop`, `pause`, `resume`, and
+  `isRunning`. Presentation is detached altogether while paused, and active
+  canvas-to-Pixi uploads default to 30 fps (configurable with
+  `presentationFps`) to keep embedded missions lightweight.
+
 ### @takeon/engine
 
 - **Runtime body registry** (`world/registry.ts`): `registerBody`,

@@ -53,6 +53,12 @@ export interface MountRoverGameOptions extends Omit<RoverGameOptions, 'canvas' |
   height: number;
   /** Device pixel ratio for the internal render target (default 1). */
   resolution?: number;
+  /**
+   * Maximum rate at which the internal canvas is uploaded to Pixi's texture.
+   * The simulation stays at its fixed 10 Hz; 30 fps keeps the mission smooth
+   * without forcing a GPU upload for every host frame.
+   */
+  presentationFps?: number;
   x?: number;
   y?: number;
 }
@@ -62,6 +68,16 @@ export interface MountedRoverGame {
   sprite: PixiSpriteLike;
   /** Resize the embedded viewport (CSS pixels). */
   resize: (width: number, height: number) => void;
+  /** Start both the mission loop and Pixi texture presentation. */
+  start: () => void;
+  /** Stop the mission loop and remove the host ticker callback. */
+  stop: () => void;
+  /** Alias for `stop`, intended for hidden tabs and panels. */
+  pause: () => void;
+  /** Alias for `start`, intended when the host panel becomes visible again. */
+  resume: () => void;
+  /** Whether this mount currently owns an active mission/presentation loop. */
+  isRunning: () => boolean;
   /** Remove from stage and release everything. */
   destroy: () => void;
 }
@@ -78,10 +94,11 @@ export interface MountedRoverGame {
  *     width: 800, height: 600,
  *     body: getBody('mars')!, spec: myRover,
  *   });
- *   mounted.game.start();
+ *   mounted.start();
  */
 export function mountRoverGame(opts: MountRoverGameOptions): MountedRoverGame {
   const resolution = opts.resolution ?? 1;
+  const presentationInterval = 1000 / Math.max(1, opts.presentationFps ?? 30);
   const canvas = document.createElement('canvas');
 
   const game = createRoverGame({
@@ -91,6 +108,9 @@ export function mountRoverGame(opts: MountRoverGameOptions): MountedRoverGame {
     seed: opts.seed,
     resume: opts.resume,
     onPhoto: opts.onPhoto,
+    onTileTap: opts.onTileTap,
+    audio: opts.audio,
+    startView: opts.startView,
     controls: false,
   });
   game.resize(opts.width, opts.height, resolution);
@@ -103,13 +123,37 @@ export function mountRoverGame(opts: MountRoverGameOptions): MountedRoverGame {
   sprite.height = opts.height;
   opts.stage.addChild(sprite);
 
-  const refresh = () => {
-    // v7: texture.update / baseTexture.update; v8: texture.source.update.
-    if (texture.update) texture.update();
-    else if (texture.source?.update) texture.source.update();
+  let presenting = false;
+  let lastPresentation = -Infinity;
+
+  const refresh = (force = false) => {
+    const time = now();
+    if (!force && time - lastPresentation < presentationInterval) return;
+    lastPresentation = time;
+    // v8's Texture.update() only refreshes UV frame data, not GPU pixel
+    // content (see its own docstring) — texture.source.update() is the call
+    // that actually re-uploads the canvas. texture.update is truthy on every
+    // v8 Texture, so it must be checked last or the correct branch below is
+    // unreachable and the sprite freezes on its first-mount frame.
+    // v7 fallback: baseTexture.update.
+    if (texture.source?.update) texture.source.update();
+    else if (texture.update) texture.update();
     else texture.baseTexture?.update?.();
   };
-  opts.ticker.add(refresh);
+
+  const attachPresentation = () => {
+    if (presenting) return;
+    presenting = true;
+    lastPresentation = -Infinity;
+    opts.ticker.add(refresh);
+    refresh(true);
+  };
+
+  const detachPresentation = () => {
+    if (!presenting) return;
+    presenting = false;
+    opts.ticker.remove(refresh);
+  };
 
   let controls: Controls | null = null;
   if (opts.view) {
@@ -134,9 +178,28 @@ export function mountRoverGame(opts: MountRoverGameOptions): MountedRoverGame {
       game.resize(width, height, resolution);
       sprite.width = width;
       sprite.height = height;
+      if (presenting) refresh(true);
     },
+    start: () => {
+      attachPresentation();
+      game.start();
+    },
+    stop: () => {
+      game.stop();
+      detachPresentation();
+    },
+    pause: () => {
+      game.stop();
+      detachPresentation();
+    },
+    resume: () => {
+      attachPresentation();
+      game.start();
+    },
+    isRunning: () => presenting,
     destroy: () => {
-      opts.ticker.remove(refresh);
+      game.stop();
+      detachPresentation();
       controls?.dispose();
       game.dispose();
       opts.stage.removeChild(sprite);
@@ -147,3 +210,7 @@ export function mountRoverGame(opts: MountRoverGameOptions): MountedRoverGame {
 }
 
 export type { RoverGame } from '@takeon/engine';
+
+function now(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
