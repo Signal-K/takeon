@@ -1,8 +1,8 @@
 # TakeOn — agent notes
 
-## Desk-first agent workflow
+## Linear-first agent workflow
 
-Desk is the sole project-management system for TakeOn. Before changing code, resolve the relevant Desk ticket or create one with `create_ticket`. During work, update it when scope, status, blockers, or decisions change. Before finishing, add implementation evidence and tests with `add_comment`, move it to the correct Desk status, attach useful file references with `attach_file_ref`, and include the Desk key in the commit subject or body. Never use Knowns, `.knowns`, Plate, or workspace ticket Markdown as a replacement for Desk ticket state. If no Desk key exists, stop before committing and create or resolve the ticket.
+Linear (team **Kestloome**, prefix `KES`) is the system of record for TakeOn, under the `Landnam` project. Before changing code, resolve the relevant Linear issue or create one. During work, update it when scope, status, blockers, or decisions change. Before finishing, add implementation evidence in a comment, move it to the correct status, and include the Linear key (e.g. `KES-206`) in the commit subject or body. Never use Knowns, `.knowns`, Plate, Desk, or workspace ticket Markdown as a replacement for Linear ticket state — Desk is retired monorepo-wide (see `~/Navigation/CLAUDE.md`). If no Linear key exists, stop before committing and create or resolve the issue.
 
 Isometric voxel rover game. npm workspaces monorepo + Go PocketBase spoke.
 
@@ -94,12 +94,12 @@ Runtime verification recipe: `.claude/skills/verify/SKILL.md`.
   are drawn after chunk blits and occluders re-stamped
   (`renderer.redrawOccluders`) — don't reorder without checking cliffs.
 
-## Documentation & Decisions: Craft, Desk, ZenNotes
+## Documentation & Decisions: Craft, Linear, ZenNotes
 
-As of 2026-07-21, this is the canonical split for where writing lives, monorepo-wide (see `~/Navigation/CLAUDE.md`):
+As of 2026-08-20, this is the canonical split for where writing lives, monorepo-wide (see `~/Navigation/CLAUDE.md`):
 
-- **Craft** — long-form writing: planning docs, ideation, proposals, spec drafts, research notes. Every Craft doc tied to active Takeon work must be **tagged** and **attached to its Desk ticket(s)/story** (`attach_craft_doc`).
+- **Craft** — long-form writing: planning docs, ideation, proposals, spec drafts, research notes. Every Craft doc tied to active Takeon work must be **tagged** and **attached to its Linear issue(s)/project** (`attach_craft_doc`).
 - **ZenNotes** (`~/Navigation/workspace`, ZenNotes MCP) — canonical home for **decisions and rules**: finalized specs, feature definitions and their limits, design decisions. Search here first for authoritative rules.
-- **Desk** (MCP server `desk`, `projectId: "project-takeon"` if registered) — tickets/stories/epics; system of record for ticket state.
+- **Linear** (team `Kestloome`, prefix `KES`, project `Landnam`) — issues/projects/epics; system of record for ticket state.
 
-Flow: research/ideation in Craft → tag + attach to the Desk ticket once it needs review or action → once a decision lands, write the durable rule/spec into ZenNotes, not just a Craft doc or ticket comment.
+Flow: research/ideation in Craft → tag + attach to the Linear issue once it needs review or action → once a decision lands, write the durable rule/spec into ZenNotes, not just a Craft doc or ticket comment.
