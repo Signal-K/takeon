@@ -8,13 +8,16 @@
     "packages/pixi-adapter",
     "packages/ui",
     "packages/editor",
-    "web"
+    "web",
+    "apps/atlas"
   ],
   "scripts": {
     "build": "npm run build -w @takeon/engine && npm run build -w @takeon/pixi && npm run build -w @takeon/ui && npm run build -w @takeon/editor && npm run build -w takeon-web",
     "test": "npm run test -w @takeon/engine && npm run test -w @takeon/ui",
     "dev": "npm run dev -w takeon-web",
     "editor": "npm run dev -w takeon-web",
+    "atlas": "npm run dev -w @takeon/atlas",
+    "atlas:build": "npm run build -w @takeon/atlas",
     "backend": "cd pocketbase && go run . serve --http 0.0.0.0:8094"
   }
 }

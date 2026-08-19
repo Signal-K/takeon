@@ -1,0 +1,21 @@
+{
+  "name": "@takeon/atlas",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Interactive system atlas for the TakeOn layer in Star Sailors games.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:dry-run": "npm run build && wrangler deploy --dry-run"
+  },
+  "dependencies": {
+    "@takeon/engine": "*"
+  },
+  "devDependencies": {
+    "vite": "^8.1.4",
+    "wrangler": "^4.110.0"
+  }
+}
