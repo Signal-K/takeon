@@ -44,6 +44,8 @@ import { mulberry32 } from '../util/rng.js';
 
 export const TICK_RATE = 10; // fixed sim ticks per second
 export const TICK_DT = 1 / TICK_RATE;
+/** Keeps short field moves responsive without increasing fixed simulation rate. */
+export const DRIVE_SPEED_MULTIPLIER = 1.35;
 
 /** Directions in iso space: 0=SE(+x) 1=SW(+y) 2=NW(-x) 3=NE(-y). */
 export const DIRS: Vec2[] = [
@@ -334,7 +336,7 @@ export class Simulation {
 
     // ── Movement interpolation ──────────────────────────────────────────
     if (r.moveFrom) {
-      r.moveT += r.stats.speed * TICK_DT;
+      r.moveT += r.stats.speed * DRIVE_SPEED_MULTIPLIER * TICK_DT;
       if (r.moveT >= 1) {
         r.moveT = 0;
         r.moveFrom = null;
@@ -393,6 +395,24 @@ export class Simulation {
     }
 
     this.events.emit('tick', { time: this.time, daylight });
+  }
+
+  /**
+   * Advance only the visual position between fixed simulation ticks. Physics,
+   * resources and world voxels remain fixed-rate and deterministic; this
+   * presentation pass lets a 10 Hz simulation look continuous at display rate.
+   */
+  interpolateRender(remainder: number): void {
+    const r = this.rover;
+    if (!r.moveFrom) {
+      r.renderPos = { ...r.pos };
+      return;
+    }
+    const t = Math.min(0.999, r.moveT + r.stats.speed * DRIVE_SPEED_MULTIPLIER * Math.max(0, remainder));
+    r.renderPos = {
+      x: r.moveFrom.x + (r.pos.x - r.moveFrom.x) * t,
+      y: r.moveFrom.y + (r.pos.y - r.moveFrom.y) * t,
+    };
   }
 
   // ── Actions ───────────────────────────────────────────────────────────

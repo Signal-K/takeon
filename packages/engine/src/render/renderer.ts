@@ -424,14 +424,9 @@ export class IsoRenderer implements SceneView {
     g.fill();
 
     // Soil texture: clipped speckles, grain streaks and occasional pebbles.
-    // The occluder pass re-stamps columns above entities every frame — there,
-    // skip the expensive noise-sampled scallops, soil grain and doodads. The
-    // sliver of terrain peeking over an entity doesn't need the fine detail,
-    // and it keeps per-frame cost flat.
-    if (cheap) {
-      g.restore();
-      return;
-    }
+    // A caller may request just the stable base polygon for a low-detail
+    // thumbnail. There is no saved canvas state yet, so do not restore here.
+    if (cheap) return;
 
     g.save();
     g.clip();
@@ -809,8 +804,11 @@ export class IsoRenderer implements SceneView {
     ents.sort((a, b) => a.s - b.s);
     for (const e of ents) e.draw();
 
-    // Re-draw terrain columns that should occlude nearby entities.
-    this.redrawOccluders(rv, rz);
+    // Chunks are the authoritative terrain image. Do not redraw a second,
+    // moving terrain layer over the rover: that made slopes pop in/out while
+    // the camera followed, which read as voxels appearing and disappearing.
+    // Hosts that need true occlusion can opt into a depth-aware renderer;
+    // the lightweight canvas path keeps the playable rover consistently clear.
 
     // Airborne motes / spores drift above the scene.
     this.drawParticles();

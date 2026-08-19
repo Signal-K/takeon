@@ -16,6 +16,7 @@ import {
   missionCredits,
   PARTS,
   Simulation,
+  DRIVE_SPEED_MULTIPLIER,
   TICK_RATE,
 } from '../src/index.js';
 import type { MissionState, RoverSpec } from '../src/index.js';
@@ -206,6 +207,24 @@ describe('simulation', () => {
     runTicks(sim, TICK_RATE * 2);
     expect(r.moveFrom).toBeNull();
     expect(r.renderPos).toEqual(r.pos);
+  });
+
+  it('keeps voxels stable while a rover drives and interpolates only its presentation', () => {
+    const moon = getBody('moon')!;
+    const sim = new Simulation({
+      body: { ...moon, weather: {} },
+      spec: { ...defaultSpec(), id: 'visual-drive' },
+      events: new EventBus(),
+    });
+    const worldVersion = sim.world.version;
+    const dir = ([0, 1, 2, 3] as const).find(direction => sim.move(direction));
+    expect(dir).toBeDefined();
+    sim.tick();
+    const discrete = { ...sim.rover.renderPos };
+    sim.interpolateRender(0.05);
+    expect(sim.world.version).toBe(worldVersion);
+    expect(sim.rover.renderPos.x !== discrete.x || sim.rover.renderPos.y !== discrete.y).toBe(true);
+    expect(DRIVE_SPEED_MULTIPLIER).toBeGreaterThan(1);
   });
 
   it('solar charging only happens in daylight', () => {

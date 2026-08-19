@@ -14,7 +14,7 @@ export { EventBus } from './util/events.js';
 export { RoverGame, createRoverGame, type RoverGameOptions, type RoverOrder } from './core/game.js';
 export { GameAudio, type GameAudioOptions } from './audio/audio.js';
 
-export { Simulation, TICK_RATE, TICK_DT, DIRS, type SimOptions } from './sim/simulation.js';
+export { Simulation, TICK_RATE, TICK_DT, DRIVE_SPEED_MULTIPLIER, DIRS, type SimOptions } from './sim/simulation.js';
 export {
   STRUCTURES,
   registerStructure,

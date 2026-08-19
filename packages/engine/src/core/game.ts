@@ -1,6 +1,6 @@
 import type { BodyDef, MissionState, RoverSpec, StructureType, Vec2 } from '../types.js';
 import { EventBus } from '../util/events.js';
-import { Simulation, TICK_DT } from '../sim/simulation.js';
+import { DIRS, Simulation, TICK_DT } from '../sim/simulation.js';
 import { Camera } from '../render/camera.js';
 import { FlatRenderer } from '../render/flat.js';
 import { IsoRenderer } from '../render/renderer.js';
@@ -64,6 +64,8 @@ export class RoverGame {
   private running = false;
   private dpr = 1;
   private order: RoverOrder | null = null;
+  /** Planned safe steps for a tap-to-drive order. Never used for manual input. */
+  private route: Vec2[] = [];
   private opts: RoverGameOptions;
 
   constructor(opts: RoverGameOptions) {
@@ -146,6 +148,7 @@ export class RoverGame {
         this.autoWalk();
         this.acc -= TICK_DT;
       }
+      this.sim.interpolateRender(this.acc);
       this.renderer.draw();
       this.raf = requestAnimationFrame(frame);
     };
@@ -179,6 +182,7 @@ export class RoverGame {
    */
   move(dir: 0 | 1 | 2 | 3): boolean {
     this.order = null;
+    this.route = [];
     const worldDir = (((dir + this.renderer.rotation) % 4) + 4) % 4;
     return this.sim.move(worldDir as 0 | 1 | 2 | 3);
   }
@@ -245,9 +249,37 @@ export class RoverGame {
     return this.sim.placeBlock();
   }
 
-  /** Tap-to-drive: greedily steps toward the target until reached/blocked. */
+  /** Tap-to-drive: plan a safe path to one destination. */
   walkTo(x: number, y: number): void {
-    this.order = { type: 'goto', pos: { x, y } };
+    this.planPath([{ x, y }]);
+  }
+
+  /**
+   * Plan a deliberate multi-stop route. Every leg is breadth-first planned
+   * over traversable terrain, so a host can let players place waypoints
+   * without handing them a route that repeatedly drives into a cliff.
+   */
+  planPath(waypoints: Vec2[]): boolean {
+    if (waypoints.length === 0) {
+      this.cancelOrder();
+      return false;
+    }
+    let from = { ...this.sim.rover.pos };
+    const path: Vec2[] = [];
+    for (const target of waypoints) {
+      const leg = this.findSafeRoute(from, target);
+      if (leg === null) return false;
+      path.push(...leg);
+      from = { ...target };
+    }
+    this.route = path;
+    this.order = { type: 'goto', pos: { ...waypoints[waypoints.length - 1] } };
+    return true;
+  }
+
+  /** Remaining safe route steps, suitable for a host route readout. */
+  plannedRoute(): readonly Vec2[] {
+    return this.route;
   }
 
   /**
@@ -257,6 +289,7 @@ export class RoverGame {
    */
   orderMine(x: number, y: number): void {
     this.order = { type: 'mine', pos: { x, y } };
+    this.route = [];
     this.mineOrderStarted = false;
   }
 
@@ -267,6 +300,7 @@ export class RoverGame {
 
   cancelOrder(): void {
     this.order = null;
+    this.route = [];
     this.mineOrderStarted = false;
   }
 
@@ -370,7 +404,31 @@ export class RoverGame {
       return;
     }
 
-    // Greedy step: dominant axis first, other axis as fallback.
+    if (o.type === 'goto') {
+      if (this.route.length === 0) {
+        this.route = this.findSafeRoute(r.pos, o.pos) ?? [];
+      }
+      const next = this.route[0];
+      if (!next) {
+        this.order = null;
+        return;
+      }
+      const dxStep = next.x - r.pos.x;
+      const dyStep = next.y - r.pos.y;
+      const dir: 0 | 1 | 2 | 3 = dxStep === 1 ? 0 : dyStep === 1 ? 1 : dxStep === -1 ? 2 : 3;
+      if (this.sim.move(dir)) {
+        this.route.shift();
+        return;
+      }
+      // Terrain may have changed while the route was in flight. Replan once
+      // from the current tile instead of repeatedly driving into the same wall.
+      this.route = this.findSafeRoute(r.pos, o.pos) ?? [];
+      if (this.route.length === 0) this.order = null;
+      return;
+    }
+
+    // Mining orders retain their adjacency rule, but use the old greedy
+    // fallback until a host has supplied a target-aware mine planner.
     const primary: 0 | 1 | 2 | 3 = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 0 : 2) : dy > 0 ? 1 : 3;
     const secondary: 0 | 1 | 2 | 3 = Math.abs(dx) >= Math.abs(dy)
       ? dy > 0 ? 1 : dy < 0 ? 3 : (dx > 0 ? 0 : 2)
@@ -385,6 +443,47 @@ export class RoverGame {
     } else {
       this.stuckCount = 0;
     }
+  }
+
+  /**
+   * Breadth-first route over the small voxel surface. It rejects drops that
+   * would damage the rover as well as climbs it cannot make, so a tap order
+   * feels like a deliberate safe route rather than a blind line to a tile.
+   */
+  private findSafeRoute(start: Vec2, target: Vec2): Vec2[] | null {
+    const world = this.sim.world;
+    if (!world.inBounds(target.x, target.y) || !world.isSolid(target.x, target.y)) return null;
+    if (start.x === target.x && start.y === target.y) return [];
+
+    const { size } = world;
+    const previous = new Int32Array(size * size).fill(-1);
+    const startIndex = start.y * size + start.x;
+    const targetIndex = target.y * size + target.x;
+    const queue: Vec2[] = [{ ...start }];
+    previous[startIndex] = startIndex;
+
+    for (let cursor = 0; cursor < queue.length; cursor++) {
+      const from = queue[cursor];
+      for (const dir of DIRS) {
+        const x = from.x + dir.x;
+        const y = from.y + dir.y;
+        if (!world.inBounds(x, y) || !world.isSolid(x, y)) continue;
+        const index = y * size + x;
+        if (previous[index] !== -1) continue;
+        const step = world.step(from.x, from.y, x, y);
+        if (Math.abs(step) > this.sim.rover.stats.maxClimb) continue;
+        previous[index] = from.y * size + from.x;
+        if (index === targetIndex) {
+          const route: Vec2[] = [];
+          for (let current = targetIndex; current !== startIndex; current = previous[current]) {
+            route.push({ x: current % size, y: Math.floor(current / size) });
+          }
+          return route.reverse();
+        }
+        queue.push({ x, y });
+      }
+    }
+    return null;
   }
 }
 
