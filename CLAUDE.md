@@ -1,8 +1,10 @@
 # TakeOn — agent notes
 
-## Linear-first agent workflow
+@AGENTS.md
 
-Linear (team **Kestloome**, prefix `KES`) is the system of record for TakeOn, under the `Landnam` project. Before changing code, resolve the relevant Linear issue or create one. During work, update it when scope, status, blockers, or decisions change. Before finishing, add implementation evidence in a comment, move it to the correct status, and include the Linear key (e.g. `KES-206`) in the commit subject or body. Never use Knowns, `.knowns`, Plate, Desk, or workspace ticket Markdown as a replacement for Linear ticket state — Desk is retired monorepo-wide (see `~/Navigation/CLAUDE.md`). If no Linear key exists, stop before committing and create or resolve the issue.
+## Desk-first agent workflow
+
+Desk is the system of record for TakeOn. Resolve or create the relevant Desk ticket before changing code, keep its status current, and add implementation evidence before finishing. Historical `KES-` references may be included alongside the active Desk key, but Linear, Knowns, Plate, and workspace ticket Markdown are not live task state.
 
 Isometric voxel rover game. npm workspaces monorepo + Go PocketBase spoke.
 
