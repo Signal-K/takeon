@@ -75,6 +75,21 @@ interface AmbientProfile {
 const CHUNK = 16;
 /** Height deltas up to this blend into smooth slopes; larger become cliffs. */
 const SMOOTH_STEP = 1.01;
+/**
+ * How far the visible geological cutaway extends below a world edge. This is
+ * presentation-only: the simulation still owns the playable boundary, while
+ * the renderer makes that boundary read as a solid planetary shelf rather
+ * than a paper-thin map that a rover could fall from.
+ */
+export const WORLD_EDGE_CUTAWAY_DEPTH = 4;
+
+/**
+ * The bottom elevation for an exposed world edge. Kept as a pure helper so
+ * the edge profile remains covered without coupling renderer tests to Canvas.
+ */
+export function edgeFaceBottom(neighbourHeight: number): number {
+  return neighbourHeight < 0 ? -WORLD_EDGE_CUTAWAY_DEPTH : neighbourHeight;
+}
 /** Sub-tile offsets sampled for scalloped biome-edge blending. */
 const BIOME_SAMPLES: [number, number][] = [
   [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3],
@@ -618,7 +633,11 @@ export class IsoRenderer implements SceneView {
     colorIdx: 1 | 2,
   ): void {
     const world = this.sim.world;
-    const bottom = neighbourH < 0 ? -0.6 : Math.min(neighbourH, Math.min(za, zb));
+    // An absent neighbour is the true rim of the world, not empty map space.
+    // Give it a substantial stratified cutaway so an asteroid/planet feels
+    // like a contained chunk of geology in the diorama. Interior cliffs keep
+    // their exact simulation-derived height.
+    const bottom = Math.min(edgeFaceBottom(neighbourH), Math.min(za, zb));
     const top = Math.max(za, zb);
     if (top <= bottom + 0.01) return;
 
