@@ -1,0 +1,46 @@
+// Package mobile is the gomobile-bindable facade over the takeon core. It
+// exposes only types gobind supports (string, []byte, int, int64, float64,
+// bool, error, and this one opaque struct), mirroring Landnam's
+// native/TakeonKit TakeonEngine protocol: loadWorld / step / snapshot /
+// restore, plus an Order entry for rover commands.
+package mobile
+
+import (
+	"encoding/json"
+
+	takeon "github.com/Signal-K/takeon-go"
+)
+
+// Engine wraps one Game.
+type Engine struct{ g *takeon.Game }
+
+// NewEngine generates (bodyID, seed) and lands the default rover.
+func NewEngine(seed int64, bodyID string) (*Engine, error) {
+	g, err := takeon.NewGame(seed, bodyID)
+	if err != nil {
+		return nil, err
+	}
+	return &Engine{g}, nil
+}
+
+// LoadWorld regenerates the world (TakeonEngine.loadWorld).
+func (e *Engine) LoadWorld(bodyID string, seed int64) error { return e.g.LoadWorld(bodyID, seed) }
+
+// Order issues "move" (arg = direction 0..3) or "drill" (arg ignored).
+func (e *Engine) Order(kind string, arg int) (bool, error) { return e.g.Order(kind, arg) }
+
+// Step advances dt seconds in fixed 0.1 s ticks and returns the raised events
+// as a JSON array (TakeonEngine.step).
+func (e *Engine) Step(dt float64) (string, error) { return e.g.Step(dt) }
+
+// Snapshot returns an opaque versioned JSON save blob (TakeonEngine.snapshot).
+func (e *Engine) Snapshot() ([]byte, error) { return e.g.Snapshot() }
+
+// Restore loads a Snapshot blob (TakeonEngine.restore).
+func (e *Engine) Restore(b []byte) error { return e.g.Restore(b) }
+
+// StateJSON is a read-only view of rover/world state for rendering.
+func (e *Engine) StateJSON() (string, error) {
+	b, err := json.Marshal(e.g.State())
+	return string(b), err
+}
