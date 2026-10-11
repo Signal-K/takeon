@@ -25,8 +25,12 @@ func main() {
 		"orderMine": js.FuncOf(func(_ js.Value, a []js.Value) any { return eng.OrderMine(a[0].Int(), a[1].Int()) }),
 		"bank":      js.FuncOf(func(_ js.Value, _ []js.Value) any { return eng.Bank() }),
 		"state":     js.FuncOf(func(_ js.Value, _ []js.Value) any { s, _ := eng.StateJSON(); return s }),
-		"mission":   js.FuncOf(func(_ js.Value, _ []js.Value) any { s, _ := eng.MissionJSON(); return s }),
-		"snapshot":  js.FuncOf(func(_ js.Value, _ []js.Value) any { b, _ := eng.Snapshot(); return string(b) }),
+		"window": js.FuncOf(func(_ js.Value, a []js.Value) any {
+			s, _ := eng.WindowJSON(a[0].Int(), a[1].Int(), a[2].Int(), a[3].Int())
+			return s
+		}),
+		"mission":  js.FuncOf(func(_ js.Value, _ []js.Value) any { s, _ := eng.MissionJSON(); return s }),
+		"snapshot": js.FuncOf(func(_ js.Value, _ []js.Value) any { b, _ := eng.Snapshot(); return string(b) }),
 		"restore": js.FuncOf(func(_ js.Value, a []js.Value) any {
 			if err := eng.Restore([]byte(a[0].String())); err != nil {
 				return err.Error()

@@ -70,3 +70,7 @@ func (e *Engine) SetMissionJSON(js string) error {
 	e.g.SetMission(m)
 	return nil
 }
+
+// WindowJSON returns the terrain window [x,x+w) x [y,y+h) (top height and top
+// material per column) for renderers; see takeon.WindowView.
+func (e *Engine) WindowJSON(x, y, w, h int) (string, error) { return e.g.Window(x, y, w, h) }
