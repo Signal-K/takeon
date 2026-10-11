@@ -44,3 +44,29 @@ func (e *Engine) StateJSON() (string, error) {
 	b, err := json.Marshal(e.g.State())
 	return string(b), err
 }
+
+// OrderMine drives to (x,y), faces it and mines it down (autopilot, handled in Step).
+func (e *Engine) OrderMine(x, y int) bool { ok, _ := e.g.Order("mine", x|y<<16); return ok }
+
+// CancelOrder stops the autopilot.
+func (e *Engine) CancelOrder() { _, _ = e.g.Order("cancel", 0) }
+
+// Bank banks held mission yield when near the landing site.
+func (e *Engine) Bank() bool { return e.g.Bank() }
+
+// MissionJSON returns {"state": WorldState, "progress": MissionProgress}.
+func (e *Engine) MissionJSON() (string, error) {
+	st, p := e.g.Mission()
+	b, err := json.Marshal(map[string]any{"state": st, "progress": p})
+	return string(b), err
+}
+
+// SetMissionJSON replaces the mission (JSON Mission object) and resets progress.
+func (e *Engine) SetMissionJSON(js string) error {
+	var m takeon.Mission
+	if err := json.Unmarshal([]byte(js), &m); err != nil {
+		return err
+	}
+	e.g.SetMission(m)
+	return nil
+}

@@ -74,7 +74,11 @@ type Game struct {
 	devilDrift      [2]float64
 
 	events []Event
-	acc    float64 // fractional dt carried between Step calls
+	acc    float64
+
+	mission     WorldState // mission/module hooks (runtime.go)
+	missionDone bool
+	mineOrder   *mineOrder // easy-mining autopilot (runtime.go) // fractional dt carried between Step calls
 }
 
 // NewGame generates the world for (bodyID, seed) and lands the default rover.
@@ -102,6 +106,7 @@ func (g *Game) LoadWorld(bodyID string, seed int64) error {
 	g.weatherCooldown = 20
 	g.devilDrift = [2]float64{1, 0}
 	g.landing = FindLandingSite(w)
+	g.initMission()
 	g.stats = ComputeStats(g.spec)
 	g.rover = Rover{
 		Pos:        g.landing,
@@ -287,6 +292,7 @@ func (g *Game) Tick() {
 	if g.status != "active" {
 		return
 	}
+	g.autopilot()
 	g.time += TickDT
 	r := &g.rover
 	daylight := g.daylight()
@@ -300,6 +306,7 @@ func (g *Game) Tick() {
 		if r.MoveT >= 1 {
 			r.MoveT = 0
 			r.MoveFrom = nil
+			g.onArrive()
 		}
 	}
 
@@ -313,6 +320,7 @@ func (g *Game) Tick() {
 				if def.Resource != "" {
 					g.addCargo(def.Resource, def.Amount)
 					g.emit(Event{Kind: "depositMined", X: pos.X, Y: pos.Y, Detail: def.Resource, Amount: def.Amount})
+					g.onMined(def.Amount)
 				}
 			}
 		}
@@ -407,6 +415,14 @@ func (g *Game) Order(kind string, arg int) (bool, error) {
 		return g.Move(arg), nil
 	case "drill":
 		return g.Drill(), nil
+	case "mine":
+		// arg packs the target tile: x | y<<16.
+		return g.OrderMine(arg&0xffff, arg>>16), nil
+	case "cancel":
+		g.mineOrder = nil
+		return true, nil
+	case "bank":
+		return g.Bank(), nil
 	case "build", "scan", "photo", "craft", "launch", "deposit":
 		return false, fmt.Errorf("%w: order %q", ErrUnsupported, kind)
 	}
@@ -445,10 +461,11 @@ type State struct {
 	Landing   Vec2           `json:"landing"`
 	Stats     RoverStats     `json:"stats"`
 	Anomalies []Anomaly      `json:"anomalies"`
+	Mission   WorldState     `json:"mission"`
 }
 
 func (g *Game) State() State {
-	return State{g.time, g.rover, g.world.Edits, g.status, g.weather, g.landing, g.stats, g.anoms}
+	return State{g.time, g.rover, g.world.Edits, g.status, g.weather, g.landing, g.stats, g.anoms, g.mission}
 }
 
 type snapshotDoc struct {
@@ -466,6 +483,8 @@ type snapshotDoc struct {
 	DevilDrift      [2]float64     `json:"devilDrift"`
 	Anomalies       []Anomaly      `json:"anomalies"`
 	Acc             float64        `json:"acc"`
+	Mission         *WorldState    `json:"mission,omitempty"`
+	MissionDone     bool           `json:"missionDone,omitempty"`
 }
 
 // Snapshot serialises the mission. Unlike the TS MissionState it also carries
@@ -476,7 +495,7 @@ func (g *Game) Snapshot() ([]byte, error) {
 		V: snapshotVersion, BodyID: g.body.ID, Seed: g.seed, Time: g.time, Status: g.status,
 		Rover: g.rover, Edits: g.world.Edits, Weather: g.weather, WeatherRng: g.weatherRng.a,
 		WeatherCooldown: g.weatherCooldown, ImpactTimer: g.impactTimer, DevilDrift: g.devilDrift,
-		Anomalies: g.anoms, Acc: g.acc,
+		Anomalies: g.anoms, Acc: g.acc, Mission: &g.mission, MissionDone: g.missionDone,
 	})
 }
 
@@ -501,6 +520,9 @@ func (g *Game) Restore(b []byte) error {
 	g.weatherCooldown, g.impactTimer, g.devilDrift, g.acc = s.WeatherCooldown, s.ImpactTimer, s.DevilDrift, s.Acc
 	if s.Anomalies != nil {
 		g.anoms = s.Anomalies
+	}
+	if s.Mission != nil {
+		g.mission, g.missionDone = *s.Mission, s.MissionDone
 	}
 	return nil
 }
