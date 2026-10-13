@@ -130,6 +130,7 @@ export { PARTS, getPart } from './parts/catalog.js';
 export { computeStats, canReach, defaultSpec } from './parts/assembly.js';
 
 export { IsoRenderer } from './render/renderer.js';
+export { IsoTerrainLayer, ISO_TERRAIN_CHUNK_SIZE, type TerrainColumnPainter, type TerrainProjector } from './render/iso-terrain-layer.js';
 export { FlatRenderer, FLAT_TILE } from './render/flat.js';
 export { rasterizeFlatTerrain, type FlatTerrainPixels } from './render/flat-terrain.js';
 export {

@@ -48,7 +48,11 @@ creates a reusable pixel component without changing the rover HUD or painter
 system. Isometric world/view rotation, height sampling, and smoothed corner
 geometry are now generic helpers over `VoxelWorld`, used by the rover renderer.
 The isometric chunk painter and entity pass remain coupled to `Simulation`, so
-this is a shared geometry seam rather than a generic isometric renderer yet.
+the painter still needs its own explicit visual inputs before this is a generic
+isometric renderer. Chunk allocation, dirty-region invalidation, painter-order
+rebuilds, and viewport compositing now live in `IsoTerrainLayer`, which accepts
+any `VoxelWorld` and a terrain-column painter callback; `IsoRenderer` supplies
+its current rover-styled painter through that seam.
 
 ## Decision
 

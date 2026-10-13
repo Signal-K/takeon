@@ -12,6 +12,7 @@ import { skinBiome } from '../world/terrain.js';
 import { hash2, hash3 } from '../util/rng.js';
 import { fbm2 } from '../util/noise/index.js';
 import { smoothedSurfaceCorners, surfaceHeightAtView, surfaceViewToWorld, worldToSurfaceView } from '../world/surface-view.js';
+import { IsoTerrainLayer, type TerrainProjector } from './iso-terrain-layer.js';
 
 interface Particle {
   x: number;
@@ -73,7 +74,6 @@ interface AmbientProfile {
   flyer: boolean;
 }
 
-const CHUNK = 16;
 /** Height deltas up to this blend into smooth slopes; larger become cliffs. */
 const SMOOTH_STEP = 1.01;
 /**
@@ -101,18 +101,7 @@ function nowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
-interface Chunk {
-  cx: number;
-  cy: number;
-  canvas: HTMLCanvasElement | OffscreenCanvas;
-  originX: number;
-  originY: number;
-  dirty: boolean;
-}
-
 export type { ViewRotation } from './view.js';
-
-type Proj = (x: number, y: number, z: number) => { x: number; y: number };
 
 /**
  * Isometric renderer over Canvas 2D with a *smoothed* voxel surface:
@@ -130,8 +119,7 @@ export class IsoRenderer implements SceneView {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private sim: Simulation;
-  private chunks: Chunk[] = [];
-  private chunksPerSide: number;
+  private terrainLayer: IsoTerrainLayer;
   private stars: { x: number; y: number; r: number; a: number }[] = [];
   private dpr = 1;
   /** Body-tinted material colours, cached as hex. Key: material*4 + faceIdx. */
@@ -165,8 +153,7 @@ export class IsoRenderer implements SceneView {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('takeon: could not acquire 2d context');
     this.ctx = ctx;
-    this.chunksPerSide = Math.ceil(sim.world.size / CHUNK);
-    this.initChunks();
+    this.terrainLayer = new IsoTerrainLayer(sim.world, (g, u, v, proj) => this.drawColumnV(g, u, v, proj, 1));
     this.initStars();
     this.activate();
     const r = sim.rover;
@@ -220,7 +207,7 @@ export class IsoRenderer implements SceneView {
   setRotation(rotation: ViewRotation): void {
     if (rotation === this.rotation) return;
     this.rotation = rotation;
-    for (const c of this.chunks) c.dirty = true;
+    this.terrainLayer.invalidateAll();
     const r = this.sim.rover;
     const v = this.toView(r.renderPos.x, r.renderPos.y);
     this.camera.centerOnTile(v.x, v.y, this.sim.world.height(r.pos.x, r.pos.y));
@@ -295,34 +282,6 @@ export class IsoRenderer implements SceneView {
     this.lastQualityMs = nowMsVal;
   }
 
-  private makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas {
-    if (typeof document !== 'undefined') {
-      const c = document.createElement('canvas');
-      c.width = w;
-      c.height = h;
-      return c;
-    }
-    return new OffscreenCanvas(w, h);
-  }
-
-  private initChunks(): void {
-    const world = this.sim.world;
-    for (let cy = 0; cy < this.chunksPerSide; cy++) {
-      for (let cx = 0; cx < this.chunksPerSide; cx++) {
-        const x0 = cx * CHUNK;
-        const y0 = cy * CHUNK;
-        const x1 = Math.min(x0 + CHUNK, world.size) - 1;
-        const y1 = Math.min(y0 + CHUNK, world.size) - 1;
-        const left = project(x0, y1, 0).sx - TILE_W / 2;
-        const right = project(x1, y0, 0).sx + TILE_W / 2;
-        const top = project(x0, y0, world.maxHeight + 1).sy - TILE_H / 2;
-        const bottom = project(x1, y1, 0).sy + TILE_H / 2 + TILE_Z * 1.5;
-        const canvas = this.makeCanvas(Math.ceil(right - left), Math.ceil(bottom - top));
-        this.chunks.push({ cx, cy, canvas, originX: left, originY: top, dirty: true });
-      }
-    }
-  }
-
   private initStars(): void {
     const seed = this.sim.seed ^ 0x57a5;
     for (let i = 0; i < 140; i++) {
@@ -335,20 +294,6 @@ export class IsoRenderer implements SceneView {
     }
   }
 
-  private invalidateViewColumn(u: number, v: number): void {
-    // Corner smoothing lets a column influence all 8 neighbours.
-    const marked = new Set<number>();
-    for (let dv = -1; dv <= 1; dv++) {
-      for (let du = -1; du <= 1; du++) {
-        const cx = Math.floor((u + du) / CHUNK);
-        const cy = Math.floor((v + dv) / CHUNK);
-        if (cx < 0 || cy < 0 || cx >= this.chunksPerSide || cy >= this.chunksPerSide) continue;
-        marked.add(cy * this.chunksPerSide + cx);
-      }
-    }
-    for (const i of marked) this.chunks[i].dirty = true;
-  }
-
   // ── Column drawing (shared by chunk builds and the occluder pass) ─────
 
   /**
@@ -356,7 +301,7 @@ export class IsoRenderer implements SceneView {
    * `proj` maps continuous view coords to output pixels; `scale` is the
    * output scale (for line widths and texture density).
    */
-  private drawColumnV(g: CanvasRenderingContext2D, u: number, v: number, proj: Proj, scale: number, cheap = false): void {
+  private drawColumnV(g: CanvasRenderingContext2D, u: number, v: number, proj: TerrainProjector, scale: number, cheap = false): void {
     const h = this.heightV(u, v);
     if (h < 0) return;
     const w = this.toWorld(u, v);
@@ -571,7 +516,7 @@ export class IsoRenderer implements SceneView {
   /** A cliff face between two corners, banded by the strata materials. */
   private drawFace(
     g: CanvasRenderingContext2D,
-    proj: Proj,
+    proj: TerrainProjector,
     scale: number,
     wx: number,
     wy: number,
@@ -645,26 +590,6 @@ export class IsoRenderer implements SceneView {
     g.restore();
   }
 
-  private rebuildChunk(chunk: Chunk): void {
-    const world = this.sim.world;
-    const g = chunk.canvas.getContext('2d') as CanvasRenderingContext2D;
-    g.clearRect(0, 0, chunk.canvas.width, chunk.canvas.height);
-    const u0 = chunk.cx * CHUNK;
-    const v0 = chunk.cy * CHUNK;
-    const uN = Math.min(CHUNK, world.size - u0);
-    const vN = Math.min(CHUNK, world.size - v0);
-    const proj: Proj = (x, y, z) => {
-      const p = project(x, y, z);
-      return { x: p.sx - chunk.originX, y: p.sy - chunk.originY };
-    };
-    for (let s = 0; s <= uN + vN - 2; s++) {
-      for (let lu = Math.max(0, s - vN + 1); lu <= Math.min(s, uN - 1); lu++) {
-        this.drawColumnV(g, u0 + lu, v0 + (s - lu), proj, 1);
-      }
-    }
-    chunk.dirty = false;
-  }
-
   /** Draw one full frame of the mission scene. */
   draw(): void {
     const { ctx, camera, sim } = this;
@@ -708,15 +633,7 @@ export class IsoRenderer implements SceneView {
     }
 
     // Terrain chunks in painter order.
-    const sorted = [...this.chunks].sort((a, b) => a.cx + a.cy - (b.cx + b.cy));
-    for (const chunk of sorted) {
-      if (chunk.dirty) this.rebuildChunk(chunk);
-      const s = camera.toScreen(chunk.originX, chunk.originY);
-      const w = chunk.canvas.width * camera.zoom;
-      const h = chunk.canvas.height * camera.zoom;
-      if (s.x > camera.viewW || s.y > camera.viewH || s.x + w < 0 || s.y + h < 0) continue;
-      ctx.drawImage(chunk.canvas as CanvasImageSource, s.x, s.y, w, h);
-    }
+    this.terrainLayer.draw(ctx, camera);
 
     // Power grid: faint energised links from sources out to what they feed.
     this.drawPowerLinks(daylight);
@@ -1352,7 +1269,7 @@ export class IsoRenderer implements SceneView {
     const ev = Math.round(posV.y);
     const s0 = eu + ev;
     const R = 7;
-    const proj: Proj = (x, y, zz) => {
+    const proj: TerrainProjector = (x, y, zz) => {
       const p = project(x, y, zz);
       return camera.toScreen(p.sx, p.sy);
     };
@@ -1455,9 +1372,9 @@ export class IsoRenderer implements SceneView {
   activate(): void {
     this.sim.world.onColumnChange = (x, y) => {
       const v = this.toView(x, y);
-      this.invalidateViewColumn(Math.round(v.x), Math.round(v.y));
+      this.terrainLayer.invalidateViewColumn(Math.round(v.x), Math.round(v.y));
     };
-    for (const c of this.chunks) c.dirty = true;
+    this.terrainLayer.invalidateAll();
     this.camera.minZoom = 1.3;
     this.camera.maxZoom = 5.5;
     this.camera.zoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, this.camera.zoom));
