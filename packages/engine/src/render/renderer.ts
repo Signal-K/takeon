@@ -432,6 +432,11 @@ export class IsoRenderer implements SceneView {
     g.closePath();
     g.fillStyle = shade(topColor, bright);
     g.fill();
+    // Faint field grid, re-projected with the tile so the higher camera
+    // still reads as a surveyed surface rather than a painted blob.
+    g.strokeStyle = 'rgba(186, 214, 230, 0.32)';
+    g.lineWidth = Math.max(0.6, 0.75 * scale);
+    g.stroke();
 
     // Soil texture: clipped speckles, grain streaks and occasional pebbles.
     // A caller may request just the stable base polygon for a low-detail
@@ -454,7 +459,7 @@ export class IsoRenderer implements SceneView {
         const sp = proj(u + du, v + dv, cz);
         g.fillStyle = shade(this.tinted(bm, 0), bright);
         g.beginPath();
-        g.ellipse(sp.x, sp.y, 8 * scale, 4.4 * scale, 0, 0, Math.PI * 2);
+        g.ellipse(sp.x, sp.y, TILE_W * 0.25 * scale, TILE_H * 0.28 * scale, 0, 0, Math.PI * 2);
         g.fill();
       }
     }
@@ -549,7 +554,7 @@ export class IsoRenderer implements SceneView {
     g.lineJoin = 'round';
 
     if (m === Material.Ice || kind === 2) {
-      // Ice/crystal shards.
+      // Ice/crystal shards — pale spires, same soft shading as the terrain.
       const tint = m === Material.Ice ? this.tinted(Material.Ice, 0) : this.tinted(m, 0);
       for (const [dx, h] of [[-3, 6], [0.5, 9], [3.5, 5]] as [number, number][]) {
         g.fillStyle = shade(tint, 1.15 + h * 0.01);
@@ -561,28 +566,6 @@ export class IsoRenderer implements SceneView {
         g.lineTo((dx + 1.6) * size, 1.5 * size);
         g.closePath();
         g.fill();
-        g.stroke();
-      }
-    } else if (kind === 0) {
-      // Dry tuft: splayed blades.
-      g.strokeStyle = outline;
-      g.lineWidth = 2.2 * size;
-      g.lineCap = 'round';
-      const tuft = m === Material.Sulfur ? '#e8cf58' : shade(this.tinted(m, 0), bright * 0.72);
-      for (const a of [-0.9, -0.45, 0, 0.45, 0.9]) {
-        const len = (5 + hash2(wx + a * 10, wy, 0xfcc) * 4) * size;
-        g.beginPath();
-        g.moveTo(0, 1.5 * size);
-        g.lineTo(Math.sin(a) * len, 1.5 * size - Math.cos(a * 0.6) * len);
-        g.stroke();
-      }
-      g.strokeStyle = tuft;
-      g.lineWidth = 1.3 * size;
-      for (const a of [-0.9, -0.45, 0, 0.45, 0.9]) {
-        const len = (5 + hash2(wx + a * 10, wy, 0xfcc) * 4) * size;
-        g.beginPath();
-        g.moveTo(0, 1.5 * size);
-        g.lineTo(Math.sin(a) * len, 1.5 * size - Math.cos(a * 0.6) * len);
         g.stroke();
       }
     } else {
@@ -759,9 +742,10 @@ export class IsoRenderer implements SceneView {
     }
     if (rover.mining) {
       const pulse = 0.35 + (Math.sin(sim.time * 10) + 1) * 0.2;
-      this.strokeTilePolygon(rover.mining.pos.x, rover.mining.pos.y, `rgba(255,179,71,${pulse})`);
+      this.strokeTilePolygon(rover.mining.pos.x, rover.mining.pos.y, `rgba(125,214,232,${pulse})`);
     }
     this.drawRoute(rover.renderPos);
+    this.drawFormationRing();
 
     // Entities in view-space diagonal order.
     type Ent = { s: number; draw: () => void };
@@ -869,7 +853,7 @@ export class IsoRenderer implements SceneView {
       const p = camera.toScreen(...projXY(iv.x, iv.y, iz));
       if (age < 0.35) {
         // Incoming streak from the upper right.
-        ctx.strokeStyle = `rgba(255,220,160,${a})`;
+        ctx.strokeStyle = `rgba(210,236,255,${a})`;
         ctx.lineWidth = 2 * camera.zoom * (1 - age * 2);
         ctx.beginPath();
         ctx.moveTo(p.x + 80 * camera.zoom * (0.35 - age) * 4, p.y - 130 * camera.zoom * (0.35 - age) * 4);
@@ -878,9 +862,9 @@ export class IsoRenderer implements SceneView {
       }
       // Flash + dust ring.
       const g = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, 22 * camera.zoom * (0.4 + age));
-      g.addColorStop(0, `rgba(255,240,200,${a * 0.8})`);
-      g.addColorStop(0.4, `rgba(255,170,90,${a * 0.35})`);
-      g.addColorStop(1, 'rgba(255,170,90,0)');
+      g.addColorStop(0, `rgba(232,246,255,${a * 0.8})`);
+      g.addColorStop(0.4, `rgba(150,196,220,${a * 0.35})`);
+      g.addColorStop(1, 'rgba(150,196,220,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(p.x, p.y, 24 * camera.zoom * (0.4 + age), 0, Math.PI * 2);
@@ -974,6 +958,13 @@ export class IsoRenderer implements SceneView {
   // ── Ambient life (render-only) ────────────────────────────────────────
 
   private ambientProfile(): AmbientProfile {
+    // The survey field keeps wind-borne motes. Wandering creatures and
+    // grass tufts are not part of this scene.
+    const profile = this.ambientForBody();
+    return { ...profile, life: 0, flora: 0, flyer: false };
+  }
+
+  private ambientForBody(): AmbientProfile {
     switch (this.sim.body.id) {
       case 'mars':
         return { count: 32, color: '#e6b070', wind: { x: 0.4, y: 0.14 }, size: 1.6, life: 6, flora: 8, flyer: true };
@@ -1157,6 +1148,37 @@ export class IsoRenderer implements SceneView {
       fl.cx += (rover.x - fl.cx) * 0.4 * dt;
       fl.cy += (rover.y - fl.cy) * 0.4 * dt;
     }
+  }
+
+  /** Cyan ground ring on the nearest crystal spire inside scanner range. */
+  private drawFormationRing(): void {
+    const { ctx, camera, sim } = this;
+    const rover = sim.rover;
+    const reach = rover.stats.scanRadius;
+    if (reach <= 0) return;
+    let best: { x: number; y: number; d: number } | null = null;
+    for (const a of sim.anomalies) {
+      if (a.type !== 'crystal-formation') continue;
+      const d = Math.hypot(a.pos.x - rover.renderPos.x, a.pos.y - rover.renderPos.y);
+      if (d > reach) continue;
+      if (!best || d < best.d) best = { x: a.pos.x, y: a.pos.y, d };
+    }
+    if (!best) return;
+    const av = this.toView(best.x, best.y);
+    const az = this.surfaceZ(best.x, best.y);
+    const p = camera.toScreen(...projXY(av.x, av.y, az + 0.04));
+    const pulse = 0.62 + 0.38 * Math.sin(this.renderTime * 2.6);
+    const rx = TILE_W * camera.zoom * 0.58;
+    const ry = TILE_H * camera.zoom * 0.58;
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(110, 224, 240, ${0.9 * pulse})`;
+    ctx.lineWidth = Math.max(2.2, camera.zoom * 0.85);
+    ctx.shadowColor = 'rgba(120, 230, 245, 0.85)';
+    ctx.shadowBlur = 16;
+    ctx.stroke();
+    ctx.restore();
   }
 
   private drawParticles(): void {
@@ -1487,8 +1509,8 @@ export class IsoRenderer implements SceneView {
       this.invalidateViewColumn(Math.round(v.x), Math.round(v.y));
     };
     for (const c of this.chunks) c.dirty = true;
-    this.camera.minZoom = 1.3;
-    this.camera.maxZoom = 5.5;
+    this.camera.minZoom = 1.6;
+    this.camera.maxZoom = 6.4;
     this.camera.zoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, this.camera.zoom));
   }
 
@@ -1586,7 +1608,7 @@ export class IsoRenderer implements SceneView {
     }
     for (const a of this.sim.anomalies) {
       if (!a.scanned) continue;
-      ctx.fillStyle = a.documented ? '#7bd88f' : '#ffd166';
+      ctx.fillStyle = a.documented ? '#7bd88f' : '#7fd4ea';
       ctx.fillRect(a.pos.x * scale - 1, a.pos.y * scale - 1, scale + 2, scale + 2);
     }
     for (const st of this.sim.structures) {

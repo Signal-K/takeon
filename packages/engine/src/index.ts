@@ -160,7 +160,7 @@ export {
 } from './scene/types.js';
 export { registerDem, getDem, sampleDem, type DemPatch } from './world/dem/index.js';
 export { Camera } from './render/camera.js';
-export { TILE_W, TILE_H, TILE_Z, project } from './render/sprites.js';
+export { TILE_W, TILE_H, TILE_Z, CAMERA_ELEVATION_DEG, project } from './render/sprites.js';
 export { Controls, type ControlCallbacks } from './input/controls.js';
 
 export {
@@ -225,3 +225,20 @@ export {
   serializeWorldState,
   parseWorldState,
 } from './module/state.js';
+
+export {
+  SURVEY_ZOOM,
+  SURVEY_CHROME,
+  surveySpec,
+  defaultSurveyBody,
+  formatSurveyClock,
+  surveySnapshot,
+  formationStand,
+  applySurveyFraming,
+  createSurveyScene,
+  type SurveyFormation,
+  type SurveySnapshot,
+  type SurveyFramingOptions,
+  type SurveySceneOptions,
+  type SurveySceneHandle,
+} from './survey/scene.js';

@@ -1,8 +1,16 @@
 import {
   Controls,
+  applySurveyFraming,
   createRoverGame,
+  defaultSurveyBody,
+  surveySnapshot,
+  surveySpec,
+  type Anomaly,
+  type BodyDef,
   type RoverGame,
   type RoverGameOptions,
+  type RoverSpec,
+  type SurveySnapshot,
 } from '@takeon/engine';
 
 /**
@@ -206,6 +214,48 @@ export function mountRoverGame(opts: MountRoverGameOptions): MountedRoverGame {
       sprite.destroy();
       texture.destroy?.(true);
     },
+  };
+}
+
+export interface MountSurveySceneOptions extends Omit<MountRoverGameOptions, 'body' | 'spec' | 'startView'> {
+  /** Defaults to Europa. */
+  body?: BodyDef;
+  /** Defaults to the survey field-lab rover. */
+  spec?: RoverSpec;
+  /** Host navigation. The scene does not leave the field on its own. */
+  onHub?: () => void;
+}
+
+export interface MountedSurveyScene extends MountedRoverGame {
+  move(dir: 0 | 1 | 2 | 3): boolean;
+  scan(): Anomaly[];
+  laser(): boolean;
+  hub(): void;
+  snapshot(): SurveySnapshot;
+}
+
+/**
+ * Mount the survey scene: 60° follow camera, icy field, scanner rover.
+ * Draw your own controls or use `@takeon/ui`'s `<TakeOnSurvey/>` on the web.
+ * `move` / `scan` / `laser` / `hub` are the same verbs as the stock chrome.
+ */
+export function mountSurveyScene(opts: MountSurveySceneOptions): MountedSurveyScene {
+  const { onHub, body, spec, resume, ...rest } = opts;
+  const mounted = mountRoverGame({
+    ...rest,
+    body: body ?? defaultSurveyBody(),
+    spec: spec ?? surveySpec(),
+    resume,
+    startView: 'iso',
+  });
+  applySurveyFraming(mounted.game, { moveToFormation: !resume });
+  return {
+    ...mounted,
+    move: (dir) => mounted.game.move(dir),
+    scan: () => mounted.game.sim.scan(),
+    laser: () => mounted.game.mine(),
+    hub: () => onHub?.(),
+    snapshot: () => surveySnapshot(mounted.game.sim),
   };
 }
 

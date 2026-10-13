@@ -33,6 +33,8 @@ const ALLOWED: Record<string, string[]> = {
   render: ['scene', 'sim', 'world', 'util'],
   input: ['render'],
   core: ['scene', 'sim', 'render', 'input', 'audio', 'util'],
+  // Embeddable survey scene: a host-facing facade over the running game.
+  survey: ['core', 'sim', 'render', 'world', 'util'],
 };
 
 function tsFiles(dir: string): string[] {
