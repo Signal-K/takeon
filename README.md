@@ -27,6 +27,7 @@ like [Landnam](https://github.com/Signal-K/planet-hunters-experiment-1) — via
 | `pocketbase` | Go PocketBase **spoke** backend (port 8094) following the Star Sailors hub-and-spoke pattern: JS `pb_migrations`, custom `/api/takeon/*` routes, auth delegated to the shared backend, discovery cross-post hook |
 | `docs/ENGINE.md` | How the engine is structured: layers, scenes, views, entity parts, noise, registries |
 | `docs/INTEGRATION.md` | How to embed TakeOn in Landnam / any PixiJS game, or behind your own storage |
+| `docs/CROSS_PLATFORM.md` | Canonical runtime, shared terrain presentation, host boundary, and web/native parity plan |
 | `docs/UI.md` | Adapting/replacing the UI from a game built on TakeOn |
 | `docs/EDITOR.md` | The world editor: terrain, noise, maps, analysis, play mode |
 
