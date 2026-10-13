@@ -45,7 +45,10 @@ separated from rover simulation.
 accepts a `VoxelWorld`, palette, rotation, and contour interval, and returns
 RGBA8 pixels; the existing `FlatRenderer` consumes the same function. This
 creates a reusable pixel component without changing the rover HUD or painter
-system. The isometric renderer and entity pass remain coupled to `Simulation`.
+system. Isometric world/view rotation, height sampling, and smoothed corner
+geometry are now generic helpers over `VoxelWorld`, used by the rover renderer.
+The isometric chunk painter and entity pass remain coupled to `Simulation`, so
+this is a shared geometry seam rather than a generic isometric renderer yet.
 
 ## Decision
 

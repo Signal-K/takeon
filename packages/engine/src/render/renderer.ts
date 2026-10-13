@@ -11,6 +11,7 @@ import { MATERIALS } from '../world/materials.js';
 import { skinBiome } from '../world/terrain.js';
 import { hash2, hash3 } from '../util/rng.js';
 import { fbm2 } from '../util/noise/index.js';
+import { smoothedSurfaceCorners, surfaceHeightAtView, surfaceViewToWorld, worldToSurfaceView } from '../world/surface-view.js';
 
 interface Particle {
   x: number;
@@ -205,29 +206,15 @@ export class IsoRenderer implements SceneView {
   // ── View rotation ─────────────────────────────────────────────────────
 
   toView(x: number, y: number): Vec2 {
-    const s = this.sim.world.size - 1;
-    switch (this.rotation) {
-      case 0: return { x, y };
-      case 1: return { x: y, y: s - x };
-      case 2: return { x: s - x, y: s - y };
-      case 3: return { x: s - y, y: x };
-    }
+    return worldToSurfaceView({ x, y }, this.sim.world.size, this.rotation);
   }
 
   toWorld(u: number, v: number): Vec2 {
-    const s = this.sim.world.size - 1;
-    switch (this.rotation) {
-      case 0: return { x: u, y: v };
-      case 1: return { x: s - v, y: u };
-      case 2: return { x: s - u, y: s - v };
-      case 3: return { x: v, y: s - u };
-    }
+    return surfaceViewToWorld({ x: u, y: v }, this.sim.world.size, this.rotation);
   }
 
   private heightV(u: number, v: number): number {
-    if (u < 0 || v < 0 || u >= this.sim.world.size || v >= this.sim.world.size) return -1;
-    const w = this.toWorld(u, v);
-    return this.sim.world.height(w.x, w.y);
+    return surfaceHeightAtView(this.sim.world, u, v, this.rotation);
   }
 
   setRotation(rotation: ViewRotation): void {
@@ -247,48 +234,13 @@ export class IsoRenderer implements SceneView {
   // ── Smoothed surface geometry ─────────────────────────────────────────
 
   /**
-   * Height of the grid corner at (u+0.5, v+0.5): average of the adjacent
-   * columns whose heights sit within one step of the lowest — outliers
-   * (cliff tops) don't drag the corner up. Identical for every tile that
-   * shares the corner, so slopes are seam-free.
-   */
-  private cornerRaw(u: number, v: number): number {
-    let h0 = this.heightV(u, v);
-    let h1 = this.heightV(u + 1, v);
-    let h2 = this.heightV(u, v + 1);
-    let h3 = this.heightV(u + 1, v + 1);
-    let min = Infinity;
-    if (h0 >= 0 && h0 < min) min = h0;
-    if (h1 >= 0 && h1 < min) min = h1;
-    if (h2 >= 0 && h2 < min) min = h2;
-    if (h3 >= 0 && h3 < min) min = h3;
-    if (min === Infinity) return -1;
-    let sum = 0;
-    let n = 0;
-    if (h0 >= 0 && h0 - min <= SMOOTH_STEP) { sum += h0; n++; }
-    if (h1 >= 0 && h1 - min <= SMOOTH_STEP) { sum += h1; n++; }
-    if (h2 >= 0 && h2 - min <= SMOOTH_STEP) { sum += h2; n++; }
-    if (h3 >= 0 && h3 - min <= SMOOTH_STEP) { sum += h3; n++; }
-    return sum / n;
-  }
-
-  /**
    * The four smoothed corner heights of tile (u,v) in screen order
    * [top, right, bottom, left] = corners (u-.5,v-.5) (u+.5,v-.5)
    * (u+.5,v+.5) (u-.5,v+.5). Corners that belong to a far-lower
    * neighbourhood clamp back to the tile's own height (cliff edge).
    */
   private tileCorners(u: number, v: number, h: number): [number, number, number, number] {
-    const cs: [number, number, number, number] = [
-      this.cornerRaw(u - 1, v - 1),
-      this.cornerRaw(u, v - 1),
-      this.cornerRaw(u, v),
-      this.cornerRaw(u - 1, v),
-    ];
-    for (let i = 0; i < 4; i++) {
-      if (cs[i] < 0 || Math.abs(cs[i] - h) > SMOOTH_STEP) cs[i] = h;
-    }
-    return cs;
+    return smoothedSurfaceCorners(this.sim.world, u, v, h, this.rotation, SMOOTH_STEP);
   }
 
   /** Smoothed surface height at a tile centre (world coords), for entities. */

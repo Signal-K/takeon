@@ -34,6 +34,13 @@ export { WEATHER_INFO } from './sim/weather.js';
 
 export { VoxelWorld } from './world/world.js';
 export {
+  worldToSurfaceView,
+  surfaceViewToWorld,
+  surfaceHeightAtView,
+  smoothedSurfaceCorners,
+  type SurfaceRotation,
+} from './world/surface-view.js';
+export {
   registerWorldLayer,
   unregisterWorldLayer,
   listWorldLayerIds,
