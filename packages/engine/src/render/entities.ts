@@ -463,21 +463,31 @@ export function drawAnomaly(
       ctx.lineTo(0, 2);
       ctx.stroke();
       break;
-    case 'crystal-formation':
-      for (const [ox, h, tint] of [
-        [-5, 9, '#c77dff'],
-        [0, 13, '#dba4ff'],
-        [5, 7, '#9d4edd'],
-      ] as [number, number, string][]) {
-        ctx.fillStyle = tint;
+    case 'crystal-formation': {
+      // Pale icy spires. The higher camera shows their lit faces; the
+      // scanner ring is drawn by the terrain pass, not on the sprite.
+      const shards: [number, number, string, string][] = [
+        [-6, 12, '#f4f8fb', '#c5d5e0'],
+        [-1.2, 17, '#ffffff', '#d7e6ef'],
+        [4.8, 10, '#e4eef4', '#a9bfcc'],
+      ];
+      for (const [ox, h, lite, deep] of shards) {
+        const g = ctx.createLinearGradient(ox, 2 - h, ox, 3);
+        g.addColorStop(0, lite);
+        g.addColorStop(1, deep);
+        ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.moveTo(ox - 2.5, 2);
+        ctx.moveTo(ox - 2.3, 2.2);
         ctx.lineTo(ox, 2 - h);
-        ctx.lineTo(ox + 2.5, 2);
+        ctx.lineTo(ox + 2.3, 2.2);
         ctx.closePath();
         ctx.fill();
+        ctx.strokeStyle = 'rgba(70, 96, 114, 0.38)';
+        ctx.lineWidth = 0.7;
+        ctx.stroke();
       }
       break;
+    }
     case 'magnetic-anomaly': {
       const pulse = (Math.sin(time * 3) + 1) / 2;
       ctx.strokeStyle = `rgba(120,180,255,${0.25 + pulse * 0.4})`;
@@ -529,7 +539,7 @@ export function drawAnomaly(
   // Marker for scanned-but-undocumented anomalies.
   if (a.scanned && !a.documented) {
     const bob = Math.sin(time * 3) * 2;
-    ctx.fillStyle = '#ffd166';
+    ctx.fillStyle = '#8fe4f4';
     ctx.font = 'bold 9px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('?', 0, -20 + bob);
