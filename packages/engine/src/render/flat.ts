@@ -1,7 +1,7 @@
 import { buildScene } from '../scene/build.js';
 import type { Simulation } from '../sim/simulation.js';
-import { Material, type Vec2 } from '../types.js';
-import { MATERIALS } from '../world/materials.js';
+import type { Vec2 } from '../types.js';
+import { rasterizeFlatTerrain } from './flat-terrain.js';
 import { Camera } from './camera.js';
 import { getFlatPainter, type FlatPaintContext } from './flat-painters.js';
 import type { SceneView, ViewRotation } from './view.js';
@@ -284,46 +284,14 @@ export class FlatRenderer implements SceneView {
     const world = this.sim.world;
     if (this.terrain && this.terrainVersion === world.version && this.terrainRotation === this.rotation) return;
 
-    const size = world.size;
-    const buffer = new Uint8ClampedArray(size * size * 4);
-    const tint = this.sim.body.palette.tint ?? [1, 1, 1];
-    const maxH = Math.max(1, world.maxHeight);
-
-    for (let v = 0; v < size; v++) {
-      for (let u = 0; u < size; u++) {
-        const w = this.toWorld(u, v);
-        const h = world.height(w.x, w.y);
-        const i = (v * size + u) * 4;
-        if (h < 0) {
-          buffer[i] = 8;
-          buffer[i + 1] = 10;
-          buffer[i + 2] = 20;
-          buffer[i + 3] = 255;
-          continue;
-        }
-        const material = world.surfaceMaterial(w.x, w.y);
-        const [r, g, b] = hexRgb(MATERIALS[material].colors[0]);
-
-        // Hillshade from the height gradient (light from the north-west).
-        const wl = this.toWorld(u - 1, v);
-        const wu = this.toWorld(u, v - 1);
-        const hl = world.height(wl.x, wl.y);
-        const hu = world.height(wu.x, wu.y);
-        const dx = hl < 0 ? 0 : h - hl;
-        const dy = hu < 0 ? 0 : h - hu;
-        let light = 0.72 + (h / maxH) * 0.4 + (dx + dy) * 0.09;
-        if (this.contourStep > 0 && h % this.contourStep === 0 && (dx > 0 || dy > 0)) light *= 0.86;
-        light = Math.max(0.25, Math.min(1.45, light));
-
-        buffer[i] = r * tint[0] * light;
-        buffer[i + 1] = g * tint[1] * light;
-        buffer[i + 2] = b * tint[2] * light;
-        buffer[i + 3] = 255;
-      }
-    }
-
-    const image = new ImageData(buffer, size, size);
-    const target = this.makeCanvas(size, size);
+    const terrain = rasterizeFlatTerrain(
+      world,
+      this.sim.body.palette,
+      this.rotation,
+      this.contourStep,
+    );
+    const image = new ImageData(terrain.pixels, terrain.width, terrain.height);
+    const target = this.makeCanvas(terrain.width, terrain.height);
     (target.getContext('2d') as CanvasRenderingContext2D).putImageData(image, 0, 0);
     this.terrain = target;
     this.terrainVersion = world.version;

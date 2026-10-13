@@ -124,6 +124,7 @@ export { computeStats, canReach, defaultSpec } from './parts/assembly.js';
 
 export { IsoRenderer } from './render/renderer.js';
 export { FlatRenderer, FLAT_TILE } from './render/flat.js';
+export { rasterizeFlatTerrain, type FlatTerrainPixels } from './render/flat-terrain.js';
 export {
   crossSectionImage,
   renderCrossSection,

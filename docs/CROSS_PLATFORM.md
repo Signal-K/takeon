@@ -41,6 +41,12 @@ a data-only frame from host-provided world metadata and entities, and
 consumers still pair it with a `BodyDef`/`VoxelWorld` until the renderer is
 separated from rover simulation.
 
+`rasterizeFlatTerrain()` is now the canonical DOM-free flat terrain layer. It
+accepts a `VoxelWorld`, palette, rotation, and contour interval, and returns
+RGBA8 pixels; the existing `FlatRenderer` consumes the same function. This
+creates a reusable pixel component without changing the rover HUD or painter
+system. The isometric renderer and entity pass remain coupled to `Simulation`.
+
 ## Decision
 
 Keep the complete TypeScript engine as the canonical gameplay and generation
@@ -159,10 +165,11 @@ rover, battery, mining loop, or Landnam mission schema.
 
 1. **Contract and audit (complete).** Record the canonical-engine decision,
    host boundary, existing gaps, platform parity matrix, and consumer examples.
-2. **Make the TypeScript runtime host-neutral (in progress).** The initial
-   data-only scene snapshot API is in place. Next split generic world/scene
-   snapshots from rover simulation dependencies; define stable command/event
-   messages and a terrain renderer input that does not expose `Simulation`.
+2. **Make the TypeScript runtime host-neutral (in progress).** Data-only scene
+   snapshots and the DOM-free flat terrain raster are in place. Next split the
+   isometric terrain renderer and entity pass from rover simulation
+   dependencies; define stable command/event messages and renderer inputs
+   that do not expose `Simulation`.
 3. **Package the shared client.** Build a versioned runtime bundle with an
    explicit host bridge, deterministic fixed-step clock, resize/lifecycle
    hooks, and no host-specific account or progression logic.
