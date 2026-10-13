@@ -1,5 +1,6 @@
 import type { Simulation } from '../sim/simulation.js';
-import type { Scene, SceneEntity, ViewKind } from './types.js';
+import { createSceneSnapshot } from './snapshot.js';
+import type { Scene, SceneEntity, SceneEntitySnapshot, ViewKind } from './types.js';
 
 export interface BuildSceneOptions {
   view?: ViewKind;
@@ -87,9 +88,13 @@ export function buildScene(sim: Simulation, opts: BuildSceneOptions = {}): Scene
     });
   }
 
-  entities.sort((a, b) => (a.layer ?? 0) - (b.layer ?? 0));
-
-  return {
+  const references = new Map(
+    entities
+      .filter((entity) => entity.ref !== undefined)
+      .map((entity) => [entity.id, entity.ref]),
+  );
+  const snapshotEntities: SceneEntitySnapshot[] = entities.map(({ ref: _ref, ...entity }) => entity);
+  const snapshot = createSceneSnapshot({
     id: sim.missionId,
     name: sim.body.name,
     view,
@@ -99,7 +104,17 @@ export function buildScene(sim: Simulation, opts: BuildSceneOptions = {}): Scene
     daylight: sim.daylight(),
     palette: sim.body.palette,
     weather: sim.weather,
-    entities,
+    entities: snapshotEntities,
     home: { ...sim.landingSite },
+  });
+
+  // Keep live refs on this legacy rover API for existing built-in painters.
+  // Portable clients should use `snapshotScene` or `RoverGame.sceneSnapshot`.
+  return {
+    ...snapshot,
+    entities: snapshot.entities.map((entity) => {
+      const ref = references.get(entity.id);
+      return ref === undefined ? entity : { ...entity, ref };
+    }),
   };
 }

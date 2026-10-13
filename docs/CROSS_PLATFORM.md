@@ -34,6 +34,13 @@ but `Scene` is built from a rover `Simulation`, the isometric renderer reads
 rover/world internals, and `RoverGameOptions` requires an `HTMLCanvasElement`.
 Those are concrete coupling points to remove or wrap during generalization.
 
+The first host-neutral scene API now exists: `createSceneSnapshot()` composes
+a data-only frame from host-provided world metadata and entities, and
+`RoverGame.sceneSnapshot()` strips live object references from the compatibility
+`scene()` result. A snapshot is intentionally a scene frame, not terrain data;
+consumers still pair it with a `BodyDef`/`VoxelWorld` until the renderer is
+separated from rover simulation.
+
 ## Decision
 
 Keep the complete TypeScript engine as the canonical gameplay and generation
@@ -150,9 +157,10 @@ rover, battery, mining loop, or Landnam mission schema.
 
 ## Implementation sequence
 
-1. **Contract and audit (this slice).** Record the canonical-engine decision,
+1. **Contract and audit (complete).** Record the canonical-engine decision,
    host boundary, existing gaps, platform parity matrix, and consumer examples.
-2. **Make the TypeScript runtime host-neutral.** Split generic world/scene
+2. **Make the TypeScript runtime host-neutral (in progress).** The initial
+   data-only scene snapshot API is in place. Next split generic world/scene
    snapshots from rover simulation dependencies; define stable command/event
    messages and a terrain renderer input that does not expose `Simulation`.
 3. **Package the shared client.** Build a versioned runtime bundle with an

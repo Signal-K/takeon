@@ -6,7 +6,8 @@ import { FlatRenderer } from '../render/flat.js';
 import { IsoRenderer } from '../render/renderer.js';
 import type { SceneView } from '../render/view.js';
 import { buildScene } from '../scene/build.js';
-import type { Scene, ViewKind } from '../scene/types.js';
+import { snapshotScene } from '../scene/snapshot.js';
+import type { Scene, SceneSnapshot, ViewKind } from '../scene/types.js';
 import { Controls } from '../input/controls.js';
 import { GameAudio } from '../audio/audio.js';
 
@@ -240,6 +241,11 @@ export class RoverGame {
    */
   scene(): Scene {
     return buildScene(this.sim, { view: this.view });
+  }
+
+  /** A portable data-only frame without live references into the rover sim. */
+  sceneSnapshot(): SceneSnapshot {
+    return snapshotScene(this.scene());
   }
 
   craft(recipeId: string): boolean {

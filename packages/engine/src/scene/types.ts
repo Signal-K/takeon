@@ -32,9 +32,15 @@ export interface SceneEntity {
   label?: string;
   /** Painter hints and gameplay flags (powered, documented, progress…). */
   data?: Record<string, unknown>;
-  /** The live simulation object, for painters that want full detail. */
+  /**
+   * Legacy rover renderer hint. It is process-local, not serializable, and
+   * must not be required by host-neutral scene consumers.
+   */
   ref?: RoverState | Structure | Anomaly | unknown;
 }
+
+/** Data-only entity form for portable scene snapshots and host bridges. */
+export type SceneEntitySnapshot = Omit<SceneEntity, 'ref'>;
 
 export interface Scene {
   id: string;
@@ -53,6 +59,11 @@ export interface Scene {
   /** Deterministic landing/home tile, for framing and map pins. */
   home: Vec2;
 }
+
+/** A scene frame that contains no live references into a simulation. */
+export type SceneSnapshot = Omit<Scene, 'entities'> & {
+  entities: SceneEntitySnapshot[];
+};
 
 /** Entities of one kind, in paint order. */
 export function entitiesOfKind(scene: Scene, kind: SceneEntityKind): SceneEntity[] {
