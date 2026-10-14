@@ -8,7 +8,7 @@ import org.json.JSONObject
 data class TakeonEvent(val kind: String, val x: Int, val y: Int, val detail: String, val amount: Double)
 
 /** Terrain rectangle (Go `takeon.WindowView`): row-major, y outer. Heights are top voxel z (-1 = void). */
-class TakeonTerrainWindow(
+data class TakeonTerrainWindow(
     val x: Int, val y: Int, val w: Int, val h: Int, val size: Int,
     val heights: IntArray, val mats: IntArray, val ore: IntArray,
 ) {
@@ -25,7 +25,6 @@ data class TakeonMissionProgress(val missionId: String, val name: String, val ob
  * from one thread (or serialise externally).
  */
 class TakeonEngine private constructor(private val go: Engine) : AutoCloseable {
-    /** Seeds are reduced to their low 32 bits, like the TS engine's `seed >>> 0`. */
     constructor(seed: Long, bodyId: String) : this(Engine(seed and 0xFFFF_FFFFL, bodyId))
 
     fun loadWorld(bodyId: String, seed: Long) = go.loadWorld(bodyId, seed and 0xFFFF_FFFFL)
