@@ -79,6 +79,9 @@ type Game struct {
 	mission     WorldState // mission/module hooks (runtime.go)
 	missionDone bool
 	mineOrder   *mineOrder // easy-mining autopilot (runtime.go) // fractional dt carried between Step calls
+
+	caches []Vec2             // seeded drop-off caches (dropoff.go)
+	banked map[string]float64 // cargo deposited into a cache, by resource
 }
 
 // NewGame generates the world for (bodyID, seed) and lands the default rover.
@@ -462,29 +465,34 @@ type State struct {
 	Stats     RoverStats     `json:"stats"`
 	Anomalies []Anomaly      `json:"anomalies"`
 	Mission   WorldState     `json:"mission"`
+	// Omitted when empty so worlds with no drop-off keep the golden state shape.
+	Caches []Vec2             `json:"caches,omitempty"`
+	Banked map[string]float64 `json:"banked,omitempty"`
 }
 
 func (g *Game) State() State {
-	return State{g.time, g.rover, g.world.Edits, g.status, g.weather, g.landing, g.stats, g.anoms, g.mission}
+	return State{g.time, g.rover, g.world.Edits, g.status, g.weather, g.landing, g.stats, g.anoms, g.mission, g.caches, g.banked}
 }
 
 type snapshotDoc struct {
-	V               int            `json:"v"`
-	BodyID          string         `json:"bodyId"`
-	Seed            int64          `json:"seed"`
-	Time            float64        `json:"time"`
-	Status          string         `json:"status"`
-	Rover           Rover          `json:"rover"`
-	Edits           map[string]int `json:"edits"`
-	Weather         *Weather       `json:"weather"`
-	WeatherRng      uint32         `json:"weatherRng"`
-	WeatherCooldown float64        `json:"weatherCooldown"`
-	ImpactTimer     float64        `json:"impactTimer"`
-	DevilDrift      [2]float64     `json:"devilDrift"`
-	Anomalies       []Anomaly      `json:"anomalies"`
-	Acc             float64        `json:"acc"`
-	Mission         *WorldState    `json:"mission,omitempty"`
-	MissionDone     bool           `json:"missionDone,omitempty"`
+	V               int                `json:"v"`
+	BodyID          string             `json:"bodyId"`
+	Seed            int64              `json:"seed"`
+	Time            float64            `json:"time"`
+	Status          string             `json:"status"`
+	Rover           Rover              `json:"rover"`
+	Edits           map[string]int     `json:"edits"`
+	Weather         *Weather           `json:"weather"`
+	WeatherRng      uint32             `json:"weatherRng"`
+	WeatherCooldown float64            `json:"weatherCooldown"`
+	ImpactTimer     float64            `json:"impactTimer"`
+	DevilDrift      [2]float64         `json:"devilDrift"`
+	Anomalies       []Anomaly          `json:"anomalies"`
+	Acc             float64            `json:"acc"`
+	Mission         *WorldState        `json:"mission,omitempty"`
+	MissionDone     bool               `json:"missionDone,omitempty"`
+	Caches          []Vec2             `json:"caches,omitempty"`
+	Banked          map[string]float64 `json:"banked,omitempty"`
 }
 
 // Snapshot serialises the mission. Unlike the TS MissionState it also carries
@@ -496,6 +504,7 @@ func (g *Game) Snapshot() ([]byte, error) {
 		Rover: g.rover, Edits: g.world.Edits, Weather: g.weather, WeatherRng: g.weatherRng.a,
 		WeatherCooldown: g.weatherCooldown, ImpactTimer: g.impactTimer, DevilDrift: g.devilDrift,
 		Anomalies: g.anoms, Acc: g.acc, Mission: &g.mission, MissionDone: g.missionDone,
+		Caches: g.caches, Banked: g.banked,
 	})
 }
 
@@ -524,5 +533,6 @@ func (g *Game) Restore(b []byte) error {
 	if s.Mission != nil {
 		g.mission, g.missionDone = *s.Mission, s.MissionDone
 	}
+	g.caches, g.banked = s.Caches, s.Banked
 	return nil
 }

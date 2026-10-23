@@ -74,3 +74,19 @@ func (e *Engine) SetMissionJSON(js string) error {
 // WindowJSON returns the terrain window [x,x+w) x [y,y+h) (top height and top
 // material per column) for renderers; see takeon.WindowView.
 func (e *Engine) WindowJSON(x, y, w, h int) (string, error) { return e.g.Window(x, y, w, h) }
+
+// SeedCache places one drop-off cache beside the rover (takeon.Game.SeedCache).
+func (e *Engine) SeedCache() { e.g.SeedCache() }
+
+// SeedCargoJSON loads host cargo ({"iron": 3, ...}) into the rover hold.
+func (e *Engine) SeedCargoJSON(js string) error {
+	var c map[string]float64
+	if err := json.Unmarshal([]byte(js), &c); err != nil {
+		return err
+	}
+	e.g.SeedCargo(c)
+	return nil
+}
+
+// Deposit empties the hold into an adjacent cache; returns units moved (0 when none is in reach).
+func (e *Engine) Deposit() float64 { return e.g.Deposit() }
