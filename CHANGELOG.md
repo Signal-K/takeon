@@ -11,7 +11,7 @@ additive → minor, fixes → patch.
 
 ### @takeon/engine, @takeon/pixi
 
-- `showRover` option (default `true`) on `RoverGameOptions` / `mountRoverGame`: set `false` to draw the ground without the rover, for scenes like a landing. Isometric view only.
+- A scene only has a rover when it brings one. `spec` is now optional on `RoverGameOptions` / `mountRoverGame` / `Simulation`: with a spec the rover is drawn (as before), without one the ground is drawn with no rover (a landing, a flyover). `showRover` overrides it. Both views.
 
 ### @takeon/pixi
 

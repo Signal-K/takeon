@@ -29,6 +29,8 @@ export class FlatRenderer implements SceneView {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private sim: Simulation;
+  /** Draw the rover and its scanner reach. Off until the game turns it on. */
+  showRover = false;
   private dpr = 1;
   private cssW = 800;
   private cssH = 600;
@@ -212,7 +214,7 @@ export class FlatRenderer implements SceneView {
     const rover = sim.rover;
     const rv = this.toView(rover.renderPos.x, rover.renderPos.y);
     const rp = this.viewToScreen(rv.x + 0.5, rv.y + 0.5);
-    if (rover.stats.scanRadius > 0) {
+    if (this.showRover && rover.stats.scanRadius > 0) {
       ctx.strokeStyle = 'rgba(95,227,216,0.22)';
       ctx.setLineDash([4, 4]);
       ctx.lineWidth = 1;
@@ -230,6 +232,7 @@ export class FlatRenderer implements SceneView {
       facing: 0,
     };
     for (const entity of scene.entities) {
+      if (entity.kind === 'rover' && !this.showRover) continue;
       const painter = getFlatPainter(entity.kind);
       if (!painter) continue;
       const view = this.toView(entity.pos.x, entity.pos.y);

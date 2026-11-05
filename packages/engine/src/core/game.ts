@@ -14,7 +14,11 @@ export interface RoverGameOptions {
   /** Canvas to render into. The game manages its size via `resize()`. */
   canvas: HTMLCanvasElement;
   body: BodyDef;
-  spec: RoverSpec;
+  /**
+   * The rover to drive. Optional: a game with no rover is a landscape you look at
+   * (a landing, a flyover). Pass a spec and the rover is drawn; omit it and nothing is.
+   */
+  spec?: RoverSpec;
   seed?: number;
   /** Resume a previously serialised mission. */
   resume?: MissionState;
@@ -34,7 +38,7 @@ export interface RoverGameOptions {
   /** Which view to open in: the isometric diorama or the flat 2D map.
    * (Named `startView` because PixiJS hosts already pass a `view` canvas.) */
   startView?: ViewKind;
-  /** Draw the rover (default true). Turn off for scenes that show the ground without a vehicle. Isometric view only. */
+  /** Draw the rover. Defaults to whether a `spec` was given, so a scene only has a rover when it brings one. */
   showRover?: boolean;
 }
 
@@ -53,6 +57,8 @@ export class RoverGame {
   readonly sim: Simulation;
   /** The isometric ("3D" diorama) view. Always constructed. */
   readonly iso: IsoRenderer;
+  /** Whether this game draws a rover (see `RoverGameOptions.showRover`). */
+  readonly showRover: boolean;
   /** Shared by every view, so input and host code keep one camera. */
   readonly camera = new Camera();
   /** Synthesised audio director. Call `game.audio.unlock()` on first tap. */
@@ -80,7 +86,8 @@ export class RoverGame {
       resume: opts.resume,
     });
     this.iso = new IsoRenderer(opts.canvas, this.sim, this.camera);
-    this.iso.showRover = opts.showRover !== false;
+    this.showRover = opts.showRover ?? opts.spec !== undefined;
+    this.iso.showRover = this.showRover;
     this.activeView = this.iso;
     if (opts.startView === 'flat') this.setView('flat');
     this.audio = new GameAudio({ enabled: opts.audio !== false });
@@ -217,7 +224,10 @@ export class RoverGame {
     const follow = this.camera.follow;
     this.activeView.deactivate();
     if (kind === 'flat') {
-      if (!this.flatView) this.flatView = new FlatRenderer(this.opts.canvas, this.sim, this.camera);
+      if (!this.flatView) {
+        this.flatView = new FlatRenderer(this.opts.canvas, this.sim, this.camera);
+        this.flatView.showRover = this.showRover;
+      }
       this.activeView = this.flatView;
     } else {
       this.activeView = this.iso;

@@ -131,8 +131,8 @@ export class IsoRenderer implements SceneView {
   private renderTime = 0;
   /** Host-planned route, drawn as a presentation-only surface overlay. */
   private route: readonly Vec2[] = [];
-  /** Draw the rover. Hosts that show a landscape with no vehicle in it (a landing, a flyover) turn this off. */
-  showRover = true;
+  /** Draw the rover. Off until the game turns it on: a landscape has no vehicle in it unless one is brought. */
+  showRover = false;
   /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
   private visualFacing = 0;
   // ── Adaptive resolution ───────────────────────────────────────────────

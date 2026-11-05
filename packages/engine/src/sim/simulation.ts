@@ -20,7 +20,7 @@ import { MATERIALS } from '../world/materials.js';
 import { generateAnomalies } from '../world/anomalies.js';
 import { findLandingSite, generateTerrain } from '../world/terrain.js';
 import { VoxelWorld } from '../world/world.js';
-import { computeStats } from '../parts/assembly.js';
+import { computeStats, defaultSpec } from '../parts/assembly.js';
 import { getRecipe } from './recipes.js';
 import { makeId } from '../util/rng.js';
 import {
@@ -57,7 +57,8 @@ export const DIRS: Vec2[] = [
 
 export interface SimOptions {
   body: BodyDef;
-  spec: RoverSpec;
+  /** Omit for a landscape with no rover brought to it; the sim still carries a default one. */
+  spec?: RoverSpec;
   events: EventBus;
   seed?: number;
   /** Resume a saved mission instead of starting fresh. */
@@ -143,11 +144,12 @@ export class Simulation {
       );
     } else {
       const site = this.landingSite;
-      const stats = computeStats(opts.spec);
+      const spec = opts.spec ?? defaultSpec();
+      const stats = computeStats(spec);
       // Landing burns delta-v worth of fuel.
       const fuel = Math.max(0, stats.fuelCapacity - opts.body.deltaV);
       this.rover = {
-        spec: opts.spec,
+        spec,
         stats,
         upgrades: { mobility: 0 },
         pos: { ...site },
