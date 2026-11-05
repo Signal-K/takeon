@@ -131,6 +131,8 @@ export class IsoRenderer implements SceneView {
   private renderTime = 0;
   /** Host-planned route, drawn as a presentation-only surface overlay. */
   private route: readonly Vec2[] = [];
+  /** Draw the rover. Hosts that show a landscape with no vehicle in it (a landing, a flyover) turn this off. */
+  showRover = true;
   /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
   private visualFacing = 0;
   // ── Adaptive resolution ───────────────────────────────────────────────
@@ -770,7 +772,7 @@ export class IsoRenderer implements SceneView {
         draw: () => drawStructure(ctx, p.x, p.y, camera.zoom, st, sim.time, daylight, powered),
       });
     }
-    {
+    if (this.showRover) {
       const p = camera.toScreen(...projXY(rv.x, rv.y, rz + 0.55));
       const screenFacing = (((rover.facing - this.rotation) % 4) + 4) % 4;
       const shortestTurn = ((screenFacing - this.visualFacing + 6) % 4) - 2;

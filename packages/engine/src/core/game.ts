@@ -34,6 +34,8 @@ export interface RoverGameOptions {
   /** Which view to open in: the isometric diorama or the flat 2D map.
    * (Named `startView` because PixiJS hosts already pass a `view` canvas.) */
   startView?: ViewKind;
+  /** Draw the rover (default true). Turn off for scenes that show the ground without a vehicle. Isometric view only. */
+  showRover?: boolean;
 }
 
 /** A queued player order: drive somewhere, or go mine a specific column. */
@@ -78,6 +80,7 @@ export class RoverGame {
       resume: opts.resume,
     });
     this.iso = new IsoRenderer(opts.canvas, this.sim, this.camera);
+    this.iso.showRover = opts.showRover !== false;
     this.activeView = this.iso;
     if (opts.startView === 'flat') this.setView('flat');
     this.audio = new GameAudio({ enabled: opts.audio !== false });

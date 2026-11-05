@@ -9,6 +9,10 @@ additive → minor, fixes → patch.
 
 ## Unreleased
 
+### @takeon/engine, @takeon/pixi
+
+- `showRover` option (default `true`) on `RoverGameOptions` / `mountRoverGame`: set `false` to draw the ground without the rover, for scenes like a landing. Isometric view only.
+
 ### @takeon/pixi
 
 - `MountedRoverGame` now exposes `start`, `stop`, `pause`, `resume`, and

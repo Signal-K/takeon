@@ -119,6 +119,7 @@ export function mountRoverGame(opts: MountRoverGameOptions): MountedRoverGame {
     onTileTap: opts.onTileTap,
     audio: opts.audio,
     startView: opts.startView,
+    showRover: opts.showRover,
     controls: false,
   });
   game.resize(opts.width, opts.height, resolution);
