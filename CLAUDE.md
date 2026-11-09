@@ -2,9 +2,9 @@
 
 @AGENTS.md
 
-## Desk-first agent workflow
+## Linear-first agent workflow
 
-Desk is the system of record for TakeOn. Resolve or create the relevant Desk ticket before changing code, keep its status current, and add implementation evidence before finishing. Historical `KES-` references may be included alongside the active Desk key, but Linear, Knowns, Plate, and workspace ticket Markdown are not live task state.
+Linear (team Kestloome, prefix `KES`) is the system of record for TakeOn. Find or create the `KES-` issue before changing code, keep its status current, and finish by commenting the commit hash, proof and caveats and setting the status. Desk, Knowns, Plate and workspace ticket Markdown are archived and are not task state.
 
 Isometric voxel rover game. npm workspaces monorepo + Go PocketBase spoke.
 
