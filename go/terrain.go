@@ -1,26 +1,22 @@
 package takeon
 
 import (
-	"fmt"
 	"math"
 )
 
 type crater struct{ cx, cy, r, depth float64 }
 
-// GenerateTerrain mirrors world/terrain.ts generateTerrain. DEM patches are
-// empty in the engine snapshot this was ported from (generated.ts is a stub),
-// so the procedural fallback is the only path — same as the TS build.
+// GenerateTerrain is the canonical world generator, including optional DEM,
+// authored noise, ore strata and host-resolved biome content.
 func GenerateTerrain(body *Body, seed int64) (*VoxelWorld, error) {
-	if len(body.Terrain.Bands) > 0 && string(body.Terrain.Bands) != "null" {
-		return nil, fmt.Errorf("%w: ore bands", ErrUnsupported)
-	}
+
 	size, maxH := body.Size, body.MaxHeight
 	world := NewVoxelWorld(size, maxH)
 	t := body.Terrain
 	rng := NewMulberry32(int64(uint32(int32(seed) ^ 0x51ab)))
 
 	var craters []crater
-	for i := 0; float64(i) < t.Craters; i++ {
+	for i := 0; body.CoreDEM == nil && float64(i) < t.Craters; i++ {
 		c := crater{}
 		c.cx = float64(rng.Next() * float64(size))
 		c.cy = float64(rng.Next() * float64(size))
@@ -58,6 +54,10 @@ func GenerateTerrain(body *Body, seed int64) (*VoxelWorld, error) {
 			} else {
 				n = fbm2(float64(fx*freq), float64(fy*freq), seed, 4)
 				n = float64(n*0.65) + float64(fbm2(float64(float64(fx*freq)*0.25), float64(float64(fy*freq)*0.25), seed+55, 2)*0.35)
+			}
+			if body.CoreDEM != nil {
+				real := sampleDEM(body.CoreDEM, fx/float64(size-1), fy/float64(size-1))
+				n = float64(real*.78) + float64(n*.22)
 			}
 			h := 1 + float64(float64(n*float64(maxH-3))*(0.45+float64(t.Roughness*0.55)))
 
@@ -104,6 +104,9 @@ func pickMaterial(body *Body, x, y, z, surface int, icy, sulfurous bool, seed in
 			return Crystal
 		}
 		if v > 1-float64(rich*0.16) {
+			if mat, ok := pickOreBand(t.Bands, depth, surface, x, y, z, seed); ok {
+				return mat
+			}
 			iron, copper, titanium := 0.45, 0.3, 0.25
 			if m := body.Minerals; m != nil {
 				if m.Iron != nil {
@@ -140,7 +143,7 @@ func pickMaterial(body *Body, x, y, z, surface int, icy, sulfurous bool, seed in
 	if depth == 0 {
 		if t.Biomes {
 			b := biomeAt(body, x, y, seed)
-			return pickBiomeMaterial(b.surface, fbm2(float64(fx*0.055), float64(fy*0.055), seed+5, 3))
+			return pickBiomeMaterial(b.Surface, fbm2(float64(fx*0.055), float64(fy*0.055), seed+5, 3))
 		}
 		patch := fbm2(float64(fx*0.055), float64(fy*0.055), seed+5, 3)
 		if patch > 0.66 {
@@ -154,9 +157,9 @@ func pickMaterial(body *Body, x, y, z, surface int, icy, sulfurous bool, seed in
 	if depth <= 2 {
 		if t.Biomes {
 			b := biomeAt(body, x, y, seed)
-			sub := b.subsurface
+			sub := b.Subsurface
 			if sub == nil {
-				sub = b.surface
+				sub = b.Surface
 			}
 			return pickBiomeMaterial(sub, fbm2(float64(fx*0.055), float64(fy*0.055), seed+9, 3))
 		}

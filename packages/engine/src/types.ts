@@ -432,6 +432,8 @@ export interface RoverState {
 export const MISSION_SCHEMA_VERSION = 2;
 
 export interface MissionState {
+  /** Opaque portable-core continuation; older hosts may ignore this field. */
+  coreSnapshot?: string;
   /** Schema marker (absent on pre-v2 saves). */
   schemaVersion?: number;
   id: string;
@@ -469,7 +471,12 @@ export interface GameEvents {
   crafted: { recipe: string; resource: ResourceKey; amount: number };
   craftFailed: { reason: string };
   blockPlaced: { pos: Vec2 };
-  cargoLaunched: { pos: Vec2; manifest: Partial<Record<ResourceKey, number>>; total: number; auto?: boolean };
+  cargoLaunched: {
+    pos: Vec2;
+    manifest: Partial<Record<ResourceKey, number>>;
+    total: number;
+    auto?: boolean;
+  };
   launchFailed: { reason: string };
   habitatComplete: { pos: Vec2 };
   upgraded: { kind: 'mobility'; level: number };

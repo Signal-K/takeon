@@ -7,8 +7,8 @@ import (
 	"fmt"
 )
 
-// bodies.json and parts.json are dumped from the TS engine's BODIES / PARTS by
-// packages/engine/scripts/golden.ts, so the catalog is single-sourced.
+// Canonical JSON content is embedded here and emitted into the TypeScript
+// package during build, so hosts and native bindings share the same catalogs.
 
 //go:embed data/bodies.json
 var bodiesJSON []byte
@@ -44,6 +44,24 @@ func (r *Rates) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// Preserve JS object insertion order in snapshot content as well as initial input.
+func (r Rates) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, e := range r {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		key, _ := json.Marshal(e.Type)
+		v, _ := json.Marshal(e.Rate)
+		b.Write(key)
+		b.WriteByte(':')
+		b.Write(v)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
 type Minerals struct {
 	Iron     *float64 `json:"iron"`
 	Copper   *float64 `json:"copper"`
@@ -56,18 +74,22 @@ type Climate struct {
 }
 
 type TerrainDef struct {
-	Roughness    float64         `json:"roughness"`
-	Craters      float64         `json:"craters"`
-	IceCaps      float64         `json:"iceCaps"`
-	OreRichness  float64         `json:"oreRichness"`
-	Irregular    bool            `json:"irregular"`
-	Biomes       bool            `json:"biomes"`
-	SulfurFields float64         `json:"sulfurFields"`
-	Noise        *NoiseConfig    `json:"noise"`
-	Bands        json.RawMessage `json:"bands"`
+	Roughness    float64      `json:"roughness"`
+	Craters      float64      `json:"craters"`
+	IceCaps      float64      `json:"iceCaps"`
+	OreRichness  float64      `json:"oreRichness"`
+	Irregular    bool         `json:"irregular"`
+	Biomes       bool         `json:"biomes"`
+	SulfurFields float64      `json:"sulfurFields"`
+	Noise        *NoiseConfig `json:"noise"`
+	Bands        []OreBand    `json:"bands"`
 }
 
 type Body struct {
+	CoreDEM           *DEM      `json:"coreDEM,omitempty"`
+	CoreBiomes        []biome   `json:"coreBiomes,omitempty"`
+	CoreAllowedBiomes *[]string `json:"coreAllowedBiomes,omitempty"`
+
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
 	Type      string     `json:"type"`
@@ -87,6 +109,7 @@ type Body struct {
 }
 
 type Part struct {
+	Name     string             `json:"name"`
 	ID       string             `json:"id"`
 	Category string             `json:"category"`
 	Mass     float64            `json:"mass"`
@@ -108,7 +131,7 @@ func init() {
 	}
 }
 
-// GetBody resolves a built-in body id (runtime registration is not ported).
+// GetBody resolves built-ins; custom declarative content uses NewConfiguredGame.
 func GetBody(id string) (*Body, error) {
 	for i := range Bodies {
 		if Bodies[i].ID == id {
@@ -144,20 +167,23 @@ type materialDef struct {
 }
 
 // materials mirrors world/materials.ts (hardness + yield only).
-var materials = [...]materialDef{
-	Air:         {0, "", 0},
-	Regolith:    {2, "regolith", 1},
-	Rock:        {4, "stone", 1},
-	Basalt:      {6, "stone", 2},
-	Ice:         {3, "ice", 2},
-	IronOre:     {5, "iron", 2},
-	Silica:      {2, "silica", 2},
-	CopperOre:   {5, "copper", 2},
-	TitaniumOre: {7, "titanium", 1},
-	Crystal:     {8, "crystal", 1},
-	Dust:        {1, "regolith", 1},
-	Sulfur:      {3, "sulfur", 2},
-	Grass:       {1, "regolith", 1},
-	Sand:        {1, "silica", 1},
-	Snow:        {1, "ice", 1},
+//
+//go:embed data/materials.json
+var materialJSON []byte
+var materials map[int]materialDef
+
+func init() {
+	var catalog map[int]HostMaterial
+	if err := json.Unmarshal(materialJSON, &catalog); err != nil {
+		panic(err)
+	}
+	materials = map[int]materialDef{}
+	for id, m := range catalog {
+		d := materialDef{Hardness: m.Hardness}
+		if m.Yields != nil {
+			d.Resource = m.Yields.Resource
+			d.Amount = m.Yields.Amount
+		}
+		materials[id] = d
+	}
 }

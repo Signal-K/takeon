@@ -44,3 +44,79 @@ func (e *Engine) StateJSON() (string, error) {
 	b, err := json.Marshal(e.g.State())
 	return string(b), err
 }
+
+// OrderMine drives to (x,y), faces it and mines it down (autopilot, handled in Step).
+func (e *Engine) OrderMine(x, y int) bool { ok, _ := e.g.Order("mine", x|y<<16); return ok }
+
+// CancelOrder stops the autopilot.
+func (e *Engine) CancelOrder() { _, _ = e.g.Order("cancel", 0) }
+
+// Bank banks held mission yield when near the landing site.
+func (e *Engine) Bank() bool { return e.g.Bank() }
+
+// MissionJSON returns {"state": WorldState, "progress": MissionProgress}.
+func (e *Engine) MissionJSON() (string, error) {
+	st, p := e.g.Mission()
+	b, err := json.Marshal(map[string]any{"state": st, "progress": p})
+	return string(b), err
+}
+
+// SetMissionJSON replaces the mission (JSON Mission object) and resets progress.
+func (e *Engine) SetMissionJSON(js string) error {
+	var m takeon.Mission
+	if err := json.Unmarshal([]byte(js), &m); err != nil {
+		return err
+	}
+	e.g.SetMission(m)
+	return nil
+}
+
+// WindowJSON returns the terrain window [x,x+w) x [y,y+h) (top height and top
+// material per column) for renderers; see takeon.WindowView.
+func (e *Engine) WindowJSON(x, y, w, h int) (string, error) { return e.g.Window(x, y, w, h) }
+
+// SeedCache places one drop-off cache beside the rover (takeon.Game.SeedCache).
+func (e *Engine) SeedCache() { e.g.SeedCache() }
+
+// SeedCargoJSON loads host cargo ({"iron": 3, ...}) into the rover hold.
+func (e *Engine) SeedCargoJSON(js string) error {
+	var c map[string]float64
+	if err := json.Unmarshal([]byte(js), &c); err != nil {
+		return err
+	}
+	e.g.SeedCargo(c)
+	return nil
+}
+
+// Deposit empties the hold into an adjacent cache; returns units moved (0 when none is in reach).
+func (e *Engine) Deposit() float64 { return e.g.Deposit() }
+
+// CapabilitiesJSON describes the shared core contract for any mobile host.
+func CapabilitiesJSON() string {
+	b, _ := json.Marshal(takeon.Capabilities())
+	return string(b)
+}
+
+// CommandJSON invokes a shared construction/refining/survey command with a text argument.
+func (e *Engine) CommandJSON(kind, argument string) (string, error) {
+	result, err := e.g.Command(kind, argument)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(result)
+	return string(b), err
+}
+
+// ConfigureJSON replaces the world from validated, host-authored core content.
+func (e *Engine) ConfigureJSON(configuration string, seed int64) error {
+	var config takeon.HostData
+	if err := json.Unmarshal([]byte(configuration), &config); err != nil {
+		return err
+	}
+	game, err := takeon.NewConfiguredGame(seed, config)
+	if err != nil {
+		return err
+	}
+	e.g = game
+	return nil
+}

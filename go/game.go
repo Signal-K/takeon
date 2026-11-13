@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 )
 
 const (
@@ -47,15 +48,28 @@ type Weather struct {
 // Event mirrors the shape of TakeonKit's TakeonEvent (depositMined etc.),
 // extended with the engine's lower-level moved/blocked/weather events.
 type Event struct {
-	Kind   string  `json:"kind"`
-	X      int     `json:"x,omitempty"`
-	Y      int     `json:"y,omitempty"`
-	Detail string  `json:"detail,omitempty"`
-	Amount float64 `json:"amount,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+	Kind    string          `json:"kind"`
+	X       int             `json:"x,omitempty"`
+	Y       int             `json:"y,omitempty"`
+	Detail  string          `json:"detail,omitempty"`
+	Amount  float64         `json:"amount,omitempty"`
 }
 
 // Game is the v0 core: one rover on one generated body.
 type Game struct {
+	hostData    *HostData
+	partCatalog []Part
+	structures  []*Structure
+	photos      []Photo
+	powered     map[string]bool
+	launches    []Marker
+	drillTimers map[string]int
+	ruleCatalog *RuleCatalog
+	baseStats   RoverStats
+	mobility    int
+	entitySeq   int
+
 	body    *Body
 	seed    int64
 	world   *VoxelWorld
@@ -74,7 +88,14 @@ type Game struct {
 	devilDrift      [2]float64
 
 	events []Event
-	acc    float64 // fractional dt carried between Step calls
+	acc    float64
+
+	mission     WorldState // mission/module hooks (runtime.go)
+	missionDone bool
+	mineOrder   *mineOrder // easy-mining autopilot (runtime.go) // fractional dt carried between Step calls
+
+	caches []Vec2             // seeded drop-off caches (dropoff.go)
+	banked map[string]float64 // cargo deposited into a cache, by resource
 }
 
 // NewGame generates the world for (bodyID, seed) and lands the default rover.
@@ -102,7 +123,9 @@ func (g *Game) LoadWorld(bodyID string, seed int64) error {
 	g.weatherCooldown = 20
 	g.devilDrift = [2]float64{1, 0}
 	g.landing = FindLandingSite(w)
+	g.initMission()
 	g.stats = ComputeStats(g.spec)
+	g.baseStats = g.stats
 	g.rover = Rover{
 		Pos:        g.landing,
 		Battery:    g.stats.BatteryCapacity,
@@ -113,7 +136,34 @@ func (g *Game) LoadWorld(bodyID string, seed int64) error {
 	return nil
 }
 
-func (g *Game) emit(e Event) { g.events = append(g.events, e) }
+func (g *Game) emit(e Event) {
+	if e.Payload == nil {
+		var payload any
+		switch e.Kind {
+		case "moved":
+			payload = map[string]any{"pos": Vec2{e.X, e.Y}, "energyUsed": e.Amount}
+		case "blocked", "roverLost":
+			payload = map[string]any{"reason": e.Detail}
+		case "cargoFull":
+			payload = map[string]any{}
+		case "meteorImpact":
+			payload = map[string]any{"pos": Vec2{e.X, e.Y}, "distance": jsHypot(float64(e.X-g.rover.Pos.X), float64(e.Y-g.rover.Pos.Y))}
+		case "weather":
+			parts := strings.Split(e.Detail, ":")
+			if len(parts) == 2 {
+				intensity := 0.0
+				if g.weather != nil {
+					intensity = g.weather.Intensity
+				}
+				payload = map[string]any{"type": parts[0], "phase": parts[1], "intensity": intensity}
+			}
+		}
+		if payload != nil {
+			e.Payload, _ = json.Marshal(payload)
+		}
+	}
+	g.events = append(g.events, e)
+}
 
 func (g *Game) daylight() float64 {
 	if g.body.DayLength <= 0 {
@@ -191,12 +241,13 @@ func (g *Game) StartWeather(typ string, intensity, duration float64) error {
 	return nil
 }
 
-func (g *Game) damage(amount float64) {
+func (g *Game) damage(amount float64, reason string) {
 	if amount <= 0.01 {
 		return
 	}
 	r := &g.rover
 	r.Durability = fmax(0, r.Durability-amount)
+	g.hostEvent("damaged", map[string]any{"amount": amount, "reason": reason})
 	if r.Durability <= 0 {
 		g.status = "lost"
 		g.emit(Event{Kind: "roverLost", Detail: "Chassis destroyed."})
@@ -243,7 +294,7 @@ func (g *Game) tickWeather() {
 			}
 		}
 		if jsHypot(float64(w.Pos.X-r.Pos.X), float64(w.Pos.Y-r.Pos.Y)) <= 1.6 {
-			g.damage(float64(0.35 * w.Intensity))
+			g.damage(float64(0.35*w.Intensity), "storm")
 		}
 	case "solar-storm":
 		r.Battery = fmax(0, r.Battery-float64(float64(float64(0.18*w.Intensity)*TickDT)*10))
@@ -263,7 +314,7 @@ func (g *Game) tickWeather() {
 				d := jsHypot(float64(ix-r.Pos.X), float64(iy-r.Pos.Y))
 				g.emit(Event{Kind: "meteorImpact", X: ix, Y: iy})
 				if d <= 2.5 {
-					g.damage(4 + float64(6*w.Intensity))
+					g.damage(4+float64(6*w.Intensity), "impact")
 				}
 			}
 		}
@@ -281,18 +332,31 @@ func (g *Game) addCargo(res string, amount float64) {
 	r.CargoUsed += take
 }
 
-// Tick advances exactly one fixed 0.1 s step. Structures, crafting, scanning,
-// photos, launches and habitats are NOT ported (see docs/go-core-spike.md).
+// Tick advances one canonical 0.1 s step, including weather and outpost rules.
 func (g *Game) Tick() {
 	if g.status != "active" {
 		return
 	}
+	g.autopilot()
 	g.time += TickDT
 	r := &g.rover
 	daylight := g.daylight()
 	g.tickWeather()
+	g.computePower()
+	alive := g.launches[:0]
+	for _, marker := range g.launches {
+		if g.time-marker.T < 3 {
+			alive = append(alive, marker)
+		}
+	}
+	g.launches = alive
 
 	charge := g.stats.RtgRate + float64(float64(float64(g.stats.SolarRate*daylight)*g.body.SolarFlux)*g.weatherSolarMult())
+	for _, s := range g.structures {
+		if s.Type == "solar-array" && daylight > 0 && jsHypot(float64(s.Pos.X-r.Pos.X), float64(s.Pos.Y-r.Pos.Y)) <= 4 {
+			charge += 5 * daylight * g.body.SolarFlux
+		}
+	}
 	r.Battery = fmin(g.stats.BatteryCapacity, r.Battery+float64(charge*TickDT))
 
 	if r.MoveFrom != nil {
@@ -300,6 +364,8 @@ func (g *Game) Tick() {
 		if r.MoveT >= 1 {
 			r.MoveT = 0
 			r.MoveFrom = nil
+			g.onArrive()
+			g.collectDrills()
 		}
 	}
 
@@ -309,19 +375,27 @@ func (g *Game) Tick() {
 			pos := r.Mining.Pos
 			r.Mining = nil
 			if mat, ok := g.world.MineTop(pos.X, pos.Y); ok {
-				def := materials[mat]
+				def := g.material(mat)
+				var resource any
+				if def.Resource != "" {
+					resource = def.Resource
+				}
+				g.hostEvent("mined", map[string]any{"pos": pos, "resource": resource, "amount": def.Amount})
 				if def.Resource != "" {
 					g.addCargo(def.Resource, def.Amount)
 					g.emit(Event{Kind: "depositMined", X: pos.X, Y: pos.Y, Detail: def.Resource, Amount: def.Amount})
+					g.onMined(def.Amount)
 				}
 			}
 		}
 	}
 
+	g.tickStructures()
 	if r.Battery <= 0.01 && g.stats.RtgRate == 0 && g.stats.SolarRate == 0 {
 		g.status = "lost"
 		g.emit(Event{Kind: "roverLost", Detail: "Battery depleted with no way to recharge."})
 	}
+	g.hostEvent("tick", map[string]any{"time": g.time, "daylight": daylight})
 }
 
 // Move starts a one-tile move in direction 0..3; false if blocked.
@@ -349,15 +423,16 @@ func (g *Game) Move(dir int) bool {
 	slope := 1 + float64(fmax(0, step)*0.5)
 	cost := float64(float64(g.stats.MoveEnergy*slope) * g.weatherMoveMult())
 	if r.Battery < cost {
+		g.hostEvent("batteryEmpty", map[string]any{})
 		g.emit(Event{Kind: "blocked", Detail: "battery"})
 		return false
 	}
 	r.Battery -= cost
 	if step < -g.stats.MaxClimb {
 		fall := -step - g.stats.MaxClimb
-		g.damage(float64(float64(fall*g.body.Gravity) * (1.6 - g.stats.Grip)))
+		g.damage(float64(float64(fall*g.body.Gravity)*(1.6-g.stats.Grip)), "fall")
 	} else if math.Abs(step) >= 1 {
-		g.damage(float64(0.4 * (1 - g.stats.Grip)))
+		g.damage(float64(0.4*(1-g.stats.Grip)), "terrain")
 	}
 	from := r.Pos
 	r.MoveFrom = &from
@@ -389,25 +464,48 @@ func (g *Game) Drill() bool {
 		g.emit(Event{Kind: "cargoFull"})
 		return false
 	}
-	hardness := materials[g.world.Get(tx, ty, h)].Hardness
+	hardness := g.material(g.world.Get(tx, ty, h)).Hardness
 	if r.Battery < g.stats.MiningEnergy {
 		g.emit(Event{Kind: "blocked", Detail: "battery"})
 		return false
 	}
 	r.Battery -= g.stats.MiningEnergy
 	r.Mining = &Mining{Pos: Vec2{tx, ty}, Remaining: hardness, Total: hardness}
+	g.hostEvent("miningStarted", map[string]any{"pos": Vec2{tx, ty}, "total": hardness})
 	return true
 }
 
 // Order is the single host-facing command entry: kind "move" (arg = dir 0..3)
-// or "drill" (arg ignored). Unported kinds return ErrUnsupported.
+// or "drill" (arg ignored). Build/craft use Command with a string argument.
 func (g *Game) Order(kind string, arg int) (bool, error) {
 	switch kind {
 	case "move":
 		return g.Move(arg), nil
 	case "drill":
 		return g.Drill(), nil
-	case "build", "scan", "photo", "craft", "launch", "deposit":
+	case "mine":
+		// arg packs the target tile: x | y<<16.
+		return g.OrderMine(arg&0xffff, arg>>16), nil
+	case "cancel":
+		g.mineOrder = nil
+		return true, nil
+	case "bank":
+		return g.Bank(), nil
+	case "scan":
+		return len(g.Scan()) > 0, nil
+	case "photo":
+		return g.Photo() != nil, nil
+	case "launch":
+		return g.LaunchCargo(), nil
+	case "deposit":
+		return g.Deposit() > 0, nil
+	case "upgrade":
+		return g.UpgradeMobility(), nil
+	case "placeBlock":
+		return g.PlaceBlock(), nil
+	case "repair":
+		return g.Repair(), nil
+	case "build", "craft":
 		return false, fmt.Errorf("%w: order %q", ErrUnsupported, kind)
 	}
 	return false, fmt.Errorf("takeon: unknown order %q", kind)
@@ -416,6 +514,9 @@ func (g *Game) Order(kind string, arg int) (bool, error) {
 // Step advances by dt seconds in fixed ticks (TakeonEngine.step) and returns
 // the events raised, JSON-encoded.
 func (g *Game) Step(dt float64) (string, error) {
+	if math.IsNaN(dt) || math.IsInf(dt, 0) || dt < 0 || dt > 60 {
+		return "", fmt.Errorf("takeon: dt must be finite and between 0 and 60 seconds")
+	}
 	g.acc += dt
 	for g.acc >= TickDT-1e-9 {
 		g.acc -= TickDT
@@ -437,6 +538,9 @@ func (g *Game) DrainEvents() (string, error) {
 
 // State is a read-only JSON view used by the parity tests and hosts.
 type State struct {
+	Structures []*Structure `json:"structures,omitempty"`
+	Photos     []Photo      `json:"photos,omitempty"`
+
 	Time      float64        `json:"time"`
 	Rover     Rover          `json:"rover"`
 	Edits     map[string]int `json:"edits"`
@@ -445,27 +549,43 @@ type State struct {
 	Landing   Vec2           `json:"landing"`
 	Stats     RoverStats     `json:"stats"`
 	Anomalies []Anomaly      `json:"anomalies"`
+	Mission   WorldState     `json:"mission"`
+	// Omitted when empty so worlds with no drop-off keep the golden state shape.
+	Caches []Vec2             `json:"caches,omitempty"`
+	Banked map[string]float64 `json:"banked,omitempty"`
 }
 
 func (g *Game) State() State {
-	return State{g.time, g.rover, g.world.Edits, g.status, g.weather, g.landing, g.stats, g.anoms}
+	return State{Structures: g.structures, Photos: g.photos, Time: g.time, Rover: g.rover, Edits: g.world.Edits, Status: g.status, Weather: g.weather, Landing: g.landing, Stats: g.stats, Anomalies: g.anoms, Mission: g.mission, Caches: g.caches, Banked: g.banked}
 }
 
 type snapshotDoc struct {
-	V               int            `json:"v"`
-	BodyID          string         `json:"bodyId"`
-	Seed            int64          `json:"seed"`
-	Time            float64        `json:"time"`
-	Status          string         `json:"status"`
-	Rover           Rover          `json:"rover"`
-	Edits           map[string]int `json:"edits"`
-	Weather         *Weather       `json:"weather"`
-	WeatherRng      uint32         `json:"weatherRng"`
-	WeatherCooldown float64        `json:"weatherCooldown"`
-	ImpactTimer     float64        `json:"impactTimer"`
-	DevilDrift      [2]float64     `json:"devilDrift"`
-	Anomalies       []Anomaly      `json:"anomalies"`
-	Acc             float64        `json:"acc"`
+	Config      *HostData      `json:"config,omitempty"`
+	Stats       *RoverStats    `json:"stats,omitempty"`
+	Structures  []*Structure   `json:"structures,omitempty"`
+	Photos      []Photo        `json:"photos,omitempty"`
+	DrillTimers map[string]int `json:"drillTimers,omitempty"`
+	Mobility    int            `json:"mobility,omitempty"`
+	EntitySeq   int            `json:"entitySeq,omitempty"`
+
+	V               int                `json:"v"`
+	BodyID          string             `json:"bodyId"`
+	Seed            int64              `json:"seed"`
+	Time            float64            `json:"time"`
+	Status          string             `json:"status"`
+	Rover           Rover              `json:"rover"`
+	Edits           map[string]int     `json:"edits"`
+	Weather         *Weather           `json:"weather"`
+	WeatherRng      uint32             `json:"weatherRng"`
+	WeatherCooldown float64            `json:"weatherCooldown"`
+	ImpactTimer     float64            `json:"impactTimer"`
+	DevilDrift      [2]float64         `json:"devilDrift"`
+	Anomalies       []Anomaly          `json:"anomalies"`
+	Acc             float64            `json:"acc"`
+	Mission         *WorldState        `json:"mission,omitempty"`
+	MissionDone     bool               `json:"missionDone,omitempty"`
+	Caches          []Vec2             `json:"caches,omitempty"`
+	Banked          map[string]float64 `json:"banked,omitempty"`
 }
 
 // Snapshot serialises the mission. Unlike the TS MissionState it also carries
@@ -473,10 +593,13 @@ type snapshotDoc struct {
 // uninterrupted run.
 func (g *Game) Snapshot() ([]byte, error) {
 	return json.Marshal(snapshotDoc{
+		Config: g.hostData, Stats: &g.stats,
+		Structures: g.structures, Photos: g.photos, DrillTimers: g.drillTimers, Mobility: g.mobility, EntitySeq: g.entitySeq,
 		V: snapshotVersion, BodyID: g.body.ID, Seed: g.seed, Time: g.time, Status: g.status,
 		Rover: g.rover, Edits: g.world.Edits, Weather: g.weather, WeatherRng: g.weatherRng.a,
 		WeatherCooldown: g.weatherCooldown, ImpactTimer: g.impactTimer, DevilDrift: g.devilDrift,
-		Anomalies: g.anoms, Acc: g.acc,
+		Anomalies: g.anoms, Acc: g.acc, Mission: &g.mission, MissionDone: g.missionDone,
+		Caches: g.caches, Banked: g.banked,
 	})
 }
 
@@ -489,9 +612,19 @@ func (g *Game) Restore(b []byte) error {
 	if s.V != snapshotVersion {
 		return errors.New("takeon: unsupported snapshot version")
 	}
-	if err := g.LoadWorld(s.BodyID, s.Seed); err != nil {
+	if s.Config != nil {
+		restored, err := NewConfiguredGame(s.Seed, *s.Config)
+		if err != nil {
+			return err
+		}
+		*g = *restored
+	} else if err := g.LoadWorld(s.BodyID, s.Seed); err != nil {
 		return err
 	}
+	if s.Stats != nil {
+		g.stats = *s.Stats
+	}
+	g.structures, g.photos, g.drillTimers, g.mobility, g.entitySeq = s.Structures, s.Photos, s.DrillTimers, s.Mobility, s.EntitySeq
 	g.world.applyEdits(s.Edits)
 	g.time, g.status, g.rover, g.weather = s.Time, s.Status, s.Rover, s.Weather
 	if g.rover.Cargo == nil {
@@ -502,5 +635,9 @@ func (g *Game) Restore(b []byte) error {
 	if s.Anomalies != nil {
 		g.anoms = s.Anomalies
 	}
+	if s.Mission != nil {
+		g.mission, g.missionDone = *s.Mission, s.MissionDone
+	}
+	g.caches, g.banked = s.Caches, s.Banked
 	return nil
 }

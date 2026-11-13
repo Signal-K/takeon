@@ -1,0 +1,224 @@
+{
+  "0": {
+    "id": 0,
+    "name": "Air",
+    "hardness": 0,
+    "yields": null,
+    "colors": [
+      "#000000",
+      "#000000",
+      "#000000"
+    ],
+    "jitter": 0
+  },
+  "1": {
+    "id": 1,
+    "name": "Regolith",
+    "hardness": 2,
+    "yields": {
+      "resource": "regolith",
+      "amount": 1
+    },
+    "colors": [
+      "#d99a55",
+      "#a86f38",
+      "#7d5230"
+    ],
+    "jitter": 0.06
+  },
+  "2": {
+    "id": 2,
+    "name": "Rock",
+    "hardness": 4,
+    "yields": {
+      "resource": "stone",
+      "amount": 1
+    },
+    "colors": [
+      "#b08968",
+      "#7d5f47",
+      "#5a4438"
+    ],
+    "jitter": 0.05
+  },
+  "3": {
+    "id": 3,
+    "name": "Basalt",
+    "hardness": 6,
+    "yields": {
+      "resource": "stone",
+      "amount": 2
+    },
+    "colors": [
+      "#6b5a72",
+      "#4e4054",
+      "#392f42"
+    ],
+    "jitter": 0.04
+  },
+  "4": {
+    "id": 4,
+    "name": "Water ice",
+    "hardness": 3,
+    "yields": {
+      "resource": "ice",
+      "amount": 2
+    },
+    "colors": [
+      "#a8e8f0",
+      "#6fc3d8",
+      "#4d9fbd"
+    ],
+    "jitter": 0.05
+  },
+  "5": {
+    "id": 5,
+    "name": "Iron ore",
+    "hardness": 5,
+    "yields": {
+      "resource": "iron",
+      "amount": 2
+    },
+    "colors": [
+      "#c96f4a",
+      "#96502f",
+      "#703a24"
+    ],
+    "jitter": 0.09
+  },
+  "6": {
+    "id": 6,
+    "name": "Silica sand",
+    "hardness": 2,
+    "yields": {
+      "resource": "silica",
+      "amount": 2
+    },
+    "colors": [
+      "#f2dfa7",
+      "#c9b478",
+      "#9c8a5c"
+    ],
+    "jitter": 0.05
+  },
+  "7": {
+    "id": 7,
+    "name": "Copper ore",
+    "hardness": 5,
+    "yields": {
+      "resource": "copper",
+      "amount": 2
+    },
+    "colors": [
+      "#4fbf9f",
+      "#37927a",
+      "#27695c"
+    ],
+    "jitter": 0.1
+  },
+  "8": {
+    "id": 8,
+    "name": "Titanium ore",
+    "hardness": 7,
+    "yields": {
+      "resource": "titanium",
+      "amount": 1
+    },
+    "colors": [
+      "#b9c7d6",
+      "#8595a8",
+      "#5f7186"
+    ],
+    "jitter": 0.08
+  },
+  "9": {
+    "id": 9,
+    "name": "Crystal",
+    "hardness": 8,
+    "yields": {
+      "resource": "crystal",
+      "amount": 1
+    },
+    "colors": [
+      "#c77dff",
+      "#9d4edd",
+      "#7b2cbf"
+    ],
+    "jitter": 0.12
+  },
+  "10": {
+    "id": 10,
+    "name": "Fine dust",
+    "hardness": 1,
+    "yields": {
+      "resource": "regolith",
+      "amount": 1
+    },
+    "colors": [
+      "#eab861",
+      "#c08a3e",
+      "#93672f"
+    ],
+    "jitter": 0.04
+  },
+  "11": {
+    "id": 11,
+    "name": "Sulfur deposit",
+    "hardness": 3,
+    "yields": {
+      "resource": "sulfur",
+      "amount": 2
+    },
+    "colors": [
+      "#f6d743",
+      "#c9ad2e",
+      "#9c8722"
+    ],
+    "jitter": 0.1
+  },
+  "12": {
+    "id": 12,
+    "name": "Grass",
+    "hardness": 1,
+    "yields": {
+      "resource": "regolith",
+      "amount": 1
+    },
+    "colors": [
+      "#7ec850",
+      "#5a9c3a",
+      "#3f7228"
+    ],
+    "jitter": 0.06
+  },
+  "13": {
+    "id": 13,
+    "name": "Sand",
+    "hardness": 1,
+    "yields": {
+      "resource": "silica",
+      "amount": 1
+    },
+    "colors": [
+      "#e8c77e",
+      "#c9a35c",
+      "#a37f42"
+    ],
+    "jitter": 0.05
+  },
+  "14": {
+    "id": 14,
+    "name": "Snow",
+    "hardness": 1,
+    "yields": {
+      "resource": "ice",
+      "amount": 1
+    },
+    "colors": [
+      "#f4f9ff",
+      "#d6e6f2",
+      "#b3cfe0"
+    ],
+    "jitter": 0.03
+  }
+}

@@ -1,0 +1,133 @@
+[
+  {
+    "id": "dust-basin",
+    "label": "Dust basin",
+    "help": "Fine wind-blown dust filling low ground — the default airless-body skin.",
+    "surface": [
+      10
+    ],
+    "subsurface": [
+      1
+    ]
+  },
+  {
+    "id": "redrock-desert",
+    "label": "Redrock desert",
+    "help": "Oxidised regolith and drifted dust — Mars-flavoured.",
+    "surface": [
+      1,
+      10
+    ],
+    "tint": [
+      1.08,
+      0.85,
+      0.72
+    ]
+  },
+  {
+    "id": "crater-highlands",
+    "label": "Crater highlands",
+    "help": "Rockier, older terrain — impact-churned rubble instead of settled dust.",
+    "surface": [
+      2,
+      1
+    ]
+  },
+  {
+    "id": "frozen-tundra",
+    "label": "Frozen tundra",
+    "help": "Snow-crusted ground, cold enough that dust freezes rather than drifts.",
+    "surface": [
+      14,
+      1
+    ],
+    "subsurface": [
+      4,
+      1
+    ],
+    "climate": {
+      "min": -999,
+      "max": -10
+    }
+  },
+  {
+    "id": "grassland-plains",
+    "label": "Grassland plains",
+    "help": "Open, temperate ground cover — needs a breathable-coded, mild world.",
+    "surface": [
+      12
+    ],
+    "climate": {
+      "min": 0,
+      "max": 32
+    }
+  },
+  {
+    "id": "temperate-forest",
+    "label": "Temperate forest",
+    "help": "Grass broken by exposed rock — the shipped renderer has no trees yet, so this reads as scrubland.",
+    "surface": [
+      12,
+      2
+    ],
+    "climate": {
+      "min": -5,
+      "max": 26
+    }
+  },
+  {
+    "id": "icefield",
+    "label": "Icefield",
+    "help": "Solid ice sheet, cracked and wind-scoured.",
+    "surface": [
+      4,
+      14
+    ]
+  },
+  {
+    "id": "cryovolcanic",
+    "label": "Cryovolcanic",
+    "help": "Ice fractured by sulfur-stained cryovolcanic vents.",
+    "surface": [
+      4,
+      11
+    ]
+  },
+  {
+    "id": "carbonaceous-rubble",
+    "label": "Carbonaceous rubble",
+    "help": "Dark, volatile-rich rubble pile — Bennu/Ceres-flavoured.",
+    "surface": [
+      3,
+      10
+    ]
+  },
+  {
+    "id": "metallic-regolith",
+    "label": "Metallic regolith",
+    "help": "Dust and rubble with a metallic sheen from a nickel-iron-rich body — ore stays vein-only, this is just the skin.",
+    "surface": [
+      1,
+      2
+    ],
+    "tint": [
+      0.9,
+      0.92,
+      0.98
+    ]
+  },
+  {
+    "id": "cloud-platform",
+    "label": "Cloud platform",
+    "help": "A storm-grey floating platform world — the gas-giant \"surface\" TakeOn represents.",
+    "surface": [
+      3,
+      2
+    ],
+    "tint": [
+      0.85,
+      0.87,
+      1.02
+    ]
+  }
+]

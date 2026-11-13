@@ -1,6 +1,6 @@
 {
   "name": "@takeon/pixi",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "description": "Mount the TakeOn rover game inside a PixiJS application (e.g. Landnam).",
   "license": "MIT",
   "type": "module",
@@ -40,7 +40,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@takeon/engine": "^0.2.0"
+    "@takeon/engine": "^0.2.4"
   },
   "peerDependencies": {
     "pixi.js": ">=7"

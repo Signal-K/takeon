@@ -1,6 +1,7 @@
+import { coreCall } from '../go/sync.js';
+import { coreBody } from './core-data.js';
+import { biomes } from '../data/core-catalog.js';
 import { Material, type BodyDef } from '../types.js';
-import { hash2 } from '../util/rng.js';
-import { allowedBiomesForKind } from './kinds.js';
 
 /**
  * Simple, chunk-scale biomes: the surface skin every shipped body has always
@@ -41,90 +42,7 @@ function define(biome: Biome): void {
   BUILTIN_BIOME_IDS.add(biome.id);
 }
 
-define({
-  id: 'dust-basin',
-  label: 'Dust basin',
-  help: 'Fine wind-blown dust filling low ground — the default airless-body skin.',
-  surface: [Material.Dust],
-  subsurface: [Material.Regolith],
-});
-
-define({
-  id: 'redrock-desert',
-  label: 'Redrock desert',
-  help: 'Oxidised regolith and drifted dust — Mars-flavoured.',
-  surface: [Material.Regolith, Material.Dust],
-  tint: [1.08, 0.85, 0.72],
-});
-
-define({
-  id: 'crater-highlands',
-  label: 'Crater highlands',
-  help: 'Rockier, older terrain — impact-churned rubble instead of settled dust.',
-  surface: [Material.Rock, Material.Regolith],
-});
-
-define({
-  id: 'frozen-tundra',
-  label: 'Frozen tundra',
-  help: 'Snow-crusted ground, cold enough that dust freezes rather than drifts.',
-  surface: [Material.Snow, Material.Regolith],
-  subsurface: [Material.Ice, Material.Regolith],
-  climate: { min: -999, max: -10 },
-});
-
-define({
-  id: 'grassland-plains',
-  label: 'Grassland plains',
-  help: 'Open, temperate ground cover — needs a breathable-coded, mild world.',
-  surface: [Material.Grass],
-  climate: { min: 0, max: 32 },
-});
-
-define({
-  id: 'temperate-forest',
-  label: 'Temperate forest',
-  help: 'Grass broken by exposed rock — the shipped renderer has no trees yet, so this reads as scrubland.',
-  surface: [Material.Grass, Material.Rock],
-  climate: { min: -5, max: 26 },
-});
-
-define({
-  id: 'icefield',
-  label: 'Icefield',
-  help: 'Solid ice sheet, cracked and wind-scoured.',
-  surface: [Material.Ice, Material.Snow],
-});
-
-define({
-  id: 'cryovolcanic',
-  label: 'Cryovolcanic',
-  help: 'Ice fractured by sulfur-stained cryovolcanic vents.',
-  surface: [Material.Ice, Material.Sulfur],
-});
-
-define({
-  id: 'carbonaceous-rubble',
-  label: 'Carbonaceous rubble',
-  help: 'Dark, volatile-rich rubble pile — Bennu/Ceres-flavoured.',
-  surface: [Material.Basalt, Material.Dust],
-});
-
-define({
-  id: 'metallic-regolith',
-  label: 'Metallic regolith',
-  help: 'Dust and rubble with a metallic sheen from a nickel-iron-rich body — ore stays vein-only, this is just the skin.',
-  surface: [Material.Regolith, Material.Rock],
-  tint: [0.9, 0.92, 0.98],
-});
-
-define({
-  id: 'cloud-platform',
-  label: 'Cloud platform',
-  help: 'A storm-grey floating platform world — the gas-giant "surface" TakeOn represents.',
-  surface: [Material.Basalt, Material.Rock],
-  tint: [0.85, 0.87, 1.02],
-});
+for (const biome of biomes) define(biome as unknown as Biome);
 
 /** Add or replace a biome at runtime. */
 export function registerBiome(biome: Biome): Biome {
@@ -162,23 +80,13 @@ export function chunkCoords(x: number, y: number): { cx: number; cy: number } {
  * throwing.
  */
 export function chunkBiome(body: BodyDef, cx: number, cy: number, seed: number): Biome {
-  const allowed = body.kind ? allowedBiomesForKind(body.kind) : undefined;
-  let pool = allowed
-    ? (allowed.map((id) => registered.get(id)).filter((b): b is Biome => b != null))
-    : [...registered.values()];
-  if (pool.length === 0) pool = [...registered.values()];
-
-  const climate = body.climate;
-  if (climate) {
-    const swing = (climate.tempVariance ?? 0.5) * 60;
-    const t = climate.temperature + (hash2(cx, cy, seed + 401) * 2 - 1) * swing;
-    const fits = pool.filter((b) => !b.climate || (t >= b.climate.min && t <= b.climate.max));
-    if (fits.length > 0) pool = fits;
-  }
-
-  const sorted = [...pool].sort((a, b) => a.id.localeCompare(b.id));
-  const idx = Math.min(sorted.length - 1, Math.floor(hash2(cx, cy, seed + 977) * sorted.length));
-  return sorted[idx];
+  const id = coreCall<string>('biome', {
+    seed: seed >>> 0,
+    x: cx,
+    y: cy,
+    config: { body: coreBody(body) },
+  });
+  return registered.get(id)!;
 }
 
 /** Biome for the chunk containing voxel column (x, y). */

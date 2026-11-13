@@ -7,7 +7,7 @@ import (
 
 // Noise library: value, perlin, simplex, worley and the fractal/makeNoise
 // stack. Every product that feeds a sum is wrapped in float64(...) to forbid
-// FMA fusion (see jsmath.go). Blue noise is not ported (stub).
+// FMA fusion (see jsmath.go). Blue-noise masks live in blue.go.
 
 type sampler func(x, y float64, seed int64) float64
 
@@ -148,8 +148,8 @@ type NoiseConfig struct {
 	SeedOffset *int64   `json:"seedOffset"`
 }
 
-// ErrUnsupported marks engine features the Go spike does not port.
-var ErrUnsupported = errors.New("takeon: not ported in the go spike")
+// ErrUnsupported marks calls that require a structured command or invalid dimensions.
+var ErrUnsupported = errors.New("takeon: operation requires structured arguments")
 
 func baseSampler(typ string) (sampler, error) {
 	switch typ {
@@ -162,7 +162,7 @@ func baseSampler(typ string) (sampler, error) {
 	case "worley-cracks":
 		return func(x, y float64, s int64) float64 { return worley2(x, y, s, worleyF2F1) }, nil
 	case "blue":
-		return nil, ErrUnsupported
+		return blueNoise2, nil
 	case "white":
 		return func(x, y float64, s int64) float64 { return hash2(math.Floor(x), math.Floor(y), s) }, nil
 	}

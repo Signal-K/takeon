@@ -34,6 +34,11 @@ export class VoxelWorld {
     this.heights = new Int8Array(size * size).fill(-1);
   }
 
+  /** Read-only transfer to the portable core; never aliases live storage. */
+  toCoreData(): number[] {
+    return Array.from(this.voxels);
+  }
+
   inBounds(x: number, y: number): boolean {
     return x >= 0 && y >= 0 && x < this.size && y < this.size;
   }

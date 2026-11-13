@@ -104,10 +104,30 @@ func (w *VoxelWorld) Step(x0, y0, x1, y1 int) float64 {
 func (w *VoxelWorld) applyEdits(edits map[string]int) {
 	for k, m := range edits {
 		p := strings.Split(k, ",")
+		if len(p) != 3 {
+			continue
+		}
 		x, _ := strconv.Atoi(p[0])
 		y, _ := strconv.Atoi(p[1])
 		z, _ := strconv.Atoi(p[2])
 		w.setRaw(x, y, z, m)
 		w.Edits[k] = m
 	}
+}
+
+// ImportVoxels loads a host's read-only world projection without manufacturing
+// player edits for every cell (authoring/anomaly queries must remain bounded).
+func (w *VoxelWorld) ImportVoxels(data []int) error {
+	if len(data) != len(w.voxels) {
+		return fmt.Errorf("takeon: invalid voxel buffer")
+	}
+	for i, v := range data {
+		w.voxels[i] = uint8(v)
+	}
+	for y := 0; y < w.Size; y++ {
+		for x := 0; x < w.Size; x++ {
+			w.recomputeHeight(x, y)
+		}
+	}
+	return nil
 }

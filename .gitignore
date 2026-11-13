@@ -9,3 +9,7 @@ pocketbase/takeon
 .env.local
 .DS_Store
 coverage/
+
+# Generated from the shared Go runtime
+packages/engine/src/go/artifacts.ts
+packages/engine/src/data/core-catalog.ts

@@ -1,6 +1,8 @@
 package takeon
 
 import (
+	_ "embed"
+	"encoding/json"
 	"math"
 	"sort"
 )
@@ -8,25 +10,35 @@ import (
 const chunkSize = 16
 
 type biome struct {
-	id         string
-	surface    []int
-	subsurface []int // nil = same as surface
-	climate    *[2]float64
+	ID         string      `json:"id"`
+	Surface    []int       `json:"surface"`
+	Subsurface []int       `json:"subsurface"`
+	Climate    *[2]float64 `json:"climate"`
 }
 
 // biomeRegistry is in TS registration order (used only when a body has no kind).
-var biomeRegistry = []biome{
-	{id: "dust-basin", surface: []int{Dust}, subsurface: []int{Regolith}},
-	{id: "redrock-desert", surface: []int{Regolith, Dust}},
-	{id: "crater-highlands", surface: []int{Rock, Regolith}},
-	{id: "frozen-tundra", surface: []int{Snow, Regolith}, subsurface: []int{Ice, Regolith}, climate: &[2]float64{-999, -10}},
-	{id: "grassland-plains", surface: []int{Grass}, climate: &[2]float64{0, 32}},
-	{id: "temperate-forest", surface: []int{Grass, Rock}, climate: &[2]float64{-5, 26}},
-	{id: "icefield", surface: []int{Ice, Snow}},
-	{id: "cryovolcanic", surface: []int{Ice, Sulfur}},
-	{id: "carbonaceous-rubble", surface: []int{Basalt, Dust}},
-	{id: "metallic-regolith", surface: []int{Regolith, Rock}},
-	{id: "cloud-platform", surface: []int{Basalt, Rock}},
+//
+//go:embed data/biomes.json
+var biomesJSON []byte
+var biomeRegistry []biome
+
+func init() {
+	var raw []struct {
+		ID         string                      `json:"id"`
+		Surface    []int                       `json:"surface"`
+		Subsurface []int                       `json:"subsurface"`
+		Climate    *struct{ Min, Max float64 } `json:"climate"`
+	}
+	if err := json.Unmarshal(biomesJSON, &raw); err != nil {
+		panic(err)
+	}
+	for _, v := range raw {
+		b := biome{ID: v.ID, Surface: v.Surface, Subsurface: v.Subsurface}
+		if v.Climate != nil {
+			b.Climate = &[2]float64{v.Climate.Min, v.Climate.Max}
+		}
+		biomeRegistry = append(biomeRegistry, b)
+	}
 }
 
 // kindBiomes mirrors world/kinds.ts allowedBiomes for the built-in kinds that
@@ -44,7 +56,7 @@ var kindBiomes = map[string][]string{
 
 func findBiome(id string) *biome {
 	for i := range biomeRegistry {
-		if biomeRegistry[i].id == id {
+		if biomeRegistry[i].ID == id {
 			return &biomeRegistry[i]
 		}
 	}
@@ -55,21 +67,39 @@ func findBiome(id string) *biome {
 // uses localeCompare, which agrees for the built-in ids (distinct leading
 // letters within every pool) — the terrain parity vectors confirm it.
 func chunkBiome(b *Body, cx, cy int, seed int64) *biome {
+	registry := biomeRegistry
+	if len(b.CoreBiomes) > 0 {
+		registry = b.CoreBiomes
+	}
+	find := func(id string) *biome {
+		for i := range registry {
+			if registry[i].ID == id {
+				return &registry[i]
+			}
+		}
+		return nil
+	}
+
 	var pool []*biome
-	if ids, ok := kindBiomes[b.Kind]; ok && b.Kind != "" {
+	ids, ok := kindBiomes[b.Kind]
+	if b.CoreAllowedBiomes != nil {
+		ids = *b.CoreAllowedBiomes
+		ok = true
+	}
+	if ok && b.Kind != "" {
 		for _, id := range ids {
-			if bi := findBiome(id); bi != nil {
+			if bi := find(id); bi != nil {
 				pool = append(pool, bi)
 			}
 		}
 	} else {
-		for i := range biomeRegistry {
-			pool = append(pool, &biomeRegistry[i])
+		for i := range registry {
+			pool = append(pool, &registry[i])
 		}
 	}
 	if len(pool) == 0 {
-		for i := range biomeRegistry {
-			pool = append(pool, &biomeRegistry[i])
+		for i := range registry {
+			pool = append(pool, &registry[i])
 		}
 	}
 	if c := b.Climate; c != nil {
@@ -81,7 +111,7 @@ func chunkBiome(b *Body, cx, cy int, seed int64) *biome {
 		t := c.Temperature + float64(float64(hash2(float64(cx), float64(cy), seed+401)*2)-1)*swing
 		var fits []*biome
 		for _, bi := range pool {
-			if bi.climate == nil || (t >= bi.climate[0] && t <= bi.climate[1]) {
+			if bi.Climate == nil || (t >= bi.Climate[0] && t <= bi.Climate[1]) {
 				fits = append(fits, bi)
 			}
 		}
@@ -90,7 +120,7 @@ func chunkBiome(b *Body, cx, cy int, seed int64) *biome {
 		}
 	}
 	sorted := append([]*biome(nil), pool...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].id < sorted[j].id })
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 	idx := int(math.Floor(float64(hash2(float64(cx), float64(cy), seed+977) * float64(len(sorted)))))
 	if idx > len(sorted)-1 {
 		idx = len(sorted) - 1

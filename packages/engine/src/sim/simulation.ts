@@ -1,1002 +1,327 @@
-import {
-  Material,
-  MISSION_SCHEMA_VERSION,
-  type ActiveWeather,
-  type Anomaly,
-  type BodyDef,
-  type MissionState,
-  type PhotoMeta,
-  type ResourceKey,
-  type RoverSpec,
-  type RoverState,
-  type RoverStats,
-  type Structure,
-  type StructureType,
-  type Vec2,
-  type WeatherType,
+import type {
+  ActiveWeather,
+  Anomaly,
+  BodyDef,
+  MissionState,
+  PhotoMeta,
+  RoverSpec,
+  RoverState,
+  Structure,
+  StructureType,
+  Vec2,
+  WeatherType,
+  GameEventKey,
 } from '../types.js';
-import type { EventBus } from '../util/events.js';
-import { MATERIALS } from '../world/materials.js';
-import { generateAnomalies } from '../world/anomalies.js';
-import { findLandingSite, generateTerrain } from '../world/terrain.js';
-import { VoxelWorld } from '../world/world.js';
-import { computeStats } from '../parts/assembly.js';
-import { getRecipe } from './recipes.js';
+import { MISSION_SCHEMA_VERSION } from '../types.js';
+import { EventBus } from '../util/events.js';
 import { makeId } from '../util/rng.js';
-import {
-  AUTO_LAUNCH_THRESHOLD,
-  DRILL_RATE_TICKS,
-  DRILL_RATE_TICKS_POWERED,
-  HABITAT_BUILD_RATE,
-  HABITAT_RECHARGE,
-  HABITAT_REPAIR,
-  HABITAT_SERVICE_RANGE,
-  LAUNCH_COOLDOWN,
-  MAX_MOBILITY_UPGRADE,
-  MOBILITY_UPGRADE_COST,
-  POWER_RANGE,
-  SOLAR_ARRAY_RANGE,
-  SOLAR_ARRAY_RATE,
-  STRUCTURES,
-} from './structures.js';
-import { WEATHER_INFO } from './weather.js';
-import { mulberry32 } from '../util/rng.js';
+import { VoxelWorld } from '../world/world.js';
+import { runWorldLayers } from '../world/layers.js';
+import { coreCall } from '../go/sync.js';
+import { coreConfig } from './core-config.js';
 
-export const TICK_RATE = 10; // fixed sim ticks per second
+export const TICK_RATE = 10;
 export const TICK_DT = 1 / TICK_RATE;
-/** Keeps short field moves responsive without increasing fixed simulation rate. */
 export const DRIVE_SPEED_MULTIPLIER = 1.35;
-
-/** Directions in iso space: 0=SE(+x) 1=SW(+y) 2=NW(-x) 3=NE(-y). */
 export const DIRS: Vec2[] = [
   { x: 1, y: 0 },
   { x: 0, y: 1 },
   { x: -1, y: 0 },
   { x: 0, y: -1 },
 ];
-
 export interface SimOptions {
   body: BodyDef;
   spec: RoverSpec;
   events: EventBus;
   seed?: number;
-  /** Resume a saved mission instead of starting fresh. */
   resume?: MissionState;
 }
+interface CoreState {
+  time: number;
+  rover: RoverState;
+  structures: Structure[];
+  anomalies: Anomaly[];
+  photos: PhotoMeta[];
+  status: 'active' | 'complete' | 'lost';
+  banked: Record<string, number> | null;
+  weather: ActiveWeather | null;
+  edits: Record<string, number>;
+  powered: string[];
+  launches: { pos: Vec2; t: number }[];
+  landingSite: Vec2;
+}
+interface CoreReply {
+  result: unknown;
+  state: CoreState;
+  events: {
+    kind: string;
+    payload?: unknown;
+    x?: number;
+    y?: number;
+    detail?: string;
+    amount?: number;
+  }[];
+}
 
-/**
- * The deterministic game simulation: fixed-timestep, renderer-agnostic.
- * All gameplay rules live here; the renderer and UI only observe.
- */
+const releasedEngines =
+  typeof FinalizationRegistry === 'undefined'
+    ? undefined
+    : new FinalizationRegistry<number>((id) => {
+        try {
+          coreCall('dispose', { engineId: id });
+        } catch {
+          /* already released */
+        }
+      });
+
+/** Compatibility projection over the Go simulation. The host may edit public
+ * fields as before; command costs, rules, world edits and ticks run only in Go. */
 export class Simulation {
   readonly body: BodyDef;
-  readonly world: VoxelWorld;
   readonly events: EventBus;
   readonly seed: number;
   readonly missionId: string;
-  /** Deterministic landing tile for this world — the mission's home. */
   readonly landingSite: Vec2;
-
+  readonly world: VoxelWorld;
+  private engineId: number;
+  private disposed = false;
   time = 0;
-  rover: RoverState;
+  rover!: RoverState;
   structures: Structure[] = [];
-  anomalies: Anomaly[];
+  anomalies: Anomaly[] = [];
   photos: PhotoMeta[] = [];
   status: 'active' | 'complete' | 'lost' = 'active';
-  /** Banked yield deposited into caches. */
-  banked: Partial<Record<ResourceKey, number>> = {};
-  /** Active weather event, if any. */
+  banked: Record<string, number> = {};
   weather: ActiveWeather | null = null;
-  /** Recent meteor strikes for the renderer (fade after ~1s). */
   impacts: { pos: Vec2; t: number }[] = [];
-  /** In-flight cargo rockets for the renderer (fade after ~3s). */
   launches: { pos: Vec2; t: number }[] = [];
-  /** Ids of structures currently on the power grid (recomputed each tick). */
   powered = new Set<string>();
-
-  private drillTimers = new Map<string, number>();
-  private weatherRng = mulberry32(0);
-  private weatherCooldown = 20; // grace period after landing / between events
-  private impactTimer = 0;
-  private devilDrift: Vec2 = { x: 1, y: 0 };
 
   constructor(opts: SimOptions) {
     this.body = opts.body;
     this.events = opts.events;
     this.seed = opts.resume?.seed ?? opts.seed ?? opts.body.seed;
     this.missionId = opts.resume?.id ?? makeId('msn');
-    this.world = generateTerrain(opts.body, this.seed);
-    this.anomalies = generateAnomalies(opts.body, this.world, this.seed);
-    this.weatherRng = mulberry32(this.seed ^ 0x77ea);
-    this.landingSite = findLandingSite(this.world);
+    this.engineId = coreCall<number>('create', {
+      seed: this.seed >>> 0,
+      config: coreConfig(opts.body, opts.resume?.rover.spec ?? opts.spec),
+    });
+    const stored = (opts.resume as (MissionState & { coreSnapshot?: string }) | undefined)
+      ?.coreSnapshot;
+    let restored = false;
+    if (stored) {
+      try {
+        coreCall('restore', { engineId: this.engineId, snapshot: stored });
+        restored = true;
+      } catch (error) {
+        console.warn('takeon-core: using legacy save after rejected snapshot', error);
+      }
+    }
 
-    if (opts.resume) {
-      const r = opts.resume;
-      this.time = r.time ?? 0;
-      // Tolerate legacy / partial saves: fields added over time may be absent.
-      this.world.applyEdits(r.edits ?? {});
-      this.structures = (r.structures ?? []).map((s) => ({ ...s, buffer: { ...s.buffer } }));
-      this.weather = r.weather ? { ...r.weather, pos: r.weather.pos ? { ...r.weather.pos } : undefined } : null;
-      this.photos = [...(r.photos ?? [])];
-      this.status = r.status ?? 'active';
-      for (const saved of r.anomalies ?? []) {
-        const a = this.anomalies.find((x) => x.id === saved.id);
-        if (a) {
-          a.scanned = saved.scanned;
-          a.documented = saved.documented;
+    const world = coreCall<{ size: number; maxHeight: number; voxels: number[] }>('world', {
+      engineId: this.engineId,
+    });
+    this.world = new VoxelWorld(world.size, world.maxHeight);
+    for (let y = 0; y < world.size; y++)
+      for (let x = 0; x < world.size; x++)
+        for (let z = 0; z < world.maxHeight; z++) {
+          const m = world.voxels[(y * world.size + x) * world.maxHeight + z];
+          if (m) this.world.setRaw(x, y, z, m);
+        }
+    runWorldLayers(opts.body, this.seed, this.world);
+    const initial = coreCall<CoreState>('hostState', { engineId: this.engineId });
+    this.landingSite = initial.landingSite;
+    this.adopt(initial);
+    if (opts.resume && !restored) {
+      const s = opts.resume;
+      this.time = s.time ?? 0;
+      this.structures = (s.structures ?? []).map((v) => ({ ...v, buffer: { ...v.buffer } }));
+      this.photos = [...(s.photos ?? [])];
+      this.weather = s.weather ?? null;
+      this.status = s.status ?? 'active';
+      this.world.applyEdits(s.edits ?? {});
+      for (const a of s.anomalies ?? []) {
+        const current = this.anomalies.find((v) => v.id === a.id);
+        if (current) {
+          current.scanned = a.scanned;
+          current.documented = a.documented;
         }
       }
-      this.rover = {
-        ...r.rover,
-        upgrades: r.rover.upgrades ? { ...r.rover.upgrades } : { mobility: 0 },
-        renderPos: { ...r.rover.pos },
+      const currentStats = this.rover.stats;
+      Object.assign(this.rover, s.rover, {
+        stats: currentStats,
+        cargo: { ...s.rover.cargo },
         moveFrom: null,
         moveT: 0,
         mining: null,
-        cargo: { ...r.rover.cargo },
-      };
-      // Stats may have been rebalanced since the save — recompute, then
-      // re-apply the mission's field upgrades on top.
-      this.rover.stats = this.applyMobility(
-        computeStats(r.rover.spec),
-        this.rover.upgrades!.mobility,
-      );
-    } else {
-      const site = this.landingSite;
-      const stats = computeStats(opts.spec);
-      // Landing burns delta-v worth of fuel.
-      const fuel = Math.max(0, stats.fuelCapacity - opts.body.deltaV);
-      this.rover = {
-        spec: opts.spec,
-        stats,
-        upgrades: { mobility: 0 },
-        pos: { ...site },
-        renderPos: { ...site },
-        facing: 0,
-        battery: stats.batteryCapacity,
-        fuel,
-        durability: stats.durabilityMax,
-        cargo: {},
-        cargoUsed: 0,
-        moveT: 0,
-        moveFrom: null,
-        mining: null,
-      };
+        renderPos: { ...s.rover.pos },
+      });
+      this.invoke('refreshStats');
     }
+    releasedEngines?.register(this, this.engineId, this);
   }
-
-  /** 0..1 daylight factor for the current game time. */
-  daylight(): number {
-    if (this.body.dayLength <= 0) return 1;
-    const phase = (this.time % this.body.dayLength) / this.body.dayLength;
-    // Day for 60% of the cycle with soft dawn/dusk ramps.
-    if (phase < 0.5) return 1;
-    if (phase < 0.6) return 1 - (phase - 0.5) * 10;
-    if (phase < 0.9) return 0;
-    return (phase - 0.9) * 10;
+  private host() {
+    return {
+      time: this.time,
+      rover: this.rover,
+      structures: this.structures,
+      anomalies: this.anomalies,
+      photos: this.photos,
+      status: this.status,
+      banked: this.banked,
+      weather: this.weather,
+      edits: this.world.edits,
+    };
   }
-
-  // ── Weather ───────────────────────────────────────────────────────────
-
-  /** Solar-output multiplier from the current weather. */
-  weatherSolarMult(): number {
-    const w = this.weather;
-    if (!w) return 1;
-    if (w.type === 'dust-storm') return 1 - 0.65 * w.intensity;
-    if (w.type === 'cryo-fog') return 1 - 0.55 * w.intensity;
-    if (w.type === 'dust-devil' && w.pos) {
-      const d = Math.hypot(w.pos.x - this.rover.pos.x, w.pos.y - this.rover.pos.y);
-      if (d <= 4) return 0.5;
-    }
-    return 1;
-  }
-
-  /** Drive-cost multiplier from the current weather. */
-  weatherMoveMult(): number {
-    const w = this.weather;
-    return w && w.type === 'dust-storm' ? 1 + 0.3 * w.intensity : 1;
-  }
-
-  /** Instrument (scan/photo) energy multiplier from the current weather. */
-  weatherSensorMult(): number {
-    const w = this.weather;
-    return w && w.type === 'solar-storm' ? 2 : 1;
-  }
-
-  /** Begin a weather event (also the hook the host/tests can force). */
-  startWeather(type: WeatherType, intensity?: number, duration?: number): void {
-    const info = WEATHER_INFO[type];
-    const i = intensity ?? 0.5 + this.weatherRng() * 0.5;
-    const d = duration ?? info.minDuration + this.weatherRng() * (info.maxDuration - info.minDuration);
-    const w: ActiveWeather = { type, intensity: i, duration: d, remaining: d };
-    if (type === 'dust-devil') {
-      // Spawn the vortex 8-14 tiles out, drifting loosely toward the rover.
-      const ang = this.weatherRng() * Math.PI * 2;
-      const dist = 8 + this.weatherRng() * 6;
-      w.pos = {
-        x: Math.round(this.rover.pos.x + Math.cos(ang) * dist),
-        y: Math.round(this.rover.pos.y + Math.sin(ang) * dist),
-      };
-      this.devilDrift = { x: -Math.cos(ang), y: -Math.sin(ang) };
-    }
-    this.weather = w;
-    this.impactTimer = 0;
-    this.events.emit('weather', { type, phase: 'start', intensity: i });
-  }
-
-  private tickWeather(): void {
-    const r = this.rover;
-    // Fade old impact markers.
-    if (this.impacts.length > 0) {
-      this.impacts = this.impacts.filter((i) => this.time - i.t < 1.2);
-    }
-
-    const w = this.weather;
-    if (!w) {
-      if (this.weatherCooldown > 0) {
-        this.weatherCooldown -= TICK_DT;
-        return;
-      }
-      const rates = this.body.weather;
-      if (!rates) return;
-      for (const [type, rate] of Object.entries(rates) as [WeatherType, number][]) {
-        // rate = expected events per ~10 game-minutes.
-        if (this.weatherRng() < (rate * TICK_DT) / 600) {
-          this.startWeather(type);
-          return;
+  private adopt(s: CoreState) {
+    this.time = s.time;
+    // Preserve references used by host/render code (e.g. const r=sim.rover).
+    if (this.rover) {
+      const stats = this.rover.stats;
+      Object.assign(stats, s.rover.stats);
+      Object.assign(this.rover, s.rover, { stats });
+    } else this.rover = s.rover;
+    this.rover.renderPos = this.rover.moveFrom
+      ? {
+          x: this.rover.moveFrom.x + (this.rover.pos.x - this.rover.moveFrom.x) * this.rover.moveT,
+          y: this.rover.moveFrom.y + (this.rover.pos.y - this.rover.moveFrom.y) * this.rover.moveT,
         }
-      }
-      return;
-    }
-
-    w.remaining -= TICK_DT;
-    if (w.remaining <= 0) {
-      this.events.emit('weather', { type: w.type, phase: 'end', intensity: w.intensity });
-      this.weather = null;
-      this.weatherCooldown = 15 + this.weatherRng() * 30;
-      return;
-    }
-
-    switch (w.type) {
-      case 'dust-devil': {
-        if (!w.pos) break;
-        // Wander: mostly keep drifting, occasionally veer.
-        if (this.weatherRng() < 0.06) {
-          const a = this.weatherRng() * Math.PI * 2;
-          this.devilDrift = { x: Math.cos(a), y: Math.sin(a) };
-        }
-        if (this.weatherRng() < 0.35) {
-          const nx = w.pos.x + Math.round(this.devilDrift.x + (this.weatherRng() - 0.5));
-          const ny = w.pos.y + Math.round(this.devilDrift.y + (this.weatherRng() - 0.5));
-          if (this.world.isSolid(nx, ny)) w.pos = { x: nx, y: ny };
-        }
-        // Up close it batters the chassis.
-        if (Math.hypot(w.pos.x - r.pos.x, w.pos.y - r.pos.y) <= 1.6) {
-          this.damage(0.35 * w.intensity, 'storm');
-        }
-        break;
-      }
-      case 'solar-storm':
-        // Radiation load on the electronics.
-        r.battery = Math.max(0, r.battery - 0.18 * w.intensity * TICK_DT * 10);
-        break;
-      case 'meteor-shower': {
-        this.impactTimer += TICK_DT;
-        const interval = 2.6 - w.intensity;
-        if (this.impactTimer >= interval) {
-          this.impactTimer = 0;
-          const ang = this.weatherRng() * Math.PI * 2;
-          const dist = 2 + this.weatherRng() * 16;
-          const ix = Math.round(r.pos.x + Math.cos(ang) * dist);
-          const iy = Math.round(r.pos.y + Math.sin(ang) * dist);
-          if (this.world.isSolid(ix, iy) && !(ix === r.pos.x && iy === r.pos.y)) {
-            // Small crater: knock the top voxel off (a persisted edit).
-            if (this.world.height(ix, iy) > 1) this.world.mineTop(ix, iy);
-            this.impacts.push({ pos: { x: ix, y: iy }, t: this.time });
-            const d = Math.hypot(ix - r.pos.x, iy - r.pos.y);
-            this.events.emit('meteorImpact', { pos: { x: ix, y: iy }, distance: d });
-            if (d <= 2.5) this.damage(4 + 6 * w.intensity, 'impact');
-          }
-        }
-        break;
-      }
-      default:
-        break; // dust-storm / cryo-fog act via the multipliers only
-    }
-  }
-
-  /** Advance the simulation by exactly one fixed tick. */
-  tick(): void {
-    if (this.status !== 'active') return;
-    this.time += TICK_DT;
-    const r = this.rover;
-    const daylight = this.daylight();
-
-    this.tickWeather();
-
-    // Fade spent cargo-rocket markers (renderer-only, transient).
-    if (this.launches.length > 0) {
-      this.launches = this.launches.filter((l) => this.time - l.t < 3);
-    }
-
-    // Recompute the outpost power grid for this tick.
-    this.powered = this.computePower();
-
-    // ── Charging ────────────────────────────────────────────────────────
-    let charge =
-      r.stats.rtgRate + r.stats.solarRate * daylight * this.body.solarFlux * this.weatherSolarMult();
-    for (const s of this.structures) {
-      if (s.type === 'solar-array' && daylight > 0) {
-        if (Math.hypot(s.pos.x - r.pos.x, s.pos.y - r.pos.y) <= SOLAR_ARRAY_RANGE) {
-          charge += SOLAR_ARRAY_RATE * daylight * this.body.solarFlux;
-        }
+      : { ...this.rover.pos };
+    const previous = new Map(this.structures.map((v) => [v.id, v]));
+    this.structures = s.structures.map((v) => {
+      const existing = previous.get(v.id);
+      return existing ? Object.assign(existing, v) : v;
+    });
+    const anomalies = new Map(this.anomalies.map((a) => [a.id, a]));
+    this.anomalies = s.anomalies.map((a) => {
+      const current = anomalies.get(a.id);
+      return current ? Object.assign(current, a) : a;
+    });
+    this.photos = s.photos;
+    this.status = s.status;
+    this.banked = s.banked ?? {};
+    this.weather = s.weather;
+    this.impacts = this.impacts.filter((i) => this.time - i.t < 1.1);
+    this.powered = new Set(s.powered);
+    this.launches = s.launches;
+    for (const [key, mat] of Object.entries(s.edits)) {
+      if (this.world.edits[key] !== mat) {
+        const [x, y, z] = key.split(',').map(Number);
+        this.world.set(x, y, z, mat);
       }
     }
-    r.battery = Math.min(r.stats.batteryCapacity, r.battery + charge * TICK_DT);
-
-    // ── Movement interpolation ──────────────────────────────────────────
-    if (r.moveFrom) {
-      r.moveT += r.stats.speed * DRIVE_SPEED_MULTIPLIER * TICK_DT;
-      if (r.moveT >= 1) {
-        r.moveT = 0;
-        r.moveFrom = null;
-        r.renderPos = { ...r.pos };
-        this.collectNearbyDrillBuffers();
-      } else {
-        r.renderPos = {
-          x: r.moveFrom.x + (r.pos.x - r.moveFrom.x) * r.moveT,
-          y: r.moveFrom.y + (r.pos.y - r.moveFrom.y) * r.moveT,
-        };
-      }
-    }
-
-    // ── Mining progress ─────────────────────────────────────────────────
-    if (r.mining) {
-      r.mining.remaining -= r.stats.miningPower * TICK_DT * TICK_RATE;
-      if (r.mining.remaining <= 0) {
-        const { pos } = r.mining;
-        r.mining = null;
-        const mat = this.world.mineTop(pos.x, pos.y);
-        if (mat !== null) {
-          const y = MATERIALS[mat].yields;
-          if (y) this.addCargo(y.resource, y.amount);
-          this.events.emit('mined', {
-            pos,
-            resource: y?.resource ?? null,
-            amount: y?.amount ?? 0,
-          });
-        }
-      }
-    }
-
-    // ── Auto drill rigs (faster when powered) ───────────────────────────
-    for (const s of this.structures) {
-      if (s.type !== 'drill-rig') continue;
-      const rate = this.powered.has(s.id) ? DRILL_RATE_TICKS_POWERED : DRILL_RATE_TICKS;
-      const t = (this.drillTimers.get(s.id) ?? 0) + 1;
-      if (t >= rate) {
-        this.drillTimers.set(s.id, 0);
-        const mat = this.world.mineTop(s.pos.x, s.pos.y);
-        if (mat !== null) {
-          const y = MATERIALS[mat].yields;
-          if (y) s.buffer[y.resource] = (s.buffer[y.resource] ?? 0) + y.amount;
-        }
-      } else {
-        this.drillTimers.set(s.id, t);
-      }
-    }
-
-    // ── Outposts: auto-shipping pads + habitat construction/service ──────
-    this.tickOutpost();
-
-    if (r.battery <= 0.01 && r.stats.rtgRate === 0 && r.stats.solarRate === 0) {
-      this.status = 'lost';
-      this.events.emit('roverLost', { reason: 'Battery depleted with no way to recharge.' });
-    }
-
-    this.events.emit('tick', { time: this.time, daylight });
   }
-
-  /**
-   * Advance only the visual position between fixed simulation ticks. Physics,
-   * resources and world voxels remain fixed-rate and deterministic; this
-   * presentation pass lets a 10 Hz simulation look continuous at display rate.
-   */
-  interpolateRender(remainder: number): void {
+  private invoke<T>(kind: string, text = '', arg = 0, dt = 0): T {
+    const reply = coreCall<CoreReply>('sim', {
+      engineId: this.engineId,
+      kind,
+      text,
+      arg,
+      dt,
+      host: this.host(),
+    });
+    this.adopt(reply.state);
+    for (const event of reply.events) {
+      let payload = event.payload;
+      if (payload === undefined) {
+        if (event.kind === 'moved')
+          payload = { pos: { x: event.x ?? 0, y: event.y ?? 0 }, energyUsed: event.amount ?? 0 };
+        else if (event.kind === 'blocked' || event.kind === 'roverLost')
+          payload = { reason: event.detail ?? '' };
+        else if (event.kind === 'cargoFull') payload = {};
+        else continue;
+      }
+      if (event.kind === 'meteorImpact')
+        this.impacts.push({ pos: (payload as { pos: Vec2 }).pos, t: this.time });
+      this.events.emit(event.kind as GameEventKey, payload as never);
+    }
+    if (kind === 'build' && reply.result) {
+      return this.structures.find((s) => s.id === (reply.result as Structure).id) as T;
+    }
+    return reply.result as T;
+  }
+  tick() {
+    this.invoke('tick');
+  }
+  move(dir: 0 | 1 | 2 | 3) {
+    return this.invoke<boolean>('move', '', dir);
+  }
+  mine() {
+    return this.invoke<boolean>('mine');
+  }
+  scan() {
+    return this.invoke<Anomaly[]>('scan');
+  }
+  photo() {
+    return this.invoke<PhotoMeta | null>('photo');
+  }
+  build(type: StructureType) {
+    return this.invoke<Structure | null>('build', type);
+  }
+  rotateStructure(id: string) {
+    return this.invoke<boolean>('rotateStructure', id);
+  }
+  demolish(id: string) {
+    return this.invoke<boolean>('demolish', id);
+  }
+  depositCargo() {
+    return this.invoke<number>('depositCargo');
+  }
+  launchCargo() {
+    return this.invoke<boolean>('launchCargo');
+  }
+  upgradeMobility() {
+    return this.invoke<boolean>('upgradeMobility');
+  }
+  craft(id: string) {
+    return this.invoke<boolean>('craft', id);
+  }
+  placeBlock() {
+    return this.invoke<boolean>('placeBlock');
+  }
+  repair() {
+    return this.invoke<boolean>('repair');
+  }
+  private query(kind: string): number {
+    return coreCall<CoreReply>('sim', { engineId: this.engineId, kind, host: this.host() })
+      .result as number;
+  }
+  daylight() {
+    return this.query('daylight');
+  }
+  weatherSolarMult() {
+    return this.query('weatherSolarMult');
+  }
+  weatherMoveMult() {
+    return this.query('weatherMoveMult');
+  }
+  weatherSensorMult() {
+    return this.query('weatherSensorMult');
+  }
+  startWeather(type: WeatherType, intensity?: number, duration?: number) {
+    this.invoke(
+      'startWeather',
+      JSON.stringify({ type, intensity: intensity ?? -1, duration: duration ?? -1 }),
+    );
+  }
+  interpolateRender(remainder: number) {
     const r = this.rover;
     if (!r.moveFrom) {
       r.renderPos = { ...r.pos };
       return;
     }
-    const t = Math.min(0.999, r.moveT + r.stats.speed * DRIVE_SPEED_MULTIPLIER * Math.max(0, remainder));
+    const t = Math.min(
+      0.999,
+      r.moveT + r.stats.speed * DRIVE_SPEED_MULTIPLIER * Math.max(0, remainder),
+    );
     r.renderPos = {
       x: r.moveFrom.x + (r.pos.x - r.moveFrom.x) * t,
       y: r.moveFrom.y + (r.pos.y - r.moveFrom.y) * t,
     };
   }
-
-  // ── Actions ───────────────────────────────────────────────────────────
-
-  /** Try to move one tile in direction 0..3. Returns whether the move started. */
-  move(dir: 0 | 1 | 2 | 3): boolean {
-    const r = this.rover;
-    if (this.status !== 'active') return false;
-    r.facing = dir;
-    if (r.moveFrom || r.mining) {
-      this.events.emit('blocked', { reason: 'busy' });
-      return false;
-    }
-    const d = DIRS[dir];
-    const nx = r.pos.x + d.x;
-    const ny = r.pos.y + d.y;
-    if (!this.world.inBounds(nx, ny) || !this.world.isSolid(nx, ny)) {
-      this.events.emit('blocked', { reason: 'edge' });
-      return false;
-    }
-    const step = this.world.step(r.pos.x, r.pos.y, nx, ny);
-    if (step > r.stats.maxClimb) {
-      this.events.emit('blocked', { reason: 'cliff' });
-      return false;
-    }
-    const slopeFactor = 1 + Math.max(0, step) * 0.5;
-    const cost = r.stats.moveEnergy * slopeFactor * this.weatherMoveMult();
-    if (r.battery < cost) {
-      this.events.emit('batteryEmpty', {});
-      this.events.emit('blocked', { reason: 'battery' });
-      return false;
-    }
-    r.battery -= cost;
-
-    // Dropping down further than maxClimb hurts, scaled by gravity.
-    if (step < -r.stats.maxClimb) {
-      const fall = -step - r.stats.maxClimb;
-      const dmg = fall * this.body.gravity * (1.6 - r.stats.grip);
-      this.damage(dmg, 'fall');
-    } else if (Math.abs(step) >= 1) {
-      // General terrain wear, mitigated by grip.
-      this.damage(0.4 * (1 - r.stats.grip), 'terrain');
-    }
-
-    r.moveFrom = { ...r.pos };
-    r.pos = { x: nx, y: ny };
-    r.moveT = 0;
-    this.events.emit('moved', { pos: { ...r.pos }, energyUsed: cost });
-    return true;
-  }
-
-  /** Begin mining the top voxel of the tile the rover is facing. */
-  mine(): boolean {
-    const r = this.rover;
-    if (this.status !== 'active' || r.moveFrom || r.mining) return false;
-    if (r.stats.miningPower <= 0) return false;
-    const d = DIRS[r.facing];
-    const tx = r.pos.x + d.x;
-    const ty = r.pos.y + d.y;
-    if (!this.world.isSolid(tx, ty)) return false;
-    const h = this.world.height(tx, ty);
-    if (h <= 0) return false; // bedrock
-    // Don't mine a column so tall its top is unreachable.
-    if (h - this.world.height(r.pos.x, r.pos.y) > r.stats.maxClimb + 2) return false;
-    if (r.cargoUsed >= r.stats.cargoCapacity) {
-      this.events.emit('cargoFull', {});
-      return false;
-    }
-    const mat = this.world.get(tx, ty, h);
-    const hardness = MATERIALS[mat].hardness;
-    if (r.battery < r.stats.miningEnergy) {
-      this.events.emit('blocked', { reason: 'battery' });
-      return false;
-    }
-    r.battery -= r.stats.miningEnergy;
-    r.mining = { pos: { x: tx, y: ty }, remaining: hardness, total: hardness };
-    this.events.emit('miningStarted', { pos: { x: tx, y: ty }, total: hardness });
-    return true;
-  }
-
-  /** Scanner sweep: reveals anomalies within radius. */
-  scan(): Anomaly[] {
-    const r = this.rover;
-    if (this.status !== 'active' || r.stats.scanRadius <= 0) return [];
-    const scanCost = r.stats.scanEnergy * this.weatherSensorMult();
-    if (r.battery < scanCost) {
-      this.events.emit('blocked', { reason: 'battery' });
-      return [];
-    }
-    r.battery -= scanCost;
-    const found: Anomaly[] = [];
-    for (const a of this.anomalies) {
-      if (a.scanned) continue;
-      if (Math.hypot(a.pos.x - r.pos.x, a.pos.y - r.pos.y) <= r.stats.scanRadius) {
-        a.scanned = true;
-        found.push(a);
-      }
-    }
-    this.events.emit('scan', { found, energyUsed: scanCost });
-    return found;
-  }
-
-  /**
-   * Take a photo. The renderer supplies the actual image; the sim decides
-   * cost, quality and whether an anomaly was captured (within 6 tiles).
-   */
-  photo(): PhotoMeta | null {
-    const r = this.rover;
-    if (this.status !== 'active' || r.stats.photoQuality <= 0) return null;
-    const photoCost = r.stats.photoEnergy * this.weatherSensorMult();
-    if (r.battery < photoCost) {
-      this.events.emit('blocked', { reason: 'battery' });
-      return null;
-    }
-    r.battery -= photoCost;
-    let captured: Anomaly | undefined;
-    for (const a of this.anomalies) {
-      if (Math.hypot(a.pos.x - r.pos.x, a.pos.y - r.pos.y) <= 6) {
-        captured = a;
-        break;
-      }
-    }
-    const meta: PhotoMeta = {
-      id: makeId('pho'),
-      bodyId: this.body.id,
-      pos: { ...r.pos },
-      quality: r.stats.photoQuality,
-      timestamp: this.time,
-      anomalyId: captured?.id,
-      caption: captured
-        ? `${captured.name} — ${this.body.name}`
-        : `Surface survey — ${this.body.name}`,
-    };
-    this.photos.push(meta);
-    if (captured && !captured.documented) {
-      captured.documented = true;
-      captured.scanned = true;
-      this.events.emit('anomalyDocumented', { anomaly: captured });
-    }
-    return meta;
-  }
-
-  /** Build a structure on the tile the rover is facing. */
-  build(type: StructureType): Structure | null {
-    const r = this.rover;
-    if (this.status !== 'active' || r.moveFrom || r.mining) return null;
-    const def = STRUCTURES[type];
-    if (def.buildable === false) return null; // e.g. habitat (built by upgrading a frame)
-    const d = DIRS[r.facing];
-    const tx = r.pos.x + d.x;
-    const ty = r.pos.y + d.y;
-    if (!this.world.isSolid(tx, ty)) {
-      this.events.emit('buildFailed', { reason: 'No ground there.' });
-      return null;
-    }
-    if (Math.abs(this.world.step(r.pos.x, r.pos.y, tx, ty)) > 1) {
-      this.events.emit('buildFailed', { reason: 'Ground too uneven.' });
-      return null;
-    }
-    const category = def.category ?? 'functional';
-    const sameCategoryHere = this.structures.some(
-      (s) => s.pos.x === tx && s.pos.y === ty && (STRUCTURES[s.type].category ?? 'functional') === category,
-    );
-    if (sameCategoryHere) {
-      this.events.emit('buildFailed', { reason: 'Something is already built there.' });
-      return null;
-    }
-    for (const [res, qty] of Object.entries(def.cost) as [ResourceKey, number][]) {
-      if ((r.cargo[res] ?? 0) < qty) {
-        this.events.emit('buildFailed', { reason: `Needs ${qty} ${res} in cargo.` });
-        return null;
-      }
-    }
-    for (const [res, qty] of Object.entries(def.cost) as [ResourceKey, number][]) {
-      this.removeCargo(res, qty);
-    }
-    const s: Structure = { id: makeId('str'), type, pos: { x: tx, y: ty }, buffer: {}, facing: r.facing };
-    this.structures.push(s);
-    this.events.emit('built', { structure: s });
-    return s;
-  }
-
-  /**
-   * Rotate a placed structure 90° (cosmetic orientation only — see
-   * `Structure.facing`). The rover must be adjacent to it, same range as
-   * other structure interactions (deposit/launch).
-   */
-  rotateStructure(id: string): boolean {
-    const r = this.rover;
-    const s = this.structures.find((st) => st.id === id);
-    if (!s) {
-      this.events.emit('rotateFailed', { reason: 'No such structure.' });
-      return false;
-    }
-    if (Math.abs(s.pos.x - r.pos.x) > 1 || Math.abs(s.pos.y - r.pos.y) > 1) {
-      this.events.emit('rotateFailed', { reason: 'Too far away.' });
-      return false;
-    }
-    s.facing = (((s.facing ?? 0) + 1) % 4) as 0 | 1 | 2 | 3;
-    this.events.emit('rotated', { id: s.id, facing: s.facing });
-    return true;
-  }
-
-  /**
-   * Demolish a placed structure. The rover must be adjacent to it. No
-   * resource refund in this first pass — demolition is a deliberate,
-   * lossy action, not an undo.
-   */
-  demolish(id: string): boolean {
-    const r = this.rover;
-    const idx = this.structures.findIndex((st) => st.id === id);
-    if (idx < 0) {
-      this.events.emit('demolishFailed', { reason: 'No such structure.' });
-      return false;
-    }
-    const s = this.structures[idx];
-    if (Math.abs(s.pos.x - r.pos.x) > 1 || Math.abs(s.pos.y - r.pos.y) > 1) {
-      this.events.emit('demolishFailed', { reason: 'Too far away.' });
-      return false;
-    }
-    this.structures.splice(idx, 1);
-    this.events.emit('demolished', { id: s.id, type: s.type, pos: s.pos });
-    return true;
-  }
-
-  /** Deposit all cargo into an adjacent cache, banking it as mission yield. */
-  depositCargo(): number {
-    const r = this.rover;
-    const cache = this.structures.find(
-      (s) =>
-        s.type === 'cache' &&
-        Math.abs(s.pos.x - r.pos.x) <= 1 &&
-        Math.abs(s.pos.y - r.pos.y) <= 1,
-    );
-    if (!cache) return 0;
-    let moved = 0;
-    for (const [res, qty] of Object.entries(r.cargo) as [ResourceKey, number][]) {
-      if (!qty) continue;
-      this.banked[res] = (this.banked[res] ?? 0) + qty;
-      moved += qty;
-      delete r.cargo[res];
-    }
-    r.cargoUsed = 0;
-    if (moved > 0) this.events.emit('stateChanged', {});
-    return moved;
-  }
-
-  /**
-   * Fire the hold home on a cargo rocket from an adjacent launch pad. Banks
-   * everything in cargo as mission yield (same payout path as a cache) and
-   * kicks off the launch animation. The pad then refuels before it can fire
-   * again. Returns whether a rocket left the ground.
-   */
-  launchCargo(): boolean {
-    const r = this.rover;
-    if (this.status !== 'active' || r.moveFrom || r.mining) return false;
-    const pad = this.structures.find(
-      (s) =>
-        s.type === 'launch-pad' &&
-        Math.abs(s.pos.x - r.pos.x) <= 1 &&
-        Math.abs(s.pos.y - r.pos.y) <= 1,
-    );
-    if (!pad) {
-      this.events.emit('launchFailed', { reason: 'Park beside a launch pad.' });
-      return false;
-    }
-    if (pad.cooldownUntil != null && this.time < pad.cooldownUntil) {
-      this.events.emit('launchFailed', { reason: 'The pad is still refuelling.' });
-      return false;
-    }
-    // Manifest = the rover's hold, the pad's accumulated buffer, and any
-    // drill-rig buffers next to the pad — so a mining outpost can ship
-    // without hauling to the hold.
-    const manifest: Partial<Record<ResourceKey, number>> = {};
-    const add = (res: ResourceKey, qty: number): void => {
-      if (qty) manifest[res] = (manifest[res] ?? 0) + qty;
-    };
-    for (const [res, qty] of Object.entries(r.cargo) as [ResourceKey, number][]) {
-      add(res, qty);
-      delete r.cargo[res];
-    }
-    r.cargoUsed = 0;
-    for (const [res, qty] of Object.entries(pad.buffer) as [ResourceKey, number][]) add(res, qty);
-    pad.buffer = {};
-    for (const s of this.structures) {
-      if (s.type !== 'drill-rig') continue;
-      if (Math.abs(s.pos.x - pad.pos.x) > 1 || Math.abs(s.pos.y - pad.pos.y) > 1) continue;
-      for (const [res, qty] of Object.entries(s.buffer) as [ResourceKey, number][]) add(res, qty);
-      s.buffer = {};
-    }
-    if (this.shipManifest(pad, manifest, false) <= 0) {
-      this.events.emit('launchFailed', { reason: 'Nothing to load — fill the hold or a nearby drill rig first.' });
-      return false;
-    }
-    return true;
-  }
-
-  /**
-   * Spend refined materials to bolt on a mobility kit: each level raises the
-   * rover's climb, grip and speed so a stranded rover can get moving again.
-   */
-  upgradeMobility(): boolean {
-    const r = this.rover;
-    if (this.status !== 'active') return false;
-    const up = (r.upgrades ??= { mobility: 0 });
-    if (up.mobility >= MAX_MOBILITY_UPGRADE) {
-      this.events.emit('upgradeFailed', { reason: 'Mobility is already maxed out.' });
-      return false;
-    }
-    const cost = MOBILITY_UPGRADE_COST[up.mobility] ?? {};
-    for (const [res, qty] of Object.entries(cost) as [ResourceKey, number][]) {
-      if ((r.cargo[res] ?? 0) < qty) {
-        this.events.emit('upgradeFailed', { reason: `Needs ${qty} ${res} in cargo.` });
-        return false;
-      }
-    }
-    for (const [res, qty] of Object.entries(cost) as [ResourceKey, number][]) {
-      this.removeCargo(res, qty);
-    }
-    up.mobility += 1;
-    r.stats = this.applyMobility(computeStats(r.spec), up.mobility);
-    this.events.emit('upgraded', { kind: 'mobility', level: up.mobility });
-    this.events.emit('stateChanged', {});
-    return true;
-  }
-
-  /**
-   * Craft/refine from cargo. Recipes with a `near` requirement need the
-   * matching structure on one of the 8 surrounding tiles.
-   */
-  craft(recipeId: string): boolean {
-    const r = this.rover;
-    if (this.status !== 'active') return false;
-    const rec = getRecipe(recipeId);
-    if (!rec) return false;
-    if (rec.near) {
-      const ok = this.structures.some(
-        (s) =>
-          s.type === rec.near &&
-          Math.abs(s.pos.x - r.pos.x) <= 1 &&
-          Math.abs(s.pos.y - r.pos.y) <= 1,
-      );
-      if (!ok) {
-        this.events.emit('craftFailed', { reason: `Needs an adjacent ${rec.near}.` });
-        return false;
-      }
-    }
-    if (r.battery < rec.energy) {
-      this.events.emit('craftFailed', { reason: 'Not enough battery.' });
-      return false;
-    }
-    for (const [res, qty] of Object.entries(rec.input) as [ResourceKey, number][]) {
-      if ((r.cargo[res] ?? 0) < qty) {
-        this.events.emit('craftFailed', { reason: `Needs ${qty} ${res} in cargo.` });
-        return false;
-      }
-    }
-    r.battery -= rec.energy;
-    for (const [res, qty] of Object.entries(rec.input) as [ResourceKey, number][]) {
-      this.removeCargo(res, qty);
-    }
-    this.addCargo(rec.output.resource, rec.output.amount);
-    this.events.emit('crafted', {
-      recipe: rec.id,
-      resource: rec.output.resource,
-      amount: rec.output.amount,
-    });
-    return true;
-  }
-
-  /**
-   * Place a stone block on the tile the rover faces (1 stone from cargo).
-   * Raises the column by one voxel — bridges, ramps, walls.
-   */
-  placeBlock(): boolean {
-    const r = this.rover;
-    if (this.status !== 'active' || r.moveFrom || r.mining) return false;
-    const d = DIRS[r.facing];
-    const tx = r.pos.x + d.x;
-    const ty = r.pos.y + d.y;
-    if (!this.world.isSolid(tx, ty)) return false;
-    if (this.structures.some((s) => s.pos.x === tx && s.pos.y === ty)) {
-      this.events.emit('buildFailed', { reason: 'Something is already built there.' });
-      return false;
-    }
-    if ((r.cargo.stone ?? 0) < 1) {
-      this.events.emit('buildFailed', { reason: 'Needs 1 stone in cargo.' });
-      return false;
-    }
-    const energy = 2;
-    if (r.battery < energy) {
-      this.events.emit('blocked', { reason: 'battery' });
-      return false;
-    }
-    const placed = this.world.placeTop(tx, ty, Material.Rock);
-    if (placed < 0) {
-      this.events.emit('buildFailed', { reason: 'Column is at max height.' });
-      return false;
-    }
-    r.battery -= energy;
-    this.removeCargo('stone', 1);
-    this.events.emit('blockPlaced', { pos: { x: tx, y: ty } });
-    return true;
-  }
-
-  /** Spend 2 stone + 1 iron to restore 25 durability. */
-  repair(): boolean {
-    const r = this.rover;
-    if ((r.cargo.stone ?? 0) < 2 || (r.cargo.iron ?? 0) < 1) return false;
-    if (r.durability >= r.stats.durabilityMax) return false;
-    this.removeCargo('stone', 2);
-    this.removeCargo('iron', 1);
-    const amount = Math.min(25, r.stats.durabilityMax - r.durability);
-    r.durability += amount;
-    this.events.emit('repaired', { amount });
-    return true;
-  }
-
-  // ── Internals ─────────────────────────────────────────────────────────
-
-  /** Structure ids currently energised: generators (always) and solar arrays
-   * (in daylight) power everything within range, relayed onward by pylons. */
-  private computePower(): Set<string> {
-    const structs = this.structures;
-    const powered = new Set<string>();
-    if (structs.length === 0) return powered;
-    const daylight = this.daylight();
-    const emitters: Vec2[] = [];
-    for (const s of structs) {
-      if (s.type === 'generator' || (s.type === 'solar-array' && daylight > 0)) emitters.push(s.pos);
-    }
-    if (emitters.length === 0) return powered;
-    const within = (a: Vec2, b: Vec2): boolean =>
-      Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= POWER_RANGE;
-    // Relay through pylons until the reachable set stops growing.
-    const pylons = structs.filter((s) => s.type === 'pylon');
-    const activePylon = new Set<string>();
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const p of pylons) {
-        if (activePylon.has(p.id)) continue;
-        if (emitters.some((e) => within(e, p.pos))) {
-          activePylon.add(p.id);
-          emitters.push(p.pos);
-          changed = true;
-        }
-      }
-    }
-    for (const s of structs) {
-      if (emitters.some((e) => within(e, s.pos))) powered.add(s.id);
-    }
-    return powered;
-  }
-
-  /** Bank a manifest as mission yield and fire the pad's rocket. Returns the
-   * unit total shipped (0 if the manifest was empty — no rocket flies). */
-  private shipManifest(pad: Structure, manifest: Partial<Record<ResourceKey, number>>, auto: boolean): number {
-    let total = 0;
-    for (const [res, qty] of Object.entries(manifest) as [ResourceKey, number][]) {
-      if (!qty) continue;
-      this.banked[res] = (this.banked[res] ?? 0) + qty;
-      total += qty;
-    }
-    if (total <= 0) return 0;
-    const cd = this.powered.has(pad.id) ? LAUNCH_COOLDOWN * 0.6 : LAUNCH_COOLDOWN;
-    pad.cooldownUntil = this.time + cd;
-    this.launches.push({ pos: { ...pad.pos }, t: this.time });
-    this.events.emit('cargoLaunched', { pos: { ...pad.pos }, manifest, total, auto });
-    this.events.emit('stateChanged', {});
-    return total;
-  }
-
-  /** Per-tick outpost automation: pads pull drill lines and auto-ship, and
-   * habitat frames build out (when powered) then service a parked rover. */
-  private tickOutpost(): void {
-    const r = this.rover;
-    for (const s of this.structures) {
-      if (s.type === 'launch-pad') {
-        // Draw neighbouring drill lines into the pad's own hold.
-        for (const rig of this.structures) {
-          if (rig.type !== 'drill-rig') continue;
-          if (Math.abs(rig.pos.x - s.pos.x) > 1 || Math.abs(rig.pos.y - s.pos.y) > 1) continue;
-          for (const [res, qty] of Object.entries(rig.buffer) as [ResourceKey, number][]) {
-            if (qty) s.buffer[res] = (s.buffer[res] ?? 0) + qty;
-          }
-          rig.buffer = {};
-        }
-        // Auto-fire once it holds a full load and the pad is fuelled.
-        const total = (Object.values(s.buffer) as (number | undefined)[]).reduce(
-          (a: number, b) => a + (b ?? 0),
-          0,
-        );
-        const ready = s.cooldownUntil == null || this.time >= s.cooldownUntil;
-        if (ready && total >= AUTO_LAUNCH_THRESHOLD) {
-          const manifest = s.buffer;
-          s.buffer = {};
-          this.shipManifest(s, manifest, true);
-        }
-      } else if (s.type === 'habitat-frame') {
-        if (this.powered.has(s.id)) {
-          s.progress = (s.progress ?? 0) + HABITAT_BUILD_RATE * TICK_DT;
-          if (s.progress >= 1) {
-            s.type = 'habitat';
-            s.progress = undefined;
-            this.events.emit('habitatComplete', { pos: { ...s.pos } });
-          }
-        }
-      } else if (s.type === 'habitat') {
-        if (
-          Math.abs(s.pos.x - r.pos.x) <= HABITAT_SERVICE_RANGE &&
-          Math.abs(s.pos.y - r.pos.y) <= HABITAT_SERVICE_RANGE
-        ) {
-          r.battery = Math.min(r.stats.batteryCapacity, r.battery + HABITAT_RECHARGE * TICK_DT);
-          if (r.durability < r.stats.durabilityMax) {
-            r.durability = Math.min(r.stats.durabilityMax, r.durability + HABITAT_REPAIR * TICK_DT);
-          }
-        }
-      }
-    }
-  }
-
-  /** Fold the mission's mobility upgrade level into a base stat block. */
-  private applyMobility(stats: RoverStats, level: number): RoverStats {
-    if (level <= 0) return stats;
-    return {
-      ...stats,
-      maxClimb: stats.maxClimb + level,
-      grip: Math.min(0.95, stats.grip + 0.12 * level),
-      speed: Math.round(stats.speed * (1 + 0.08 * level) * 100) / 100,
-    };
-  }
-
-  private damage(amount: number, reason: 'fall' | 'terrain' | 'impact' | 'storm'): void {
-    if (amount <= 0.01) return;
-    const r = this.rover;
-    r.durability = Math.max(0, r.durability - amount);
-    this.events.emit('damaged', { amount, reason });
-    if (r.durability <= 0) {
-      this.status = 'lost';
-      this.events.emit('roverLost', { reason: 'Chassis destroyed.' });
-    }
-  }
-
-  private addCargo(res: ResourceKey, amount: number): void {
-    const r = this.rover;
-    const space = r.stats.cargoCapacity - r.cargoUsed;
-    const take = Math.min(space, amount);
-    if (take <= 0) {
-      this.events.emit('cargoFull', {});
-      return;
-    }
-    r.cargo[res] = (r.cargo[res] ?? 0) + take;
-    r.cargoUsed += take;
-  }
-
-  private removeCargo(res: ResourceKey, amount: number): void {
-    const r = this.rover;
-    const have = r.cargo[res] ?? 0;
-    const take = Math.min(have, amount);
-    r.cargo[res] = have - take;
-    if (r.cargo[res] === 0) delete r.cargo[res];
-    r.cargoUsed = Math.max(0, r.cargoUsed - take);
-  }
-
-  private collectNearbyDrillBuffers(): void {
-    const r = this.rover;
-    for (const s of this.structures) {
-      if (s.type !== 'drill-rig') continue;
-      if (Math.abs(s.pos.x - r.pos.x) > 1 || Math.abs(s.pos.y - r.pos.y) > 1) continue;
-      for (const [res, qty] of Object.entries(s.buffer) as [ResourceKey, number][]) {
-        if (!qty) continue;
-        const space = r.stats.cargoCapacity - r.cargoUsed;
-        const take = Math.min(space, qty);
-        if (take <= 0) break;
-        this.addCargo(res, take);
-        s.buffer[res] = qty - take;
-        if (s.buffer[res] === 0) delete s.buffer[res];
-      }
-    }
-  }
-
-  /** Serialisable snapshot for persistence. */
   serialize(): MissionState {
+    this.invoke('sync');
+    const coreSnapshot = coreCall<string>('snapshot', { engineId: this.engineId });
     return {
       schemaVersion: MISSION_SCHEMA_VERSION,
       id: this.missionId,
@@ -1005,21 +330,26 @@ export class Simulation {
       time: this.time,
       rover: {
         ...this.rover,
-        upgrades: this.rover.upgrades ? { ...this.rover.upgrades } : { mobility: 0 },
+        upgrades: { ...this.rover.upgrades! },
+        cargo: { ...this.rover.cargo },
         renderPos: { ...this.rover.pos },
         moveFrom: null,
         moveT: 0,
         mining: null,
-        cargo: { ...this.rover.cargo },
       },
       structures: this.structures.map((s) => ({ ...s, buffer: { ...s.buffer } })),
       anomalies: this.anomalies.map((a) => ({ ...a, pos: { ...a.pos } })),
       photos: [...this.photos],
       edits: { ...this.world.edits },
-      weather: this.weather
-        ? { ...this.weather, pos: this.weather.pos ? { ...this.weather.pos } : undefined }
-        : null,
+      weather: this.weather,
       status: this.status,
-    };
+      coreSnapshot,
+    } as MissionState;
+  }
+  dispose() {
+    if (this.disposed) return;
+    coreCall('dispose', { engineId: this.engineId });
+    this.disposed = true;
+    releasedEngines?.unregister(this);
   }
 }

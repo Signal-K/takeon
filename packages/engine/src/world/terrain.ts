@@ -1,8 +1,8 @@
-import { Material, type BodyDef, type OreBand } from '../types.js';
-import { fbm2, makeNoise } from '../util/noise/index.js';
-import { hash2, hash3, mulberry32 } from '../util/rng.js';
-import { biomeAt, pickBiomeMaterial } from './biomes.js';
-import { getDem, sampleDem, type DemPatch } from './dem/index.js';
+import { coreCall } from '../go/sync.js';
+import { coreBody } from './core-data.js';
+import { Material, type BodyDef } from '../types.js';
+import { fbm2 } from '../util/noise/index.js';
+import { hash2 } from '../util/rng.js';
 import { runWorldLayers } from './layers.js';
 import { VoxelWorld } from './world.js';
 
@@ -11,178 +11,21 @@ import { VoxelWorld } from './world.js';
  * The same (body, seed) always produces the identical world, so only
  * player edits need to be persisted.
  */
-export function generateTerrain(body: BodyDef, seedOverride?: number): VoxelWorld {
-  const seed = seedOverride ?? body.seed;
-  const { size, maxHeight } = body;
-  const world = new VoxelWorld(size, maxHeight);
-  const t = body.terrain;
-  const rng = mulberry32(seed ^ 0x51ab);
-  // Real elevation patch (NASA MOLA/LOLA sample) when available for this body.
-  const dem: DemPatch | undefined = body.dem ? getDem(body.dem) : undefined;
-
-  // Crater field: centers, radii and depths, applied to the heightmap.
-  // Real DEMs already carry their craters — skip synthetic ones then.
-  const craters: { cx: number; cy: number; r: number; depth: number }[] = [];
-  for (let i = 0; i < (dem ? 0 : t.craters); i++) {
-    craters.push({
-      cx: rng() * size,
-      cy: rng() * size,
-      r: 4 + rng() * (size / 9),
-      depth: 2 + rng() * 3,
-    });
-  }
-
-  const freq = 0.035 + t.roughness * 0.03;
-  const half = size / 2;
-  // Authored noise (perlin/simplex/worley/…) replaces the default elevation
-  // field. Bodies without a `noise` block keep the original value-fBm path
-  // exactly, so every shipped world regenerates byte-for-byte.
-  const field = t.noise ? makeNoise(t.noise, seed) : null;
-
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      // Irregular asteroid silhouette: keep columns inside a noisy radial mask.
-      if (t.irregular) {
-        const dx = (x - half) / half;
-        const dy = (y - half) / half;
-        const rr = Math.sqrt(dx * dx + dy * dy);
-        const wobble = fbm2(x * 0.05, y * 0.05, seed + 7, 3) * 0.35;
-        if (rr > 0.82 - wobble * 0.5 + wobble) continue; // void column
+export function generateTerrain(body: BodyDef, seed = body.seed): VoxelWorld {
+  const data = coreCall<{ size: number; maxHeight: number; voxels: number[] }>('terrain', {
+    seed: seed >>> 0,
+    config: { body: coreBody(body) },
+  });
+  const world = new VoxelWorld(data.size, data.maxHeight);
+  for (let y = 0; y < data.size; y++)
+    for (let x = 0; x < data.size; x++)
+      for (let z = 0; z < data.maxHeight; z++) {
+        const m = data.voxels[(y * data.size + x) * data.maxHeight + z];
+        if (m) world.setRaw(x, y, z, m);
       }
-
-      let n: number;
-      if (field) {
-        // The config owns frequency and octaves; roughness still scales the
-        // vertical amplitude below.
-        n = field(x, y);
-      } else {
-        n = fbm2(x * freq, y * freq, seed, 4);
-        // Gentle large-scale relief on top of the detail noise.
-        n = n * 0.65 + fbm2(x * freq * 0.25, y * freq * 0.25, seed + 55, 2) * 0.35;
-      }
-      if (dem) {
-        // Real topography carries the large-scale relief; procedural noise
-        // only adds sub-DEM-resolution detail.
-        const real = sampleDem(dem, x / (size - 1), y / (size - 1));
-        n = real * 0.78 + n * 0.22;
-      }
-      let h = 1 + n * (maxHeight - 3) * (0.45 + t.roughness * 0.55);
-
-      for (const c of craters) {
-        const d = Math.hypot(x - c.cx, y - c.cy);
-        if (d < c.r) {
-          const f = d / c.r;
-          // Bowl with a raised rim near the edge.
-          h += -c.depth * (1 - f * f) + (f > 0.75 ? (f - 0.75) * 4 * c.depth * 0.35 : 0);
-        }
-      }
-
-      const height = Math.max(1, Math.min(maxHeight - 2, Math.round(h)));
-
-      // Polar ice bands along the north/south map edges.
-      const edgeDist = Math.min(y, size - 1 - y) / size;
-      const icy = t.iceCaps > 0 && edgeDist < t.iceCaps * 0.5 * (0.7 + fbm2(x * 0.08, y * 0.08, seed + 91, 2) * 0.6);
-      const sulfurous =
-        (t.sulfurFields ?? 0) > 0 && fbm2(x * 0.07, y * 0.07, seed + 313, 3) > 1 - (t.sulfurFields ?? 0) * 0.55;
-
-      for (let z = 0; z <= height; z++) {
-        world.setRaw(x, y, z, pickMaterial(body, x, y, z, height, icy, sulfurous, seed));
-      }
-    }
-  }
-
   runWorldLayers(body, seed, world);
   return world;
 }
-
-function pickMaterial(
-  body: BodyDef,
-  x: number,
-  y: number,
-  z: number,
-  surface: number,
-  icy: boolean,
-  sulfurous: boolean,
-  seed: number,
-): Material {
-  const depth = surface - z;
-  const t = body.terrain;
-
-  // Ore veins live in the rocky interior, gated by 3D hash + richness.
-  if (depth >= 1) {
-    const v = hash3(x >> 1, y >> 1, z, seed + 17);
-    const rich = t.oreRichness;
-    if (v > 1 - rich * 0.055 && depth >= 3) return Material.Crystal;
-    if (v > 1 - rich * 0.16) {
-      const band = t.bands && pickBand(t.bands, depth, surface);
-      if (band) return pickFromBand(band, x, y, z, seed);
-      // Vein composition weighted by the body's spectroscopy profile
-      // (e.g. TES/GRS iron for Mars, Clementine/M3 TiO2 for lunar maria).
-      const w = body.minerals ?? {};
-      const iron = w.iron ?? 0.45;
-      const copper = w.copper ?? 0.3;
-      const titanium = w.titanium ?? 0.25;
-      const total = iron + copper + titanium || 1;
-      const pick = hash3(x, y, z, seed + 23) * total;
-      if (pick < iron) return Material.IronOre;
-      if (pick < iron + copper) return Material.CopperOre;
-      return Material.TitaniumOre;
-    }
-  }
-
-  if (icy && depth <= 2) return Material.Ice;
-  if (sulfurous && depth === 0) return Material.Sulfur;
-
-  if (depth === 0) {
-    if (body.terrain.biomes) {
-      const biome = biomeAt(body, x, y, seed);
-      return pickBiomeMaterial(biome.surface, fbm2(x * 0.055, y * 0.055, seed + 5, 3));
-    }
-    // Surface skin in large organic patches (not per-tile noise): silica
-    // flats, dust basins and regolith uplands read as biome-like regions.
-    const patch = fbm2(x * 0.055, y * 0.055, seed + 5, 3);
-    if (patch > 0.66) return Material.Silica;
-    if (patch < 0.38 || z <= 2) return Material.Dust;
-    return Material.Regolith;
-  }
-  if (depth <= 2) {
-    if (body.terrain.biomes) {
-      const biome = biomeAt(body, x, y, seed);
-      return pickBiomeMaterial(biome.subsurface ?? biome.surface, fbm2(x * 0.055, y * 0.055, seed + 9, 3));
-    }
-    return Material.Regolith;
-  }
-  if (depth <= 5) return Material.Rock;
-  return Material.Basalt;
-}
-
-/**
- * First band whose `[from, to]` fraction-of-column-depth range contains this
- * voxel, or null if none does (falls back to the default flat mineral mix).
- * `surface` is guaranteed >= 1 by the `depth >= 1` guard at the call site.
- */
-function pickBand(bands: OreBand[], depth: number, surface: number): OreBand | null {
-  const frac = depth / surface;
-  for (const band of bands) {
-    if (frac >= band.from && frac <= band.to) return band;
-  }
-  return null;
-}
-
-/** Weighted-random material from a band's mineral mix, seeded per voxel. */
-function pickFromBand(band: OreBand, x: number, y: number, z: number, seed: number): Material {
-  const entries = Object.entries(band.minerals);
-  const total = entries.reduce((sum, [, weight]) => sum + (weight ?? 0), 0);
-  if (total <= 0) return Material.IronOre;
-  const roll = hash3(x, y, z, seed + 23) * total;
-  let acc = 0;
-  for (const [id, weight] of entries) {
-    acc += weight ?? 0;
-    if (roll < acc) return Number(id);
-  }
-  return Number(entries[entries.length - 1][0]);
-}
-
 /**
  * Surface skin biome (silica / dust / regolith) at continuous coords.
  * Mirrors the depth-0 patch thresholds in pickMaterial (minus the elevation

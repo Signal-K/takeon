@@ -1,69 +1,7 @@
 import type { ResourceKey, StructureDef, StructureType } from '../types.js';
 
-export const STRUCTURES: Record<StructureType, StructureDef> = {
-  'solar-array': {
-    type: 'solar-array',
-    name: 'Solar Array',
-    cost: { silica: 6, iron: 4 },
-    description: 'Fixed panel farm. Recharges the rover quickly within 4 tiles (daylight only).',
-  },
-  beacon: {
-    type: 'beacon',
-    name: 'Nav Beacon',
-    cost: { iron: 3, copper: 2 },
-    description: 'Marks a site on the map and lights the area at night.',
-    category: 'decorative',
-  },
-  'drill-rig': {
-    type: 'drill-rig',
-    name: 'Auto-Drill Rig',
-    cost: { iron: 8, titanium: 2 },
-    description: 'Slowly mines the column beneath it. Drive adjacent to collect its buffer.',
-  },
-  cache: {
-    type: 'cache',
-    name: 'Supply Cache',
-    cost: { regolith: 4, iron: 2 },
-    description: 'Deposit cargo here to bank it as mission yield and free up the hold.',
-  },
-  refinery: {
-    type: 'refinery',
-    name: 'Refinery',
-    cost: { stone: 6, iron: 4 },
-    description: 'Furnace module. Unlocks alloy smelting when the rover is parked beside it.',
-  },
-  'habitat-frame': {
-    type: 'habitat-frame',
-    name: 'Habitat Frame',
-    cost: { 'iron-plate': 4, glass: 2, titanium: 2 },
-    description: 'The first bones of a permanent outpost, raised from refined materials.',
-  },
-  habitat: {
-    type: 'habitat',
-    name: 'Habitat',
-    cost: {},
-    buildable: false,
-    description: 'A finished pressurised outpost. Recharges and slowly repairs a rover parked alongside it.',
-  },
-  'launch-pad': {
-    type: 'launch-pad',
-    name: 'Launch Pad',
-    cost: { 'iron-plate': 5, alloy: 2, silica: 4 },
-    description: 'Fuelled gantry. Park beside it and fire the hold home — or let it auto-ship a neighbouring drill line. Refuels between launches.',
-  },
-  generator: {
-    type: 'generator',
-    name: 'Generator',
-    cost: { 'iron-plate': 4, titanium: 2, copper: 3 },
-    description: 'Radioisotope plant. Powers nearby structures day and night — the backbone of an outpost grid.',
-  },
-  pylon: {
-    type: 'pylon',
-    name: 'Power Pylon',
-    cost: { iron: 3, copper: 2 },
-    description: 'Relays power onward, extending the grid to distant drills and pads.',
-  },
-};
+import { rules } from '../data/core-catalog.js';
+export const STRUCTURES = rules.structures as unknown as Record<StructureType, StructureDef>;
 
 /**
  * Runtime structure registry.
@@ -125,14 +63,12 @@ export const HABITAT_REPAIR = 1.5; // durability/sec
 /** Mobility upgrades cap out here; each level adds climb, grip and speed. */
 export const MAX_MOBILITY_UPGRADE = 3;
 /** Refined-material cost to buy the next mobility level (index = current level). */
-export const MOBILITY_UPGRADE_COST: Partial<Record<ResourceKey, number>>[] = [
-  { 'iron-plate': 2, alloy: 1 },
-  { 'iron-plate': 3, alloy: 2 },
-  { 'iron-plate': 4, alloy: 3, titanium: 2 },
-];
+export const MOBILITY_UPGRADE_COST = rules.mobilityCosts as Partial<Record<ResourceKey, number>>[];
 
 /** Cost of the next mobility upgrade for a rover at `level`, or null if maxed. */
-export function nextMobilityUpgradeCost(level: number): Partial<Record<ResourceKey, number>> | null {
+export function nextMobilityUpgradeCost(
+  level: number,
+): Partial<Record<ResourceKey, number>> | null {
   if (level >= MAX_MOBILITY_UPGRADE) return null;
   return MOBILITY_UPGRADE_COST[level] ?? null;
 }
