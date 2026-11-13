@@ -1,0 +1,26 @@
+// Runs the built package in Node against real Go WASM. No mocked simulation.
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { loadGoCore } from '@takeon/engine/go';
+const core = await loadGoCore({ wasmBytes: await readFile(new URL(import.meta.resolve('@takeon/engine/go/takeon.wasm'))) });
+assert.equal(core.capabilities.protocolVersion, 1);
+assert(core.capabilities.unsupported.includes('build'));
+assert.throws(() => core.createEngine(1, 'unknown'));
+const a = core.createEngine(4212, 'moon');
+const b = core.createEngine(4212, 'moon');
+const original = b.snapshot();
+a.step(1);
+assert.equal(b.snapshot(), original, 'engine state leaked across instances');
+b.restore(a.snapshot());
+a.step(0.5); b.step(0.5);
+assert.deepEqual(a.state(), b.state());
+assert.throws(() => a.order('build'));
+assert.throws(() => a.restore('{'));
+assert.deepEqual(a.state(), b.state(), 'failed restore changed a live engine');
+assert.equal(a.window(0, 0, 4, 3).heights.length, 12);
+a.seedCache(); a.seedCargo({ iron: 3 });
+assert.equal(a.deposit(), 3);
+a.dispose(); a.dispose();
+assert.throws(() => a.state(), /disposed/);
+b.dispose();
+console.log('Go package: isolated engines, snapshot continuation, error handling, terrain and drop-off passed');

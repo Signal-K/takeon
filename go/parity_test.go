@@ -513,3 +513,87 @@ func TestOrderStubs(t *testing.T) {
 		t.Error("blue noise should be reported unsupported")
 	}
 }
+
+// ---- mission/module contract (golden/module.json) ----
+
+func TestModuleParity(t *testing.T) {
+	var g struct {
+		Runs []struct {
+			Base Vec2f `json:"base"`
+			Ops  []struct {
+				Op      string  `json:"op"`
+				X       float64 `json:"x"`
+				Y       float64 `json:"y"`
+				Data    float64 `json:"data"`
+				Samples float64 `json:"samples"`
+			} `json:"ops"`
+			Steps []struct {
+				State    json.RawMessage `json:"state"`
+				Progress json.RawMessage `json:"progress"`
+				JSON     string          `json:"json"`
+			} `json:"steps"`
+		} `json:"runs"`
+		Parsed []struct {
+			Raw      *string         `json:"raw"`
+			State    json.RawMessage `json:"state"`
+			Progress json.RawMessage `json:"progress"`
+		} `json:"parsed"`
+	}
+	b, err := os.ReadFile(filepath.Join("..", "golden", "module.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &g); err != nil {
+		t.Fatal(err)
+	}
+	r := newRow("mission module: scripted steps (state+progress+json)")
+	canon := func(raw json.RawMessage) string {
+		var v any
+		_ = json.Unmarshal(raw, &v)
+		o, _ := json.Marshal(v)
+		return string(o)
+	}
+	check := func(label string, st WorldState, wantState, wantProg json.RawMessage, wantJSON string) {
+		r.count++
+		gs, _ := st.Serialize()
+		gp, _ := json.Marshal(st.Progress())
+		ok := gs == wantJSON && canon([]byte(gs)) == canon(wantState) && canon(gp) == canon(wantProg)
+		if ok {
+			r.exact++
+		} else {
+			t.Errorf("%s mismatch\n got %s\nwant %s", label, gs, wantJSON)
+		}
+	}
+	for ri, run := range g.Runs {
+		st := NewWorldState(run.Base, DemoMission())
+		check(fmt.Sprintf("run%d/init", ri), st, run.Steps[0].State, run.Steps[0].Progress, run.Steps[0].JSON)
+		for i, o := range run.Ops {
+			switch o.Op {
+			case "explore":
+				st = st.Explore(Vec2f{o.X, o.Y}, Gain{o.Data, o.Samples})
+			case "return":
+				st = st.ReturnToBase()
+			case "reset":
+				st = st.Reset()
+			}
+			s := run.Steps[i+1]
+			check(fmt.Sprintf("run%d/op%d", ri, i), st, s.State, s.Progress, s.JSON)
+		}
+	}
+	rp := newRow("mission module: parseWorldState tolerance")
+	for i, p := range g.Parsed {
+		rp.count++
+		raw := []byte("null")
+		if p.Raw != nil {
+			raw = []byte(*p.Raw)
+		}
+		st := ParseWorldState(raw, Vec2f{})
+		gs, _ := json.Marshal(st)
+		gp, _ := json.Marshal(st.Progress())
+		if canon(gs) == canon(p.State) && canon(gp) == canon(p.Progress) {
+			rp.exact++
+		} else {
+			t.Errorf("parse %d mismatch\n got %s\nwant %s", i, gs, p.State)
+		}
+	}
+}
