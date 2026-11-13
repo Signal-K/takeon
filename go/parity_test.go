@@ -504,14 +504,12 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 
 func TestOrderStubs(t *testing.T) {
 	g, _ := NewGame(4212, "mars")
-	for _, k := range []string{"build", "scan", "photo", "craft"} {
+	for _, k := range []string{"build", "craft"} {
 		if _, err := g.Order(k, 0); err == nil {
 			t.Errorf("order %q should be reported unsupported", k)
 		}
 	}
-	if _, err := MakeNoise(&NoiseConfig{Type: "blue"}, 1); err == nil {
-		t.Error("blue noise should be reported unsupported")
-	}
+
 }
 
 // ---- mission/module contract (golden/module.json) ----

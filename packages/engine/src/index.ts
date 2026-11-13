@@ -14,7 +14,14 @@ export { EventBus } from './util/events.js';
 export { RoverGame, createRoverGame, type RoverGameOptions, type RoverOrder } from './core/game.js';
 export { GameAudio, type GameAudioOptions } from './audio/audio.js';
 
-export { Simulation, TICK_RATE, TICK_DT, DRIVE_SPEED_MULTIPLIER, DIRS, type SimOptions } from './sim/simulation.js';
+export {
+  Simulation,
+  TICK_RATE,
+  TICK_DT,
+  DRIVE_SPEED_MULTIPLIER,
+  DIRS,
+  type SimOptions,
+} from './sim/simulation.js';
 export {
   STRUCTURES,
   registerStructure,
@@ -130,7 +137,12 @@ export { PARTS, getPart } from './parts/catalog.js';
 export { computeStats, canReach, defaultSpec } from './parts/assembly.js';
 
 export { IsoRenderer } from './render/renderer.js';
-export { IsoTerrainLayer, ISO_TERRAIN_CHUNK_SIZE, type TerrainColumnPainter, type TerrainProjector } from './render/iso-terrain-layer.js';
+export {
+  IsoTerrainLayer,
+  ISO_TERRAIN_CHUNK_SIZE,
+  type TerrainColumnPainter,
+  type TerrainProjector,
+} from './render/iso-terrain-layer.js';
 export { FlatRenderer, FLAT_TILE } from './render/flat.js';
 export { rasterizeFlatTerrain, type FlatTerrainPixels } from './render/flat-terrain.js';
 export {
@@ -237,3 +249,5 @@ export {
   serializeWorldState,
   parseWorldState,
 } from './module/state.js';
+
+export { coreCapabilities } from './go/sync.js';

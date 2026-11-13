@@ -1,6 +1,9 @@
 package takeon
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestSeededDropoff(t *testing.T) {
 	g, err := NewGame(4212, "moon")
@@ -41,9 +44,15 @@ func TestSeededDropoff(t *testing.T) {
 	if g.rover.CargoUsed != 0 || len(g.rover.Cargo) != 0 || g.banked["iron"] != 3 || g.banked["stone"] != 2 {
 		t.Fatalf("hold %v banked %v", g.rover.Cargo, g.banked)
 	}
-	if ev, _ := g.DrainEvents(); ev != `[{"kind":"cargoDeposited","amount":5}]` {
-		t.Fatalf("events %s", ev)
+	var events []Event
+	raw, _ := g.DrainEvents()
+	if err := json.Unmarshal([]byte(raw), &events); err != nil {
+		t.Fatal(err)
 	}
+	if len(events) != 2 || events[0].Kind != "cargoDeposited" || events[0].Amount != 5 || events[1].Kind != "stateChanged" {
+		t.Fatalf("events %s", raw)
+	}
+
 	if g.Deposit() != 0 {
 		t.Fatal("an empty hold moves nothing")
 	}

@@ -25,7 +25,7 @@ func isOreMat(m int) bool { return m == IronOre || m == CopperOre || m == Titani
 
 // Window returns the terrain window [x0,x0+w) x [y0,y0+h) as JSON.
 func (g *Game) Window(x0, y0, w, h int) (string, error) {
-	if w < 0 || h < 0 || w*h > 1<<16 {
+	if w < 0 || h < 0 || w > 65536 || h > 65536 || int64(w)*int64(h) > 1<<16 {
 		return "", ErrUnsupported
 	}
 	v := WindowView{X: x0, Y: y0, W: w, H: h, Size: g.world.Size, Heights: make([]int, 0, w*h), Mats: make([]int, 0, w*h), Ore: make([]int, 0, w*h)}

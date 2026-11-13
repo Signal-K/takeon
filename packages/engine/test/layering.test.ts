@@ -22,17 +22,19 @@ const SRC = join(__dirname, '..', 'src');
 const ALLOWED: Record<string, string[]> = {
   util: [],
   audio: [],
-  module: [],
-  parts: [],
-  world: ['util'],
+  module: ['go'],
+  go: [],
+  data: [],
+  parts: ['go', 'data'],
+  world: ['util', 'go', 'data'],
   net: ['parts', 'world', 'util'],
-  sim: ['parts', 'world', 'util'],
+  sim: ['parts', 'world', 'util', 'go', 'data'],
   // The scene model flattens a running sim into renderer-agnostic entities,
   // so it sits above sim and below every renderer.
   scene: ['sim', 'world', 'util'],
   render: ['scene', 'sim', 'world', 'util'],
   input: ['render'],
-  core: ['scene', 'sim', 'render', 'input', 'audio', 'util'],
+  core: ['scene', 'sim', 'render', 'input', 'audio', 'util', 'parts'],
 };
 
 function tsFiles(dir: string): string[] {

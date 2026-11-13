@@ -28,6 +28,8 @@ class TakeonEngine private constructor(private val go: Engine) : AutoCloseable {
     /** Seeds are reduced to their low 32 bits, like the TS engine's `seed >>> 0`. */
     constructor(seed: Long, bodyId: String) : this(Engine(seed and 0xFFFF_FFFFL, bodyId))
 
+    fun configureJson(configuration: String, seed: Long) = go.configureJSON(configuration, seed and 0xFFFF_FFFFL)
+
     fun loadWorld(bodyId: String, seed: Long) = go.loadWorld(bodyId, seed and 0xFFFF_FFFFL)
 
     /** Advance by [dtSeconds] (fixed 0.1 s ticks inside) and return the events raised. */
@@ -45,6 +47,9 @@ class TakeonEngine private constructor(private val go: Engine) : AutoCloseable {
     fun orderMine(x: Int, y: Int): Boolean = x in 0..0xFFFF && y in 0..0xFFFF && go.orderMine(x.toLong(), y.toLong())
     fun cancelOrder() = go.cancelOrder()
     fun bank(): Boolean = go.bank()
+
+    /** Shared Go construction, crafting and survey commands; result is JSON. */
+    fun commandJson(kind: String, argument: String = ""): String = go.commandJSON(kind, argument)
 
     fun stateJson(): JSONObject = JSONObject(go.stateJSON())
     fun snapshot(): ByteArray = go.snapshot()

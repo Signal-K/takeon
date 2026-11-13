@@ -1,6 +1,6 @@
 {
   "name": "@takeon/engine",
-  "version": "0.2.1",
+  "version": "0.2.4",
   "description": "Framework-agnostic isometric voxel rover game engine. Zero runtime dependencies.",
   "license": "MIT",
   "type": "module",
@@ -44,11 +44,12 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build-go-assets.mjs --clean && tsc -p tsconfig.json",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build:go": "node scripts/build-go.mjs",
-    "prepack": "npm run build:go"
+    "typecheck": "node scripts/build-go-assets.mjs && tsc -p tsconfig.json --noEmit",
+    "build:go": "npm run build",
+    "prepack": "npm run build:go",
+    "pretest": "node scripts/build-go-assets.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

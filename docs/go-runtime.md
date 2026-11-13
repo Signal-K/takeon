@@ -1,84 +1,69 @@
-# Shared Go runtime migration (SSL-778)
+# Takeon shared Go core (SSL-778)
 
-## Audit and boundary
+## Ownership and audit
 
-The runtime promotion and package boundary are SSL-835. Full simulation parity,
-existing API replacement and mobile ownership are SSL-836, SSL-837 and SSL-838.
-This is a migration in progress: the TypeScript default must remain available
-until the unsupported behavior below is implemented and verified.
+The canonical runtime is `go/`: world generation, rover/part stats, commands,
+fixed-step simulation, weather, mining, structures/power/outposts, crafting,
+upgrades, scan/photo, mission objectives, and snapshots. There is no TypeScript
+simulation ticking alongside it.
 
-| Piece | Owns today | Intended ownership |
-| --- | --- | --- |
-| `packages/engine/src/sim`, `world`, `parts` | Full TypeScript simulation, structures, recipes, procedural worlds, registries and derived parts | Go owns gameplay rules, deterministic world generation, parts/stat derivation, stepping, commands, snapshots and restore |
-| `go/` | Existing deterministic terrain/rover/weather core plus mission hooks, easy-mining, terrain windows and seeded cargo drop-off | Canonical portable runtime, expanded under SSL-836 |
-| `packages/engine/src/core/game.ts` | Browser loop, input, render scheduling and renderer-coupled autopilot | Host loop/input/rendering stay TS; simulation and autopilot rules move to Go |
-| `packages/pixi-adapter` | Hosts the engine canvas as a Pixi texture and maps input | Remains a renderer/host adapter, consumes the Go-backed engine after SSL-837 |
-| Landnam `native/TakeonKit` | Swift protocol, JSON models and `GoTakeonEngine`, already calling gomobile `MobileEngine` | Portable bindings move here under SSL-838; game target aliases remain in Landnam |
-| `go/android` | Kotlin facade over gomobile AAR | Same core revision as web/Node/Swift; Android runtime verification remains required |
-| Landnam `web/lib/takeon` | Target/resource/event mapping, sync/persistence and an optional separate WASM loader | Game mappings stay in Landnam; remove the parallel loader after the package replacement |
+| Host piece | Responsibility |
+| --- | --- |
+| `packages/engine/src/sim/simulation.ts` | Existing synchronous API and mutable render projection over Go; preserves rover/structure/anomaly references |
+| `packages/engine/src/world` and `parts` | Resolve host-authored registries to data; delegate generation, biome selection, anomalies and stats to Go; retain read-only authoring/render queries |
+| `packages/engine/src/core`, `render`, `input`, `audio` | Browser frame loop, presentation interpolation, cameras, input/order planning, Canvas and audio |
+| `packages/pixi-adapter` | Host the same engine canvas as a Pixi texture; no simulation implementation |
+| `swift/Sources/TakeonCore` | Portable Swift protocol, models and gomobile binding |
+| `go/android` | Kotlin binding over the AAR built from the same `go/mobile` |
+| Landnam `native/TakeonKit` | Compatibility re-export and Landnam target aliases only |
+| Landnam `web/lib/takeon` | Target/material mapping and offline persistence; the separate optional WASM loader is removed |
 
-The ticket's claim of a separate native Swift simulation is outdated. The native
-package already wraps the `orbit/go-runtime` Go implementation; `NullTakeonEngine`
-is a placeholder, not a second implementation of its gameplay rules.
+The audit corrected SSL-778's premise: Landnam's native package already wrapped
+Go, rather than implementing a Swift simulation. Its portable bindings now live
+in Takeon. The production branch had the older determinism spike; the newer
+mission/mining/drop-off runtime was promoted from `orbit/go-runtime` at
+`bcf79f93c5c73e4175dbb7cb81a9653a88272c9d` before completing the missing rules.
 
-Rendering, cameras, UI, input, audio, network/auth, offline persistence and
-Landnam-specific progression are outside the Go core. Declarative bodies, parts,
-materials, biomes and missions cross the boundary as validated data; embedding
-app-specific identifiers or UI behavior in the core is not part of this design.
+Rendering, authored layer-extension data, input planning, audio, authentication,
+network persistence and game-specific progression remain host-owned. Host
+callbacks never execute inside Go; resolved bodies, parts, materials, biomes,
+recipes and structure catalogs cross as data. Pure noise/geometry helpers kept
+for host presentation and authoring are not an alternate simulation.
 
-## Source provenance
+## Shared content
 
-The current production branch contained the determinism spike. The mission,
-mining, terrain-window and drop-off runtime, mobile facade, Kotlin wrapper and
-mission golden vectors are promoted from `orbit/go-runtime` at
-`bcf79f93c5c73e4175dbb7cb81a9653a88272c9d`, with the new JSON boundary and package
-loader added on top. Historical math/parity details remain in
-[go-core-spike.md](go-core-spike.md).
+`go/data/{bodies,parts,materials,biomes,rules}.json` are canonical. The package
+build embeds them in Go and generates its TypeScript catalog module from the
+same files. Do not edit generated `src/data/core-catalog.ts` or
+`src/go/artifacts.ts`; both are ignored build products.
 
-The existing body/part JSON and golden vectors were generated from the historical
-TypeScript baseline. Passing those vectors does not establish parity with all
-current TypeScript extensions or Landnam's vendored 0.2.3. Regenerating vectors
-must be reviewed as a behavior change, never used to hide a mismatch.
+Core commands cover construction, rotation/demolition, refining, solar/generator
+power and pylons, automated drills, launch pads, habitat construction/service,
+mobility upgrades, repair, block placement, scanning and photos. Generation
+supports authored noise including blue noise, ore bands, DEM patches, custom
+materials and host-resolved biome/kind registries. The generic objective module
+also delegates its transitions to Go.
 
-## Contract and capabilities
+## Package API and build
 
-`go/bridge.Session` exposes protocol version 1 as JSON requests/responses. Each
-`create` allocates an independent game. `dispose` releases it; IDs are not reused.
-Errors are explicit responses and failed restores leave the live game intact.
-The WASM target exposes only `globalThis.takeonCore(requestJSON)`; it does not
-replace the older optional `globalThis.takeon` loader protocol.
-
-`takeon.Capabilities()` and mobile `CapabilitiesJSON()` describe the same core.
-Available operations include create, fixed-step advance, move/drill/mine/cancel,
-mission progress, terrain window, snapshot/restore, seedCache, seedCargo, deposit,
-and bank. The snapshot format is `takeon-go/v1`, not TS `MissionState`.
-
-Known gaps: structures/power/drill rigs/launch/habitats, build/scan/photo/craft,
-mobility upgrades, place/repair, runtime custom-world registries, blue noise, ore
-bands, DEM sampling and the existing synchronous `Simulation`/render projection
-API. Go's mission yield and autopilot conventions also differ from the current
-host's conventions. **Do not enable Go as Landnam's default until these are
-covered and the existing API adapter is verified.**
-
-## Web and Node package entry
-
-`@takeon/engine/go` is additive. Existing `@takeon/engine` and `@takeon/pixi` entry
-points are unchanged; they still use TypeScript simulation in this slice.
-
-Build the package with Go >= 1.26 and the usual npm dependencies:
+`@takeon/engine` and `@takeon/pixi` retain their existing entry points and renderer
+APIs. Rover specs remain optional at the game/Pixi boundary. Importing the
+package does not start Go during SSR; the first core operation initializes the
+embedded, synchronously compiled WASM once, preserving the synchronous API.
+There are no per-tick network reads or background polling.
 
 ```sh
 npm ci --ignore-scripts --workspace @takeon/engine --workspace @takeon/pixi
-npm run build:go -w @takeon/engine
+npm run build -w @takeon/engine
+npm run build -w @takeon/pixi
 node scripts/check-go-package.mjs
 ```
 
-`build:go` builds the WASM and copies its matching toolchain's `wasm_exec.js` into
-`dist/go`, then compiles TypeScript. `prepack` runs it too, so published archives
-cannot silently omit the exported runtime assets. Both assets must be deployed
-together. A failed Go build stops packaging; shim copying cannot mask that error.
-
-Node:
+Go >= 1.26, Node/npm and `shasum` are required. `prepack` builds the core, matching
+Go toolchain shim, generated catalogs and package output. Failed compilation
+stops packaging. The default engine embeds the paired artifacts to preserve the
+synchronous API; the additive `@takeon/engine/go` entry can load standalone
+artifacts asynchronously for headless or custom hosts.
 
 ```js
 import { readFile } from 'node:fs/promises';
@@ -93,35 +78,63 @@ game.restore(snapshot);
 game.dispose();
 ```
 
-Browser (serve the paired assets on your static origin):
+Browser custom hosts may instead provide `wasmURL` and `wasmExecURL` pointing to
+the paired static artifacts. One VM can own multiple isolated games. Dispose
+releases a handle; the Simulation wrapper also registers a GC fallback. Loader
+failures are retryable. Seeds are reduced to uint32. `step` takes finite 0–60
+second deltas. Structured commands such as build/craft use `command(kind, text)`;
+integer orders remain available for movement and existing mobile callers.
 
-```js
-import { loadGoCore } from '@takeon/engine/go';
-const core = await loadGoCore({
-  wasmURL: '/takeon/takeon.wasm',
-  wasmExecURL: '/takeon/wasm_exec.js',
-});
-const game = core.createEngine(4212, 'moon');
-const terrain = game.window(0, 0, 16, 16);
+`coreCapabilities()` (default entry), `core.capabilities` (async entry), and
+mobile `CapabilitiesJSON()` report protocol version, supported operations and
+`sourceHash`. The build script embeds the same deterministic digest of canonical
+runtime source/content into WASM, xcframework and AAR builds. The package smoke
+check compares the default and async entries' digests.
+
+## Persistence and compatibility
+
+New `MissionState` saves keep the existing host fields and add `coreSnapshot`.
+That opaque Go v1 continuation includes weather RNG, drill timers, upgrades,
+structures and resolved content. Legacy saves without it resume through the
+existing host projection; rejected optional snapshots fall back to that path.
+Failed direct core restores are atomic and leave the live game unchanged.
+
+Landnam writes the UTF-8 Go JSON to the existing `voxel_worlds.snapshot` field as
+base64, matching native's established wire format. Web reads that field too.
+No new collection or destructive data migration is introduced. Newly generated
+photo/structure IDs are deterministic and the ID counter survives snapshots;
+existing saved IDs remain intact. Resource traversal uses stable ordering so a
+nearly full cargo hold cannot depend on Go map iteration order.
+
+## Swift and Kotlin
+
+The root `Package.swift` exposes `TakeonCore`. Build its binary first:
+
+```sh
+go/scripts/build.sh ios
+# Shared package uses go/dist/Takeon.xcframework.
 ```
 
-The loader starts one VM and supports many games inside it. Load failures are
-retryable. Seeds must be safe integers and are reduced to uint32. `step` accepts
-0–60 seconds; hosts should advance normal frame deltas rather than long elapsed
-time in one call. Unsupported commands throw; callers must inspect capabilities
-instead of assuming full API compatibility. Go snapshots are trusted engine data,
-not an interchange format for arbitrary external JSON.
+Landnam's shim prefers a sibling Takeon checkout when present; otherwise it uses
+a pinned source revision. Set `TAKEON_PACKAGE_PATH` to choose a local checkout.
+Its sync script builds that checkout's core, replacing the retired release
+fetch. Without a framework the explicit unavailable-runtime adapter is retained.
+Kotlin uses `go/scripts/build.sh android` and the existing Android wrapper project.
+Both mobile targets bind `go/mobile`, not copied gameplay logic. Custom content
+can be supplied through `ConfigureJSON` / `configureJSON`.
 
-## Mobile builds and remaining gates
+Apple builds require Xcode; Android requires SDK/NDK/JDK. The user explicitly
+waived native build/runtime verification for SSL-778. Source migration and build
+wiring are included; no claim of new xcframework/AAR build or device testing is
+made. Rebuild mobile artifacts from the pinned checkout before shipping native.
 
-`go/scripts/build.sh ios` / `android` use the pinned `go tool gomobile` dependency.
-Xcode is required for Apple artifacts; Android SDK, NDK and JDK are required for
-Android. The promoted Kotlin wrapper is existing source, not newly verified
-Android functionality. Portable Swift binding ownership and one revision-pinned
-artifact manifest across all platforms remain SSL-838; they are not completed by
-building WASM.
+## Verification fixtures
 
-Before default replacement: close SSL-836 parity gaps, implement SSL-837's public
-API compatibility adapter, verify real Landnam scenes and saves, and build/run
-Swift and Kotlin artifacts on supported SDKs. Keep SSL-778 In Progress until
-those outcomes are complete.
+Historical math/terrain/rover/mission vectors remain unchanged. New
+`golden/expanded.json` and `golden/world-extensions.json` were captured from the
+pre-migration TypeScript engine at `prod/main` (`1a8ced2`) before removing its
+simulation implementation. They cover construction, crafting, upgrades, repair,
+placement, scan/photo, shipping, powered drills, habitats, ore bands, custom
+biomes, DEM and blue masks. Reproducible capture scripts accept an explicit
+pre-migration compiled oracle; do not regenerate expected values from Go to hide
+a mismatch. Old determinism findings are in [go-core-spike.md](go-core-spike.md).

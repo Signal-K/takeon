@@ -1,5 +1,6 @@
 import type { BodyDef, MissionState, RoverSpec, StructureType, Vec2 } from '../types.js';
 import { EventBus } from '../util/events.js';
+import { defaultSpec } from '../parts/assembly.js';
 import { DIRS, Simulation, TICK_DT } from '../sim/simulation.js';
 import { Camera } from '../render/camera.js';
 import { FlatRenderer } from '../render/flat.js';
@@ -15,7 +16,7 @@ export interface RoverGameOptions {
   /** Canvas to render into. The game manages its size via `resize()`. */
   canvas: HTMLCanvasElement;
   body: BodyDef;
-  spec: RoverSpec;
+  spec?: RoverSpec;
   seed?: number;
   /** Resume a previously serialised mission. */
   resume?: MissionState;
@@ -38,9 +39,7 @@ export interface RoverGameOptions {
 }
 
 /** A queued player order: drive somewhere, or go mine a specific column. */
-export type RoverOrder =
-  | { type: 'goto'; pos: Vec2 }
-  | { type: 'mine'; pos: Vec2 };
+export type RoverOrder = { type: 'goto'; pos: Vec2 } | { type: 'mine'; pos: Vec2 };
 
 /**
  * Facade tying sim + renderer + controls together behind one small API.
@@ -73,7 +72,7 @@ export class RoverGame {
     this.opts = opts;
     this.sim = new Simulation({
       body: opts.body,
-      spec: opts.spec,
+      spec: opts.spec ?? defaultSpec(),
       events: this.events,
       seed: opts.seed,
       resume: opts.resume,
@@ -164,6 +163,7 @@ export class RoverGame {
 
   dispose(): void {
     this.stop();
+    this.sim.dispose();
     this.audio.stopAmbient();
     this.controls?.dispose();
     this.events.clear();
@@ -437,9 +437,22 @@ export class RoverGame {
     // Mining orders retain their adjacency rule, but use the old greedy
     // fallback until a host has supplied a target-aware mine planner.
     const primary: 0 | 1 | 2 | 3 = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 0 : 2) : dy > 0 ? 1 : 3;
-    const secondary: 0 | 1 | 2 | 3 = Math.abs(dx) >= Math.abs(dy)
-      ? dy > 0 ? 1 : dy < 0 ? 3 : (dx > 0 ? 0 : 2)
-      : dx > 0 ? 0 : dx < 0 ? 2 : (dy > 0 ? 1 : 3);
+    const secondary: 0 | 1 | 2 | 3 =
+      Math.abs(dx) >= Math.abs(dy)
+        ? dy > 0
+          ? 1
+          : dy < 0
+            ? 3
+            : dx > 0
+              ? 0
+              : 2
+        : dx > 0
+          ? 0
+          : dx < 0
+            ? 2
+            : dy > 0
+              ? 1
+              : 3;
     if (!this.sim.move(primary) && !this.sim.move(secondary)) {
       this.stuckCount++;
       if (this.stuckCount > 3) {

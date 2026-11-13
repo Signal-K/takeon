@@ -96,3 +96,27 @@ func CapabilitiesJSON() string {
 	b, _ := json.Marshal(takeon.Capabilities())
 	return string(b)
 }
+
+// CommandJSON invokes a shared construction/refining/survey command with a text argument.
+func (e *Engine) CommandJSON(kind, argument string) (string, error) {
+	result, err := e.g.Command(kind, argument)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(result)
+	return string(b), err
+}
+
+// ConfigureJSON replaces the world from validated, host-authored core content.
+func (e *Engine) ConfigureJSON(configuration string, seed int64) error {
+	var config takeon.HostData
+	if err := json.Unmarshal([]byte(configuration), &config); err != nil {
+		return err
+	}
+	game, err := takeon.NewConfiguredGame(seed, config)
+	if err != nil {
+		return err
+	}
+	e.g = game
+	return nil
+}
