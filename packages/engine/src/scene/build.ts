@@ -1,4 +1,4 @@
-import type { Simulation } from '../sim/simulation.js';
+import type { SceneSource } from './source.js';
 import { createSceneSnapshot } from './snapshot.js';
 import type { Scene, SceneEntity, SceneEntitySnapshot, ViewKind } from './types.js';
 
@@ -15,7 +15,7 @@ export interface BuildSceneOptions {
  * usable in a worker, and the natural hand-off point for a host game that
  * wants to draw TakeOn's world with its own renderer.
  */
-export function buildScene(sim: Simulation, opts: BuildSceneOptions = {}): Scene {
+export function buildScene(sim: SceneSource, opts: BuildSceneOptions = {}): Scene {
   const { view = 'iso', includeHidden = false } = opts;
   const entities: SceneEntity[] = [];
 

@@ -173,10 +173,15 @@ rover, battery, mining loop, or Landnam mission schema.
 1. **Contract and audit (complete).** Record the canonical-engine decision,
    host boundary, existing gaps, platform parity matrix, and consumer examples.
 2. **Make the TypeScript runtime host-neutral (in progress).** Data-only scene
-   snapshots and the DOM-free flat terrain raster are in place. Next split the
-   isometric terrain renderer and entity pass from rover simulation
-   dependencies; define stable command/event messages and renderer inputs
-   that do not expose `Simulation`.
+   snapshots, the DOM-free flat terrain raster and the reusable
+   `IsoTerrainLayer` are in place. Renderer inputs no longer expose
+   `Simulation`: `IsoRenderer`, `FlatRenderer` and `buildScene` read a
+   `SceneSource` (`scene/source.ts`) holding only body, seed, world, time,
+   rover, structures, anomalies, weather, launches, impacts, power and
+   daylight. A running `Simulation` satisfies it unchanged, and a host can
+   pass its own state (replay, server snapshot, survey) instead. Next define
+   stable command/event messages, and make the rover optional in
+   `SceneSource` so the renderers draw a world with no vehicle.
 3. **Package the shared client.** Build a versioned runtime bundle with an
    explicit host bridge, deterministic fixed-step clock, resize/lifecycle
    hooks, and no host-specific account or progression logic.

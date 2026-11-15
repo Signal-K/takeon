@@ -12,6 +12,10 @@ import {
   roverPaintContext,
   Simulation,
   unregisterRoverPart,
+  VoxelWorld,
+  type Anomaly,
+  type RoverState,
+  type SceneSource,
 } from '../src/index.js';
 
 function makeSim(bodyId = 'moon') {
@@ -130,5 +134,53 @@ describe('rover parts', () => {
     expect(ids).not.toContain('damage');
     expect(ids).not.toContain('headlights');
     expect(ids).not.toContain('cargo');
+  });
+});
+
+describe('SceneSource (KES-212)', () => {
+  // A host's own state, with no Simulation and no Go core behind it.
+  function hostSource(): SceneSource {
+    const world = new VoxelWorld(8, 4);
+    for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) world.setRaw(x, y, 0, 1);
+    const rover = {
+      spec: { id: 'surveyor', name: 'Surveyor' },
+      pos: { x: 2, y: 3 },
+      renderPos: { x: 2, y: 3 },
+      facing: 1,
+      battery: 80,
+      durability: 100,
+      cargoUsed: 0,
+      mining: null,
+      moveFrom: null,
+    } as unknown as RoverState;
+    return {
+      body: getBody('moon')!,
+      seed: 7,
+      missionId: 'host-replay',
+      landingSite: { x: 1, y: 1 },
+      world,
+      time: 12,
+      rover,
+      structures: [],
+      anomalies: [{ id: 'a1', type: 'mineral', name: 'Vein', pos: { x: 5, y: 5 }, scanned: true } as unknown as Anomaly],
+      weather: null,
+      launches: [],
+      impacts: [],
+      powered: new Set<string>(),
+      daylight: () => 0.5,
+    };
+  }
+
+  it('builds a scene from a plain host source', () => {
+    const scene = buildScene(hostSource());
+    expect(scene.size).toBe(8);
+    expect(scene.home).toEqual({ x: 1, y: 1 });
+    expect(entitiesOfKind(scene, 'rover')[0].variant).toBe('surveyor');
+    expect(entitiesOfKind(scene, 'anomaly').map((e) => e.id)).toEqual(['a1']);
+  });
+
+  it('is satisfied by a running Simulation without adapters', () => {
+    const source: SceneSource = makeSim();
+    expect(buildScene(source).size).toBe(source.world.size);
   });
 });

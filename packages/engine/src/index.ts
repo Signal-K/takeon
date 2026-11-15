@@ -173,6 +173,7 @@ export {
 // Scene model: the renderer-agnostic description of a frame.
 export { buildScene, type BuildSceneOptions } from './scene/build.js';
 export { createSceneSnapshot, snapshotScene, type SceneSnapshotInput } from './scene/snapshot.js';
+export type { SceneSource } from './scene/source.js';
 export {
   entitiesOfKind,
   type Scene,

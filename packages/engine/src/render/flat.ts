@@ -1,5 +1,5 @@
 import { buildScene } from '../scene/build.js';
-import type { Simulation } from '../sim/simulation.js';
+import type { SceneSource } from '../scene/source.js';
 import type { Vec2 } from '../types.js';
 import { rasterizeFlatTerrain } from './flat-terrain.js';
 import { Camera } from './camera.js';
@@ -28,7 +28,7 @@ export class FlatRenderer implements SceneView {
 
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private sim: Simulation;
+  private sim: SceneSource;
   /** Draw the rover and its scanner reach. Off until the game turns it on. */
   showRover = false;
   private dpr = 1;
@@ -42,7 +42,7 @@ export class FlatRenderer implements SceneView {
   private renderTime = 0;
   private lastDrawMs = 0;
 
-  constructor(canvas: HTMLCanvasElement, sim: Simulation, camera: Camera = new Camera()) {
+  constructor(canvas: HTMLCanvasElement, sim: SceneSource, camera: Camera = new Camera()) {
     this.canvas = canvas;
     this.sim = sim;
     this.camera = camera;

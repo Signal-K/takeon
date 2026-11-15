@@ -1,5 +1,5 @@
 import { Material, type Vec2 } from '../types.js';
-import type { Simulation } from '../sim/simulation.js';
+import type { SceneSource } from '../scene/source.js';
 import { DIRS } from '../sim/simulation.js';
 import { POWER_RANGE } from '../sim/structures.js';
 import { Camera } from './camera.js';
@@ -118,7 +118,7 @@ export class IsoRenderer implements SceneView {
   rotation: ViewRotation = 0;
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private sim: Simulation;
+  private sim: SceneSource;
   private terrainLayer: IsoTerrainLayer;
   private stars: { x: number; y: number; r: number; a: number }[] = [];
   private dpr = 1;
@@ -148,7 +148,7 @@ export class IsoRenderer implements SceneView {
   private frameEma = 16;
   private lastQualityMs = 0;
 
-  constructor(canvas: HTMLCanvasElement, sim: Simulation, camera: Camera = new Camera()) {
+  constructor(canvas: HTMLCanvasElement, sim: SceneSource, camera: Camera = new Camera()) {
     this.canvas = canvas;
     this.sim = sim;
     this.camera = camera;
