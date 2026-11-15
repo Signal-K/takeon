@@ -77,6 +77,41 @@ needed.
 
 Returned handle: `{ game, sprite, resize(w, h), start(), pause(), resume(), stop(), isRunning(), destroy() }`.
 
+### Survey scene
+
+The field survey is a framed slice of the same engine: a 60° three-quarter camera that follows the rover, no ambient creatures or grass, and a scanner parked beside the nearest crystal spire. Hosts embed that scene instead of assembling it themselves.
+
+React (Landnam web):
+
+```tsx
+import { TakeOnSurvey } from '@takeon/ui';
+
+<TakeOnSurvey onHub={() => router.push('/hub')} />;
+```
+
+The stock chrome is a bottom-left d-pad (touch, plus WASD/arrows), one large SCAN button, and SCAN / HUB / LASER as small pills. Replace `SurveyScreen` through `TakeOnUIProvider` if the host draws its own controls.
+
+Canvas, or Pixi for native:
+
+```ts
+import { createSurveyScene } from '@takeon/engine';
+import { mountSurveyScene } from '@takeon/pixi';
+
+const scene = createSurveyScene({ canvas, onHub: openHub });
+scene.start();
+scene.move(3);          // screen-up
+scene.scan();
+scene.snapshot();       // clock, fuel, formationInRange
+
+const mounted = mountSurveyScene({
+  pixi: PIXI, stage: app.stage, ticker: app.ticker, view: app.canvas,
+  width: 402, height: 874, onHub: openHub,
+});
+mounted.start();
+```
+
+`mountSurveyScene` returns the rover mount plus `move`, `scan`, `laser`, `hub` and `snapshot`. Pass `body` / `spec` to survey a world other than Europa.
+
 ## 3. Inside a React app (`@takeon/ui`)
 
 ```tsx

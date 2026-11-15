@@ -52,7 +52,8 @@ export interface RoverPart {
 
 /** Rover render scale relative to a tile — oversized for a chunky,
  * readable diorama look. */
-export const ROVER_SCALE = 1.7;
+/** Larger than a tile so the closer 60° camera still reads the rover as the subject. */
+export const ROVER_SCALE = 2.05;
 
 const parts: RoverPart[] = [];
 
@@ -177,12 +178,12 @@ registerRoverPart({
   id: 'shadow',
   order: 0,
   draw(ctx) {
-    const sh = ctx.createRadialGradient(0, 3.5, 2, 0, 3.5, 13);
-    sh.addColorStop(0, 'rgba(10,6,20,0.42)');
-    sh.addColorStop(1, 'rgba(10,6,20,0)');
+    const sh = ctx.createRadialGradient(0, 4.2, 2, 0, 4.2, 16);
+    sh.addColorStop(0, 'rgba(18,28,40,0.38)');
+    sh.addColorStop(1, 'rgba(18,28,40,0)');
     ctx.fillStyle = sh;
     ctx.beginPath();
-    ctx.ellipse(0, 3.5, 13, 5.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 4.2, 15, 4.6, 0, 0, Math.PI * 2);
     ctx.fill();
   },
 });
@@ -244,15 +245,16 @@ registerRoverPart({
     // A mobility kit swaps in larger, knobblier wheels.
     const wr = 3.6 + p.mobility * 0.7;
     for (const wx of [-8, 0, 8]) {
-      const wg = ctx.createRadialGradient(wx - 1, 0.5, 0.5, wx, 1.5, wr + 0.4);
+      const wg = ctx.createRadialGradient(wx - 1, 0.2, 0.4, wx, 1.6, wr + 0.4);
       wg.addColorStop(0, '#4a4954');
       wg.addColorStop(1, '#1d1c24');
       ctx.fillStyle = wg;
       ctx.beginPath();
-      ctx.arc(wx, 1.5, wr, 0, Math.PI * 2);
+      // Elliptical: the 60° camera looks down onto the tyre.
+      ctx.ellipse(wx, 2.1, wr, wr * 0.76, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.save();
-      ctx.translate(wx, 1.5);
+      ctx.translate(wx, 2.1);
       ctx.rotate(p.spin);
       ctx.strokeStyle = '#15141b';
       ctx.lineWidth = 0.7 + p.mobility * 0.12;
@@ -273,7 +275,7 @@ registerRoverPart({
       ctx.restore();
       ctx.fillStyle = '#9aa0ab';
       ctx.beginPath();
-      ctx.arc(wx, 1.5, 1, 0, Math.PI * 2);
+      ctx.arc(wx, 2.1, 1, 0, Math.PI * 2);
       ctx.fill();
     }
   },
@@ -288,7 +290,7 @@ registerRoverPart({
     for (let i = 0; i < 3; i++) {
       const phase = (p.time * 6 + i * 0.7) % 1;
       const r = 0.8 + phase * 2.6;
-      ctx.fillStyle = `rgba(214,186,150,${0.22 * (1 - phase)})`;
+      ctx.fillStyle = `rgba(214,228,236,${0.22 * (1 - phase)})`;
       ctx.beginPath();
       ctx.arc(-9 - phase * 5, 3.2 - phase * 1.6, r, 0, Math.PI * 2);
       ctx.fill();
@@ -301,33 +303,32 @@ registerRoverPart({
   order: 20,
   sprung: true,
   draw(ctx, p) {
-    const bg = ctx.createLinearGradient(0, -11, 0, -2);
-    bg.addColorStop(0, shade(p.body, 1.22));
-    bg.addColorStop(0.55, p.body);
-    bg.addColorStop(1, shade(p.body, 0.66));
-    ctx.fillStyle = bg;
-    roundRect(ctx, -11, -11, 22, 9.5, 1.8);
+    // Near flank. At 60° it is a short band under the deck, not a side elevation.
+    const flank = ctx.createLinearGradient(0, -8, 0, 1);
+    flank.addColorStop(0, shade(p.body, 0.96));
+    flank.addColorStop(1, shade(p.body, 0.62));
+    ctx.fillStyle = flank;
+    roundRect(ctx, -12, -7.4, 24, 8.4, 2.4);
     ctx.fill();
-    // Panel seams.
-    ctx.strokeStyle = 'rgba(20,16,40,0.28)';
-    ctx.lineWidth = 0.5;
+    // Roof — the face the higher camera actually sees.
+    const roof = ctx.createLinearGradient(0, -16, 0, -7);
+    roof.addColorStop(0, shade(p.body, 1.32));
+    roof.addColorStop(0.65, shade(p.body, 1.08));
+    roof.addColorStop(1, shade(p.body, 0.9));
+    ctx.fillStyle = roof;
+    roundRect(ctx, -11.2, -15.4, 22.4, 8.6, 4.4);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(40,58,74,0.22)';
+    ctx.lineWidth = 0.45;
     ctx.beginPath();
-    ctx.moveTo(-4, -11);
-    ctx.lineTo(-4, -1.5);
-    ctx.moveTo(3.5, -11);
-    ctx.lineTo(3.5, -1.5);
-    ctx.moveTo(-11, -5);
-    ctx.lineTo(11, -5);
+    ctx.moveTo(-10.4, -11.2);
+    ctx.lineTo(10.6, -11.2);
     ctx.stroke();
-    // White top deck.
-    ctx.fillStyle = shade(p.body, 1.35);
-    roundRect(ctx, -10, -12.2, 20, 2.4, 1);
-    ctx.fill();
-    // Mobility-kit pips: one amber stud per upgrade level on the deck.
+    // Mobility-kit pips: one ice-blue stud per upgrade level on the deck.
     for (let i = 0; i < p.mobility; i++) {
-      ctx.fillStyle = '#ffb347';
+      ctx.fillStyle = '#8ec8de';
       ctx.beginPath();
-      ctx.arc(-8.5 + i * 2.2, -11, 0.7, 0, Math.PI * 2);
+      ctx.arc(-8 + i * 2.2, -13.6, 0.65, 0, Math.PI * 2);
       ctx.fill();
     }
   },
@@ -338,20 +339,20 @@ registerRoverPart({
   order: 25,
   sprung: true,
   draw(ctx) {
-    // Gold multilayer-insulation block at the rear.
-    const foil = ctx.createLinearGradient(-11, -9, -6, -3);
-    foil.addColorStop(0, '#e8b64c');
-    foil.addColorStop(0.5, '#c28d2e');
-    foil.addColorStop(1, '#a3721f');
-    ctx.fillStyle = foil;
-    roundRect(ctx, -10.6, -9.5, 4.6, 6.5, 0.8);
+    // Aft tank. Blue-grey, never the old gold foil — the survey rover has no orange.
+    const tank = ctx.createLinearGradient(-12, -13, -6, -6);
+    tank.addColorStop(0, '#c5d4e0');
+    tank.addColorStop(0.45, '#8ea6b8');
+    tank.addColorStop(1, '#5e7588');
+    ctx.fillStyle = tank;
+    roundRect(ctx, -10.8, -13.2, 5.4, 6.2, 1);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(60,40,10,0.35)';
+    ctx.strokeStyle = 'rgba(40,58,74,0.35)';
     ctx.lineWidth = 0.4;
     for (let i = 1; i < 4; i++) {
       ctx.beginPath();
-      ctx.moveTo(-10.6, -9.5 + i * 1.6);
-      ctx.lineTo(-6, -9.5 + i * 1.6);
+      ctx.moveTo(-10.8, -13.2 + i * 1.5);
+      ctx.lineTo(-5.4, -13.2 + i * 1.5);
       ctx.stroke();
     }
   },
@@ -405,16 +406,16 @@ registerRoverPart({
 });
 
 const CARGO_COLOURS: Partial<Record<ResourceKey, string>> = {
-  regolith: '#d99a55',
-  stone: '#b08968',
+  regolith: '#b7c3ce',
+  stone: '#9aa8b4',
   ice: '#a8e8f0',
-  iron: '#c96f4a',
-  silica: '#f2dfa7',
-  copper: '#4fbf9f',
+  iron: '#8aa0b0',
+  silica: '#e4e7ea',
+  copper: '#6a9eae',
   titanium: '#b9c7d6',
-  crystal: '#c77dff',
-  sulfur: '#f6d743',
-  'iron-plate': '#d98f6a',
+  crystal: '#c9dbe8',
+  sulfur: '#d5d2c4',
+  'iron-plate': '#9aabba',
   glass: '#cfeaf2',
   water: '#7fc7e8',
   alloy: '#dbe4ef',
@@ -430,42 +431,43 @@ registerRoverPart({
       [-22, 10],
       [12, 10],
     ] as [number, number][]) {
-      const pg = ctx.createLinearGradient(ox, -10, ox + w, -4);
+      // Panels seen from above: short in screen-Y, sitting on the roof line.
+      const pg = ctx.createLinearGradient(ox, -14, ox + w, -8);
       pg.addColorStop(0, '#1d3a6f');
       pg.addColorStop(0.5, '#2c569c');
       pg.addColorStop(1, '#1a3260');
       ctx.fillStyle = pg;
-      roundRect(ctx, ox, -10, w, 6, 0.8);
+      roundRect(ctx, ox, -13.6, w, 5.2, 0.8);
       ctx.fill();
       ctx.strokeStyle = 'rgba(150,190,255,0.35)';
       ctx.lineWidth = 0.4;
       for (let i = 1; i < 5; i++) {
         ctx.beginPath();
-        ctx.moveTo(ox + (i * w) / 5, -10);
-        ctx.lineTo(ox + (i * w) / 5, -4);
+        ctx.moveTo(ox + (i * w) / 5, -13.6);
+        ctx.lineTo(ox + (i * w) / 5, -8.4);
         ctx.stroke();
       }
       ctx.beginPath();
-      ctx.moveTo(ox, -7);
-      ctx.lineTo(ox + w, -7);
+      ctx.moveTo(ox, -11);
+      ctx.lineTo(ox + w, -11);
       ctx.stroke();
       // Static sheen, plus a glint that tracks across the panel in daylight.
       ctx.fillStyle = 'rgba(255,255,255,0.10)';
       ctx.beginPath();
-      ctx.moveTo(ox + 1, -10);
-      ctx.lineTo(ox + 4, -10);
-      ctx.lineTo(ox + 2, -4);
-      ctx.lineTo(ox, -4);
+      ctx.moveTo(ox + 1, -13.6);
+      ctx.lineTo(ox + 4, -13.6);
+      ctx.lineTo(ox + 2, -8.4);
+      ctx.lineTo(ox, -8.4);
       ctx.closePath();
       ctx.fill();
       if (p.daylight > 0.35) {
         const t = (p.time * 0.25) % 1;
         ctx.fillStyle = `rgba(255,255,255,${0.16 * p.daylight})`;
         ctx.beginPath();
-        ctx.moveTo(ox + t * w, -10);
-        ctx.lineTo(ox + t * w + 1.6, -10);
-        ctx.lineTo(ox + t * w - 0.4, -4);
-        ctx.lineTo(ox + t * w - 2, -4);
+        ctx.moveTo(ox + t * w, -13.6);
+        ctx.lineTo(ox + t * w + 1.6, -13.6);
+        ctx.lineTo(ox + t * w - 0.4, -8.4);
+        ctx.lineTo(ox + t * w - 2, -8.4);
         ctx.closePath();
         ctx.fill();
       }
@@ -474,10 +476,10 @@ registerRoverPart({
     ctx.strokeStyle = '#8a8f98';
     ctx.lineWidth = 0.9;
     ctx.beginPath();
-    ctx.moveTo(-11, -7);
-    ctx.lineTo(-12.5, -7);
-    ctx.moveTo(11, -7);
-    ctx.lineTo(12.5, -7);
+    ctx.moveTo(-11, -11);
+    ctx.lineTo(-12.5, -11);
+    ctx.moveTo(11, -11);
+    ctx.lineTo(12.5, -11);
     ctx.stroke();
   },
 });
@@ -492,8 +494,8 @@ registerRoverPart({
     // thing keeping the battery alive.
     if (p.daylight < 0.5) {
       const glow = ctx.createRadialGradient(-14, -5, 0.5, -14, -5, 7);
-      glow.addColorStop(0, `rgba(255,140,70,${0.28 * (1 - p.daylight)})`);
-      glow.addColorStop(1, 'rgba(255,140,70,0)');
+      glow.addColorStop(0, `rgba(150,190,214,${0.28 * (1 - p.daylight)})`);
+      glow.addColorStop(1, 'rgba(150,190,214,0)');
       ctx.fillStyle = glow;
       ctx.beginPath();
       ctx.arc(-14, -5, 7, 0, Math.PI * 2);
@@ -592,7 +594,7 @@ registerRoverPart({
     ctx.lineTo(-8.5, -18.5);
     ctx.stroke();
     const pulse = 0.55 + 0.45 * Math.abs(Math.sin(p.time * 2.2));
-    ctx.fillStyle = `rgba(255,209,102,${pulse})`;
+    ctx.fillStyle = `rgba(126,220,236,${pulse})`;
     ctx.beginPath();
     ctx.arc(-8.5, -19, 0.7 + pulse * 0.25, 0, Math.PI * 2);
     ctx.fill();
@@ -619,7 +621,7 @@ registerRoverPart({
     ctx.arc(14.5, -4, 1.1, 0, Math.PI * 2);
     ctx.fill();
     // Drill head.
-    ctx.fillStyle = p.mining ? '#ffb347' : '#767d87';
+    ctx.fillStyle = p.mining ? '#9fd4e6' : '#767d87';
     ctx.beginPath();
     ctx.moveTo(15.6, -0.4 + swing);
     ctx.lineTo(19.5, 2.4 + swing);
@@ -630,7 +632,7 @@ registerRoverPart({
     if (p.mining) {
       for (let i = 0; i < 4; i++) {
         const t = (p.time * 5 + i * 0.25) % 1;
-        ctx.fillStyle = `rgba(255,214,150,${0.7 * (1 - t)})`;
+        ctx.fillStyle = `rgba(210,230,240,${0.7 * (1 - t)})`;
         ctx.beginPath();
         ctx.arc(18 + t * 4, 2.4 + swing - t * 3.5 + i, 0.45, 0, Math.PI * 2);
         ctx.fill();
@@ -662,7 +664,7 @@ registerRoverPart({
       ctx.stroke();
       const spark = (p.time * 3) % 1;
       if (spark < 0.22) {
-        ctx.fillStyle = `rgba(255,220,140,${1 - spark / 0.22})`;
+        ctx.fillStyle = `rgba(180,220,235,${1 - spark / 0.22})`;
         ctx.beginPath();
         ctx.arc(0.5 + spark * 3, -7.5 + spark * 4, 0.5, 0, Math.PI * 2);
         ctx.fill();
@@ -682,7 +684,7 @@ registerRoverPart({
     const period = urgent ? 0.45 : 1.4;
     const on = (p.time % period) / period < 0.28;
     if (!on) return;
-    const colour = urgent ? '255,90,90' : '255,190,90';
+    const colour = urgent ? '255,90,90' : '126,216,232';
     const glow = ctx.createRadialGradient(-0.5, -13, 0.2, -0.5, -13, 3.4);
     glow.addColorStop(0, `rgba(${colour},0.85)`);
     glow.addColorStop(1, `rgba(${colour},0)`);
@@ -698,13 +700,30 @@ registerRoverPart({
 });
 
 registerRoverPart({
+  id: 'heading',
+  order: 88,
+  sprung: true,
+  draw(ctx, p) {
+    // Travel chevron, the same cyan as the formation ring.
+    const bob = Math.sin(p.time * 2.4) * 0.35;
+    ctx.fillStyle = 'rgba(110, 224, 240, 0.95)';
+    ctx.beginPath();
+    ctx.moveTo(16, -20 + bob);
+    ctx.lineTo(20.2, -17.2 + bob);
+    ctx.lineTo(16, -14.4 + bob);
+    ctx.closePath();
+    ctx.fill();
+  },
+});
+
+registerRoverPart({
   id: 'headlights',
   order: 80,
   sprung: true,
   when: (p) => p.daylight < 0.35,
   draw(ctx, p) {
     const strength = 1 - p.daylight / 0.35;
-    ctx.fillStyle = `rgba(255,244,200,${0.14 * strength})`;
+    ctx.fillStyle = `rgba(214,236,255,${0.14 * strength})`;
     ctx.beginPath();
     ctx.moveTo(11, -8);
     ctx.lineTo(30, -1);
@@ -712,7 +731,7 @@ registerRoverPart({
     ctx.lineTo(11, -3);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = `rgba(255,247,214,${0.95 * strength})`;
+    ctx.fillStyle = `rgba(232,246,255,${0.95 * strength})`;
     ctx.beginPath();
     ctx.arc(10.8, -7, 0.9, 0, Math.PI * 2);
     ctx.arc(10.8, -4, 0.9, 0, Math.PI * 2);

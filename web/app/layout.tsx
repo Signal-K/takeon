@@ -29,6 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Link>
             <span className="chip">rover missions</span>
             <span className="spacer" />
+            <Link href="/survey">
+              <button title="Survey scene">Survey</button>
+            </Link>
             <Link href="/editor">
               <button title="World editor: terrain, noise, maps, play mode">🛠 Editor</button>
             </Link>

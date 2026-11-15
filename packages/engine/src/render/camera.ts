@@ -7,11 +7,11 @@ import { project } from './sprites.js';
 export class Camera {
   cx = 0;
   cy = 0;
-  /** Chunky framing that still shows a useful stretch of ground around the
-   * rover — not so tight it feels like a magnifying glass. */
-  zoom = 2.5;
-  minZoom = 1.3;
-  maxZoom = 5.5;
+  /** Closer three-quarter framing: the rover reads large, with a pocket of
+   * ice and rock around it. Hosts can still zoom out. */
+  zoom = 3.2;
+  minZoom = 1.6;
+  maxZoom = 6.4;
   viewW = 800;
   viewH = 600;
   follow = true;

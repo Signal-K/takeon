@@ -9,6 +9,10 @@ additive → minor, fixes → patch.
 
 ## Unreleased
 
+### @takeon/engine, @takeon/pixi
+
+- A scene only has a rover when it brings one. `spec` is now optional on `RoverGameOptions` / `mountRoverGame` / `Simulation`: with a spec the rover is drawn (as before), without one the ground is drawn with no rover (a landing, a flyover). `showRover` overrides it. Both views.
+
 ### @takeon/pixi
 
 - `MountedRoverGame` now exposes `start`, `stop`, `pause`, `resume`, and

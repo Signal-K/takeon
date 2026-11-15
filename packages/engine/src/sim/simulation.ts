@@ -19,6 +19,7 @@ import { VoxelWorld } from '../world/world.js';
 import { runWorldLayers } from '../world/layers.js';
 import { coreCall } from '../go/sync.js';
 import { coreConfig } from './core-config.js';
+import { defaultSpec } from '../parts/assembly.js';
 
 export const TICK_RATE = 10;
 export const TICK_DT = 1 / TICK_RATE;
@@ -31,7 +32,8 @@ export const DIRS: Vec2[] = [
 ];
 export interface SimOptions {
   body: BodyDef;
-  spec: RoverSpec;
+  /** Omit for a landscape with no rover brought to it; the sim still carries a default one. */
+  spec?: RoverSpec;
   events: EventBus;
   seed?: number;
   resume?: MissionState;
@@ -104,7 +106,7 @@ export class Simulation {
     this.missionId = opts.resume?.id ?? makeId('msn');
     this.engineId = coreCall<number>('create', {
       seed: this.seed >>> 0,
-      config: coreConfig(opts.body, opts.resume?.rover.spec ?? opts.spec),
+      config: coreConfig(opts.body, opts.resume?.rover.spec ?? opts.spec ?? defaultSpec()),
     });
     const stored = (opts.resume as (MissionState & { coreSnapshot?: string }) | undefined)
       ?.coreSnapshot;

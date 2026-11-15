@@ -45,8 +45,10 @@ export {
 } from './mission-context.js';
 
 export { TakeOnMission, type TakeOnMissionProps } from './TakeOnMission.js';
+export { TakeOnSurvey, type TakeOnSurveyProps } from './TakeOnSurvey.js';
 
 export { MissionScreen, type MissionScreenProps, type MissionScreenPart } from './components/MissionScreen.js';
+export { SurveyScreen, type SurveyScreenProps } from './components/SurveyScreen.js';
 export { MissionCanvas, type MissionCanvasProps } from './components/MissionCanvas.js';
 export { HudBar, type HudBarProps } from './components/HudBar.js';
 export { DPad, type DPadProps } from './components/DPad.js';
@@ -67,6 +69,7 @@ export { Meter, Modal, Chip, type MeterProps, type ModalProps, type ChipProps } 
  */
 export const SLOT_KEYS = [
   'MissionScreen',
+  'SurveyScreen',
   'MissionCanvas',
   'HudBar',
   'DPad',

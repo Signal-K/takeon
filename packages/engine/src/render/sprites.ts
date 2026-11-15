@@ -2,10 +2,22 @@ import { Material } from '../types.js';
 import { MATERIALS } from '../world/materials.js';
 import { hash3 } from '../util/rng.js';
 
-/** Isometric tile metrics (base scale, before camera zoom). */
+/**
+ * Survey camera elevation, degrees above the horizon.
+ * 30° is classic 2:1 isometric (tall cliffs, little roof). 60° is the
+ * Crashlands-like three-quarter: more of the ground and the rover's deck,
+ * shorter cliff faces. Tile metrics are derived from this so every
+ * procedural sprite re-projects with the angle.
+ */
+export const CAMERA_ELEVATION_DEG = 60;
+const CAMERA_ELEVATION = (CAMERA_ELEVATION_DEG * Math.PI) / 180;
+
+/** Tile metrics at base scale, before camera zoom. */
 export const TILE_W = 32;
-export const TILE_H = 16;
-export const TILE_Z = 14;
+/** Ground depth scale: TILE_W * sin(elevation). */
+export const TILE_H = Math.round(TILE_W * Math.sin(CAMERA_ELEVATION));
+/** Cliff height scale: (TILE_W / 2) * cos(elevation). */
+export const TILE_Z = Math.round((TILE_W / 2) * Math.cos(CAMERA_ELEVATION));
 
 export function shade(hex: string, f: number): string {
   const n = parseInt(hex.slice(1), 16);

@@ -36,12 +36,14 @@ export class Controls {
     c.style.touchAction = 'none';
     c.tabIndex = 0;
 
+    // Window-level so WASD/arrows keep driving after a d-pad tap moves focus
+    // off the canvas. Text fields are left alone.
     const kd = (e: KeyboardEvent) => this.onKey(e, true);
     const ku = (e: KeyboardEvent) => this.onKey(e, false);
-    c.addEventListener('keydown', kd);
-    c.addEventListener('keyup', ku);
-    this.detach.push(() => c.removeEventListener('keydown', kd));
-    this.detach.push(() => c.removeEventListener('keyup', ku));
+    window.addEventListener('keydown', kd);
+    window.addEventListener('keyup', ku);
+    this.detach.push(() => window.removeEventListener('keydown', kd));
+    this.detach.push(() => window.removeEventListener('keyup', ku));
 
     const pd = (e: PointerEvent) => this.onPointerDown(e);
     const pm = (e: PointerEvent) => this.onPointerMove(e);
@@ -79,6 +81,9 @@ export class Controls {
   }
 
   private onKey(e: KeyboardEvent, down: boolean): void {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     const k = e.key.toLowerCase();
     const dir = keyDir(k);
     if (dir !== null) {
