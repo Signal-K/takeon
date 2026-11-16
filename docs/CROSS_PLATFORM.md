@@ -179,9 +179,11 @@ rover, battery, mining loop, or Landnam mission schema.
    `SceneSource` (`scene/source.ts`) holding only body, seed, world, time,
    rover, structures, anomalies, weather, launches, impacts, power and
    daylight. A running `Simulation` satisfies it unchanged, and a host can
-   pass its own state (replay, server snapshot, survey) instead. Next define
-   stable command/event messages, and make the rover optional in
-   `SceneSource` so the renderers draw a world with no vehicle.
+   pass its own state (replay, server snapshot, survey) instead. The rover
+   is optional: with `rover: null` both views centre on the landing site,
+   `buildScene` emits no rover entity, and rover-only overlays (facing tile,
+   mining pulse, scanner ring, minimap dot) are skipped. Next define stable
+   command/event messages.
 3. **Package the shared client.** Build a versioned runtime bundle with an
    explicit host bridge, deterministic fixed-step clock, resize/lifecycle
    hooks, and no host-specific account or progression logic.

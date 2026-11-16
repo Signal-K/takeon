@@ -1,4 +1,4 @@
-import { Material, type Vec2 } from '../types.js';
+import { Material, type RoverState, type Vec2 } from '../types.js';
 import type { SceneSource } from '../scene/source.js';
 import { DIRS } from '../sim/simulation.js';
 import { POWER_RANGE } from '../sim/structures.js';
@@ -158,15 +158,28 @@ export class IsoRenderer implements SceneView {
     this.terrainLayer = new IsoTerrainLayer(sim.world, (g, u, v, proj) => this.drawColumnV(g, u, v, proj, 1));
     this.initStars();
     this.activate();
-    const r = sim.rover;
-    const v = this.toView(r.pos.x, r.pos.y);
-    this.camera.centerOnTile(v.x, v.y, sim.world.height(r.pos.x, r.pos.y));
+    const r = this.focusTileXY();
+    const v = this.toView(r.x, r.y);
+    this.camera.centerOnTile(v.x, v.y, Math.max(0, sim.world.height(r.x, r.y)));
     this.ambient = this.ambientProfile();
     this.spawnCritters();
     this.spawnFlora();
     this.spawnFlyers();
     this.lastDrawMs = nowMs();
-    this.visualFacing = sim.rover.facing;
+    this.visualFacing = sim.rover?.facing ?? 0;
+  }
+
+  /**
+   * The tile the view is about: the rover's, or the landing site when the
+   * source has no rover (a survey or replay with no vehicle, KES-212).
+   */
+  private focusTileXY(): Vec2 {
+    return this.sim.rover?.pos ?? this.sim.landingSite;
+  }
+
+  /** The smooth point the view is about, interpolated during rover moves. */
+  private focusPoint(): Vec2 {
+    return this.sim.rover?.renderPos ?? this.sim.landingSite;
   }
 
   /** Show a host-planned route without storing it in world state or a save. */
@@ -210,10 +223,11 @@ export class IsoRenderer implements SceneView {
     if (rotation === this.rotation) return;
     this.rotation = rotation;
     this.terrainLayer.invalidateAll();
-    const r = this.sim.rover;
-    const v = this.toView(r.renderPos.x, r.renderPos.y);
-    this.camera.centerOnTile(v.x, v.y, this.sim.world.height(r.pos.x, r.pos.y));
-    this.camera.follow = true;
+    const f = this.focusPoint();
+    const t = this.focusTileXY();
+    const v = this.toView(f.x, f.y);
+    this.camera.centerOnTile(v.x, v.y, Math.max(0, this.sim.world.height(t.x, t.y)));
+    this.camera.follow = this.sim.rover != null;
   }
 
   rotateClockwise(): void {
@@ -609,9 +623,10 @@ export class IsoRenderer implements SceneView {
 
     // Camera follow (in view space, on the smoothed surface).
     const rover = sim.rover;
+    const focus = this.focusPoint();
     const rz = this.roverZ();
-    const rv = this.toView(rover.renderPos.x, rover.renderPos.y);
-    if (camera.follow) {
+    const rv = this.toView(focus.x, focus.y);
+    if (camera.follow && rover) {
       const p = project(rv.x, rv.y, rz);
       camera.cx += (p.sx - camera.cx) * 0.15;
       camera.cy += (p.sy - camera.cy) * 0.15;
@@ -624,18 +639,20 @@ export class IsoRenderer implements SceneView {
     this.drawPowerLinks(daylight);
 
     // Facing-tile / mining highlights on the smoothed surface.
-    const d = DIRS[rover.facing];
-    const fx = rover.pos.x + d.x;
-    const fy = rover.pos.y + d.y;
-    if (world.isSolid(fx, fy)) {
-      this.strokeTilePolygon(fx, fy, 'rgba(255,255,255,0.35)');
+    if (rover) {
+      const d = DIRS[rover.facing];
+      const fx = rover.pos.x + d.x;
+      const fy = rover.pos.y + d.y;
+      if (world.isSolid(fx, fy)) {
+        this.strokeTilePolygon(fx, fy, 'rgba(255,255,255,0.35)');
+      }
+      if (rover.mining) {
+        const pulse = 0.35 + (Math.sin(sim.time * 10) + 1) * 0.2;
+        this.strokeTilePolygon(rover.mining.pos.x, rover.mining.pos.y, `rgba(125,214,232,${pulse})`);
+      }
+      this.drawFormationRing(rover);
     }
-    if (rover.mining) {
-      const pulse = 0.35 + (Math.sin(sim.time * 10) + 1) * 0.2;
-      this.strokeTilePolygon(rover.mining.pos.x, rover.mining.pos.y, `rgba(125,214,232,${pulse})`);
-    }
-    this.drawRoute(rover.renderPos);
-    this.drawFormationRing();
+    this.drawRoute(focus);
 
     // Entities in view-space diagonal order.
     type Ent = { s: number; draw: () => void };
@@ -660,7 +677,7 @@ export class IsoRenderer implements SceneView {
         draw: () => drawStructure(ctx, p.x, p.y, camera.zoom, st, sim.time, daylight, powered),
       });
     }
-    if (this.showRover) {
+    if (this.showRover && rover) {
       const p = camera.toScreen(...projXY(rv.x, rv.y, rz + 0.55));
       const screenFacing = (((rover.facing - this.rotation) % 4) + 4) % 4;
       const shortestTurn = ((screenFacing - this.visualFacing + 6) % 4) - 2;
@@ -875,7 +892,7 @@ export class IsoRenderer implements SceneView {
 
   private spawnCritters(): void {
     const world = this.sim.world;
-    const r = this.sim.rover.pos;
+    const r = this.focusTileXY();
     let placed = 0;
     let tries = 0;
     const want = this.ambient.life;
@@ -901,7 +918,7 @@ export class IsoRenderer implements SceneView {
 
   private spawnFlora(): void {
     const world = this.sim.world;
-    const r = this.sim.rover.pos;
+    const r = this.focusTileXY();
     const want = this.ambient.flora;
     let placed = 0;
     let tries = 0;
@@ -935,7 +952,7 @@ export class IsoRenderer implements SceneView {
 
   private spawnFlyers(): void {
     if (!this.ambient.flyer) return;
-    const r = this.sim.rover.pos;
+    const r = this.focusTileXY();
     const n = 1 + (Math.random() < 0.4 ? 1 : 0);
     for (let i = 0; i < n; i++) {
       this.flyers.push({
@@ -965,7 +982,7 @@ export class IsoRenderer implements SceneView {
   private updateAmbient(dt: number): void {
     this.renderTime += dt;
     const world = this.sim.world;
-    const rover = this.sim.rover.renderPos;
+    const rover = this.focusPoint();
     const prof = this.ambient;
     const w = this.sim.weather;
     const storm = w != null && (w.type === 'dust-storm' || w.type === 'dust-devil');
@@ -1041,9 +1058,8 @@ export class IsoRenderer implements SceneView {
   }
 
   /** Cyan ground ring on the nearest crystal spire inside scanner range. */
-  private drawFormationRing(): void {
+  private drawFormationRing(rover: RoverState): void {
     const { ctx, camera, sim } = this;
-    const rover = sim.rover;
     const reach = rover.stats.scanRadius;
     if (reach <= 0) return;
     let best: { x: number; y: number; d: number } | null = null;
@@ -1077,7 +1093,7 @@ export class IsoRenderer implements SceneView {
     const t = this.renderTime;
     // Motes are airborne — one surface reference for the whole field is
     // visually indistinguishable from sampling each and far cheaper.
-    const rover = this.sim.rover.renderPos;
+    const rover = this.focusPoint();
     const baseZ = this.surfaceZ(rover.x, rover.y);
     for (const p of this.particles) {
       const pv = this.toView(p.x, p.y);
@@ -1279,6 +1295,10 @@ export class IsoRenderer implements SceneView {
   /** Rover z on the smoothed surface, interpolated during tile moves. */
   private roverZ(): number {
     const r = this.sim.rover;
+    if (!r) {
+      const t = this.sim.landingSite;
+      return this.surfaceZ(t.x, t.y);
+    }
     if (r.moveFrom) {
       const z0 = this.surfaceZ(r.moveFrom.x, r.moveFrom.y);
       const z1 = this.surfaceZ(r.pos.x, r.pos.y);
@@ -1412,8 +1432,8 @@ export class IsoRenderer implements SceneView {
   centreTile(): Vec2 {
     const centre = this.pickTile(this.cssW / 2, this.cssH / 2);
     if (centre) return centre;
-    const r = this.sim.rover;
-    return { x: r.pos.x, y: r.pos.y };
+    const r = this.focusTileXY();
+    return { x: r.x, y: r.y };
   }
 
   /** Point the camera at a tile in iso projection. */
@@ -1448,9 +1468,9 @@ export class IsoRenderer implements SceneView {
       this.camera.viewH = h;
       this.camera.zoom = 2.4;
       this.camera.follow = false;
-      const r = this.sim.rover;
-      const rv = this.toView(r.pos.x, r.pos.y);
-      this.camera.centerOnTile(rv.x, rv.y, this.sim.world.height(r.pos.x, r.pos.y));
+      const r = this.focusTileXY();
+      const rv = this.toView(r.x, r.y);
+      this.camera.centerOnTile(rv.x, rv.y, Math.max(0, this.sim.world.height(r.x, r.y)));
       this.draw();
       const c = this.ctx;
       const g = c.createRadialGradient(w / 2, h / 2, h / 3, w / 2, h / 2, h);
@@ -1461,7 +1481,7 @@ export class IsoRenderer implements SceneView {
       c.fillStyle = 'rgba(255,255,255,0.75)';
       c.font = '10px monospace';
       c.fillText(
-        `${this.sim.body.name.toUpperCase()}  T+${this.sim.time.toFixed(0)}s  [${r.pos.x},${r.pos.y}]`,
+        `${this.sim.body.name.toUpperCase()}  T+${this.sim.time.toFixed(0)}s  [${r.x},${r.y}]`,
         8,
         h - 8,
       );
@@ -1506,8 +1526,10 @@ export class IsoRenderer implements SceneView {
       ctx.fillRect(st.pos.x * scale - 1, st.pos.y * scale - 1, scale + 2, scale + 2);
     }
     const r = this.sim.rover;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(r.pos.x * scale - 1, r.pos.y * scale - 1, scale + 2, scale + 2);
+    if (r) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(r.pos.x * scale - 1, r.pos.y * scale - 1, scale + 2, scale + 2);
+    }
   }
 }
 

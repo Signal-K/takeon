@@ -55,26 +55,29 @@ export function buildScene(sim: SceneSource, opts: BuildSceneOptions = {}): Scen
     });
   }
 
+  // A source with no rover (a survey, a terrain replay) has no vehicle entity.
   const rover = sim.rover;
-  entities.push({
-    id: 'rover',
-    kind: 'rover',
-    // renderPos is the interpolated position, so the scene matches the frame.
-    pos: { ...rover.renderPos },
-    z: sim.world.height(rover.pos.x, rover.pos.y),
-    facing: rover.facing,
-    variant: rover.spec.id || 'rover',
-    label: rover.spec.name,
-    layer: 30,
-    data: {
-      battery: rover.battery,
-      durability: rover.durability,
-      cargoUsed: rover.cargoUsed,
-      mining: !!rover.mining,
-      moving: rover.moveFrom != null,
-    },
-    ref: rover,
-  });
+  if (rover) {
+    entities.push({
+      id: 'rover',
+      kind: 'rover',
+      // renderPos is the interpolated position, so the scene matches the frame.
+      pos: { ...rover.renderPos },
+      z: sim.world.height(rover.pos.x, rover.pos.y),
+      facing: rover.facing,
+      variant: rover.spec.id || 'rover',
+      label: rover.spec.name,
+      layer: 30,
+      data: {
+        battery: rover.battery,
+        durability: rover.durability,
+        cargoUsed: rover.cargoUsed,
+        mining: !!rover.mining,
+        moving: rover.moveFrom != null,
+      },
+      ref: rover,
+    });
+  }
 
   if (sim.weather?.pos) {
     entities.push({

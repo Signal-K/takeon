@@ -19,7 +19,12 @@ export interface SceneSource {
   readonly world: VoxelWorld;
   /** Simulation seconds; renderers interpolate between ticks themselves. */
   readonly time: number;
-  readonly rover: RoverState;
+  /**
+   * The rover, or null for a world with no vehicle in it (a settlement
+   * survey, a replay of terrain only). Renderers then centre on
+   * `landingSite` and skip everything rover-specific.
+   */
+  readonly rover: RoverState | null;
   readonly structures: readonly Structure[];
   readonly anomalies: readonly Anomaly[];
   readonly weather: ActiveWeather | null;

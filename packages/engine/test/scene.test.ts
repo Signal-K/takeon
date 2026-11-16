@@ -179,6 +179,13 @@ describe('SceneSource (KES-212)', () => {
     expect(entitiesOfKind(scene, 'anomaly').map((e) => e.id)).toEqual(['a1']);
   });
 
+  it('builds a scene with no rover in it', () => {
+    const scene = buildScene({ ...hostSource(), rover: null });
+    expect(entitiesOfKind(scene, 'rover')).toHaveLength(0);
+    expect(scene.home).toEqual({ x: 1, y: 1 });
+    expect(entitiesOfKind(scene, 'anomaly').map((e) => e.id)).toEqual(['a1']);
+  });
+
   it('is satisfied by a running Simulation without adapters', () => {
     const source: SceneSource = makeSim();
     expect(buildScene(source).size).toBe(source.world.size);

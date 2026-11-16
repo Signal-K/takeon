@@ -175,8 +175,9 @@ export class FlatRenderer implements SceneView {
     ctx.fillRect(0, 0, this.cssW, this.cssH);
 
     if (this.camera.follow) {
-      const r = sim.rover;
-      this.focusTile({ x: Math.round(r.renderPos.x), y: Math.round(r.renderPos.y) });
+      // No rover (a survey or terrain replay): hold on the landing site.
+      const r = sim.rover?.renderPos ?? sim.landingSite;
+      this.focusTile({ x: Math.round(r.x), y: Math.round(r.y) });
     }
 
     this.ensureTerrain();
@@ -212,9 +213,9 @@ export class FlatRenderer implements SceneView {
     // Scanner reach, when the rover carries one: the flat view is where you
     // plan sweeps, so the radius belongs on it.
     const rover = sim.rover;
-    const rv = this.toView(rover.renderPos.x, rover.renderPos.y);
-    const rp = this.viewToScreen(rv.x + 0.5, rv.y + 0.5);
-    if (this.showRover && rover.stats.scanRadius > 0) {
+    if (rover && this.showRover && rover.stats.scanRadius > 0) {
+      const rv = this.toView(rover.renderPos.x, rover.renderPos.y);
+      const rp = this.viewToScreen(rv.x + 0.5, rv.y + 0.5);
       ctx.strokeStyle = 'rgba(95,227,216,0.22)';
       ctx.setLineDash([4, 4]);
       ctx.lineWidth = 1;
@@ -334,7 +335,7 @@ export class FlatRenderer implements SceneView {
       if (a.scanned) dot(a.pos.x, a.pos.y, a.documented ? '#7bd88f' : '#ffd166');
     }
     for (const s of this.sim.structures) dot(s.pos.x, s.pos.y, '#7ab8ff');
-    dot(this.sim.rover.pos.x, this.sim.rover.pos.y, '#ffffff');
+    if (this.sim.rover) dot(this.sim.rover.pos.x, this.sim.rover.pos.y, '#ffffff');
   }
 
   capturePhoto(): string | null {
@@ -363,13 +364,14 @@ export class FlatRenderer implements SceneView {
       this.cssH = h;
       this.camera.follow = false;
       this.camera.zoom = 2.2;
-      this.focusTile(this.sim.rover.pos);
+      const at = this.sim.rover?.pos ?? this.sim.landingSite;
+      this.focusTile(at);
       this.draw();
       const c = this.ctx;
       c.fillStyle = 'rgba(255,255,255,0.75)';
       c.font = '10px monospace';
       c.fillText(
-        `${this.sim.body.name.toUpperCase()}  T+${this.sim.time.toFixed(0)}s  [${this.sim.rover.pos.x},${this.sim.rover.pos.y}]  MAP`,
+        `${this.sim.body.name.toUpperCase()}  T+${this.sim.time.toFixed(0)}s  [${at.x},${at.y}]  MAP`,
         8,
         h - 8,
       );
