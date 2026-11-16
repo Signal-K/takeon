@@ -12,6 +12,8 @@
 export * from './types.js';
 export { EventBus } from './util/events.js';
 export { RoverGame, createRoverGame, type RoverGameOptions, type RoverOrder } from './core/game.js';
+export { RUNTIME_VERSION, createHostRuntime, type HostInbound, type HostOutbound, type HostRuntime, type HostRuntimeOptions, type RuntimeClock, type RuntimeGame } from './core/host.js';
+export { mount as mountRuntime, findBridge, RuntimeConfigError, type RuntimeConfig, type BridgeSend } from './runtime/mount.js';
 export {
   PROTOCOL_VERSION,
   applyCommand,

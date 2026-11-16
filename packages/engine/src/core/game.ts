@@ -144,6 +144,7 @@ export class RoverGame {
 
   // ── Loop ──────────────────────────────────────────────────────────────
 
+  /** Runs the game on the browser's animation frames. A host that owns time calls `advance` and `draw` instead. */
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -151,19 +152,43 @@ export class RoverGame {
     const frame = () => {
       if (!this.running) return;
       const t = now();
-      this.acc += Math.min(0.25, (t - this.last) / 1000);
+      this.advance(Math.min(0.25, (t - this.last) / 1000));
       this.last = t;
-      while (this.acc >= TICK_DT) {
-        this.sim.tick();
-        this.autoWalk();
-        this.acc -= TICK_DT;
-      }
-      this.sim.interpolateRender(this.acc);
-      this.iso.setRoute(this.route);
-      this.renderer.draw();
+      this.draw();
       this.raf = requestAnimationFrame(frame);
     };
     this.raf = requestAnimationFrame(frame);
+  }
+
+  /**
+   * Moves game time forward by `seconds` in fixed 10 Hz steps and returns how many steps ran. Leftover time carries
+   * to the next call, so the same total time always runs the same steps, however it is split: a native shell or a
+   * replay tape driving the clock gets the same simulation as the animation-frame loop.
+   */
+  advance(seconds: number): number {
+    if (!(seconds > 0)) return 0;
+    this.acc += seconds;
+    let steps = 0;
+    // The epsilon absorbs float drift, so ten 0.01 s calls run the same step as one 0.1 s call.
+    while (this.acc >= TICK_DT - 1e-9) {
+      this.sim.tick();
+      this.autoWalk();
+      this.acc = Math.max(0, this.acc - TICK_DT);
+      steps++;
+    }
+    return steps;
+  }
+
+  /** Draws the current frame, interpolating between the last two steps. */
+  draw(): void {
+    this.sim.interpolateRender(this.acc);
+    this.iso.setRoute(this.route);
+    this.renderer.draw();
+  }
+
+  /** Whether the animation-frame loop is running. */
+  get isRunning(): boolean {
+    return this.running;
   }
 
   stop(): void {

@@ -16,7 +16,10 @@
       "import": "./dist/go/index.js"
     },
     "./go/takeon.wasm": "./dist/go/takeon.wasm",
-    "./go/wasm_exec": "./dist/go/wasm_exec.js"
+    "./go/wasm_exec": "./dist/go/wasm_exec.js",
+    "./runtime": "./dist/runtime/takeon-runtime.js",
+    "./runtime/index.html": "./dist/runtime/index.html",
+    "./runtime/manifest.json": "./dist/runtime/manifest.json"
   },
   "files": [
     "dist",
@@ -44,14 +47,16 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "build": "node scripts/build-go-assets.mjs --clean && tsc -p tsconfig.json",
+    "build": "node scripts/build-go-assets.mjs --clean && tsc -p tsconfig.json && node scripts/build-runtime.mjs",
     "test": "vitest run",
     "typecheck": "node scripts/build-go-assets.mjs && tsc -p tsconfig.json --noEmit",
     "build:go": "npm run build",
     "prepack": "npm run build:go",
-    "pretest": "node scripts/build-go-assets.mjs"
+    "pretest": "node scripts/build-go-assets.mjs",
+    "build:runtime": "node scripts/build-runtime.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.28.1",
     "typescript": "^5.6.0",
     "vitest": "^4.1.10"
   }

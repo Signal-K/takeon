@@ -172,7 +172,7 @@ rover, battery, mining loop, or Landnam mission schema.
 
 1. **Contract and audit (complete).** Record the canonical-engine decision,
    host boundary, existing gaps, platform parity matrix, and consumer examples.
-2. **Make the TypeScript runtime host-neutral (in progress).** Data-only scene
+2. **Make the TypeScript runtime host-neutral (done).** Data-only scene
    snapshots, the DOM-free flat terrain raster and the reusable
    `IsoTerrainLayer` are in place. Renderer inputs no longer expose
    `Simulation`: `IsoRenderer`, `FlatRenderer` and `buildScene` read a
@@ -189,9 +189,36 @@ rover, battery, mining loop, or Landnam mission schema.
    answers bad versions or input without throwing), and `streamEvents`, which
    forwards bus events as `{ v, type, payload }` (ticks off by default). Adding
    a command or event keeps the version; changing a message's shape bumps it.
-3. **Package the shared client.** Build a versioned runtime bundle with an
-   explicit host bridge, deterministic fixed-step clock, resize/lifecycle
-   hooks, and no host-specific account or progression logic.
+3. **Package the shared client (in place for web).** `npm run build:runtime
+   -w @takeon/engine` writes `dist/runtime/`: `takeon-runtime.js` (one IIFE,
+   global `TakeOnRuntime`, about 5 MB because the Go core is embedded as WASM),
+   `index.html` (a full-screen `#takeon` canvas that calls `boot()`), and
+   `manifest.json` (runtime and protocol versions, sha256, size). The package
+   exports them as `@takeon/engine/runtime`, `/runtime/index.html` and
+   `/runtime/manifest.json`. `core/host.ts` (`RUNTIME_VERSION` 1.0.0) is the
+   host side. `createHostRuntime(game, send, { clock })` announces
+   `{ kind: 'ready', runtime, protocol, clock }` and takes JSON messages:
+   commands (protocol v1; a message with no `kind` is a command, so v1
+   senders keep working), `pause`, `resume`, `resize { width, height, dpr }`,
+   `advance { ms }` and `save { id }`. It sends back `reply`, `event`,
+   `advanced { steps }`, `state` and `error` (`version`, `invalid`,
+   `unknown-kind`), never throwing on bad input. The clock is either
+   `frames` (the runtime's own animation-frame loop) or `host`: only
+   `advance` moves time, in fixed 10 Hz steps through `RoverGame.advance`,
+   with the remainder carried, so the same total time runs the same steps
+   however it is split. A host clock sends one `advance` per display frame
+   and every one draws, because interpolation and camera easing move per
+   frame. Pause holds time still under either clock. `runtime/mount.ts`
+   builds the game from a `RuntimeConfig` (body id, seed, spec or
+   `rover: false`, resume state, clock, view, controls, audio) and
+   `findBridge` picks the shell: `webkit.messageHandlers.takeon` (iOS and
+   macOS WKWebView), `TakeOnAndroid.postMessage` (a JSON string), or
+   `parent.postMessage({ takeon })`. The shell calls
+   `window.takeon.receive(msg)`; strings are parsed. Page resize and
+   visibility changes become `resize` and `pause`/`resume`. Proof so far is
+   the bundle in Chromium posing as a WKWebView shell (commands, events,
+   save and 16 ms host frames, both views drawn); the native shells are
+   phase 4.
 4. **Connect native shells.** Mount the same bundle in iOS, macOS, and Android
    shells. Implement bridge and lifecycle adapters, then exercise identical
    command tapes and screenshots on each platform. Web consumes the same

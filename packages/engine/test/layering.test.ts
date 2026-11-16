@@ -37,6 +37,8 @@ const ALLOWED: Record<string, string[]> = {
   core: ['scene', 'sim', 'render', 'input', 'audio', 'util', 'parts'],
   // Embeddable survey scene: a host-facing facade over the running game.
   survey: ['core', 'sim', 'render', 'world', 'util'],
+  // The packaged client's page entry: builds a game from a config and wraps it in the host bridge.
+  runtime: ['core', 'world', 'parts', 'scene'],
 };
 
 function tsFiles(dir: string): string[] {
