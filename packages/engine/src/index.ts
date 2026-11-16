@@ -12,6 +12,21 @@
 export * from './types.js';
 export { EventBus } from './util/events.js';
 export { RoverGame, createRoverGame, type RoverGameOptions, type RoverOrder } from './core/game.js';
+export {
+  PROTOCOL_VERSION,
+  applyCommand,
+  parseCommand,
+  handleCommandMessage,
+  streamEvents,
+  type TakeOnCommand,
+  type TakeOnCommandType,
+  type CommandTarget,
+  type CommandResult,
+  type CommandMessage,
+  type CommandReply,
+  type EventMessage,
+  type StreamEventsOptions,
+} from './core/protocol.js';
 export { GameAudio, type GameAudioOptions } from './audio/audio.js';
 
 export {

@@ -182,8 +182,13 @@ rover, battery, mining loop, or Landnam mission schema.
    pass its own state (replay, server snapshot, survey) instead. The rover
    is optional: with `rover: null` both views centre on the landing site,
    `buildScene` emits no rover entity, and rover-only overlays (facing tile,
-   mining pulse, scanner ring, minimap dot) are skipped. Next define stable
-   command/event messages.
+   mining pulse, scanner ring, minimap dot) are skipped. The host protocol
+   (`core/protocol.ts`, `PROTOCOL_VERSION` 1) is the bridge contract: a
+   JSON-safe `TakeOnCommand` union validated by `parseCommand`, run by
+   `applyCommand` or `handleCommandMessage` (which echoes the request id and
+   answers bad versions or input without throwing), and `streamEvents`, which
+   forwards bus events as `{ v, type, payload }` (ticks off by default). Adding
+   a command or event keeps the version; changing a message's shape bumps it.
 3. **Package the shared client.** Build a versioned runtime bundle with an
    explicit host bridge, deterministic fixed-step clock, resize/lifecycle
    hooks, and no host-specific account or progression logic.
