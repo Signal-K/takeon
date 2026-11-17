@@ -50,6 +50,12 @@ type FlightConfig struct {
 	// Debris and Pickups are the chance, 0..1, that a corridor slot holds one.
 	Debris  float64 `json:"debris"`
 	Pickups float64 `json:"pickups"`
+	// Samples is the share, 0..1, of pickups that are samples rather than
+	// boost cells. Nil means 0.4; a host with no use for samples passes 0.
+	Samples *float64 `json:"samples,omitempty"`
+	// BoostGain is the charge one boost cell adds (default 0.34, so three
+	// cells make a boost).
+	BoostGain float64 `json:"boostGain,omitempty"`
 	// Agility scales how quickly the craft answers a nudge (1 = standard).
 	Agility float64 `json:"agility,omitempty"`
 	// BoostCharges the craft starts with, 0..3.
@@ -144,6 +150,7 @@ type flightCore struct {
 type Flight struct {
 	c      flightCore
 	events []FlightEvent
+	stage  *FlightStage // view only; never saved
 }
 
 func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
@@ -152,7 +159,7 @@ func clampF(v, lo, hi float64) float64 { return math.Max(lo, math.Min(hi, v)) }
 
 // NewFlight validates the config and puts the craft at the start of its phase.
 func NewFlight(cfg FlightConfig) (*Flight, error) {
-	for _, v := range []float64{cfg.Duration, cfg.Debris, cfg.Pickups, cfg.Agility, cfg.BoostCharges, cfg.OrbitPeriod} {
+	for _, v := range []float64{cfg.Duration, cfg.Debris, cfg.Pickups, cfg.Agility, cfg.BoostCharges, cfg.OrbitPeriod, cfg.BoostGain} {
 		if !finite(v) || v < 0 {
 			return nil, fmt.Errorf("takeon: flight config values must be finite and nonnegative")
 		}
@@ -170,6 +177,18 @@ func NewFlight(cfg FlightConfig) (*Flight, error) {
 	cfg.Debris = clampF(cfg.Debris, 0, 1)
 	cfg.Pickups = clampF(cfg.Pickups, 0, 1)
 	cfg.BoostCharges = clampF(cfg.BoostCharges, 0, 3)
+	if cfg.BoostGain == 0 {
+		cfg.BoostGain = flightBoostGain
+	}
+	cfg.BoostGain = clampF(cfg.BoostGain, 0.05, 1)
+	share := 0.4
+	if cfg.Samples != nil {
+		if !finite(*cfg.Samples) {
+			return nil, fmt.Errorf("takeon: flight config values must be finite and nonnegative")
+		}
+		share = clampF(*cfg.Samples, 0, 1)
+	}
+	cfg.Samples = &share
 	if cfg.OrbitPeriod == 0 {
 		cfg.OrbitPeriod = 40
 	}
@@ -294,7 +313,7 @@ func (f *Flight) slot(seg, i int) (FlightObject, bool) {
 		kind = "debris"
 	case roll < f.c.Config.Debris+f.c.Config.Pickups*(1-f.c.Config.Debris):
 		kind = "boost"
-		if hash3(float64(seg), float64(i), 5, seed) < 0.4 {
+		if hash3(float64(seg), float64(i), 5, seed) < *f.c.Config.Samples {
 			kind = "sample"
 		}
 	default:
@@ -379,7 +398,7 @@ func (f *Flight) tick() {
 				f.emit("hit", "", c.Hull)
 			case "boost":
 				c.Pickups++
-				c.Boost = math.Min(3, c.Boost+flightBoostGain)
+				c.Boost = math.Min(3, c.Boost+c.Config.BoostGain)
 				f.emit("pickup", "", c.Boost)
 			case "sample":
 				c.Samples++
@@ -444,6 +463,9 @@ func (f *Flight) Step(dt float64) (FlightFrame, error) {
 		events = []FlightEvent{}
 	}
 	f.events = nil
+	if f.stage != nil {
+		f.stage.React(events)
+	}
 	return FlightFrame{State: f.State(), Events: events}, nil
 }
 

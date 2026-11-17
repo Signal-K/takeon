@@ -32,8 +32,13 @@ Runtime verification recipe: `.claude/skills/verify/SKILL.md`.
   (`IsoRenderer`, `FlatRenderer`) behind the `SceneView` interface. Architecture
   overview: `docs/ENGINE.md`.
 - **Space flight is its own scene family** (`flight/`, rules in `go/flight.go`): limited-control flight between
-  bodies and in-orbit scenes, drawn by `FlightView` on Canvas 2D. It imports only `go` and `util`. See the
-  "Space flight and orbit" section of `docs/ENGINE.md`.
+  bodies and in-orbit scenes. It imports only `go` and `util`. See the "Space flight and orbit" section of
+  `docs/ENGINE.md`.
+- **Go decides the flight picture; platforms only paint it.** `go/flight_draw.go` lays out every frame as
+  screen-space shapes (`FlightDraw`), words the HUD (`FlightHUD`) and maps touch to steering. The web
+  (`flight/view.ts`), SwiftUI (`swift/.../TakeonFlightCanvas.swift`) and Android
+  (`go/android/.../TakeonFlightPainter.kt`) painters are thin and must not compute layout, camera, fades or
+  HUD text. A visual change to a flight goes in Go, then each painter only if it needs a new shape kind.
 - **Entity art is componentised**: the rover is a list of registered parts
   (`render/rover.ts`, `registerRoverPart`), the 2D view has a painter per entity
   kind (`registerFlatPainter`). Add hardware as a part, not as more branches.

@@ -89,6 +89,9 @@ player can only:
 - in orbit, **trim** the lap (x) and the height (y), and **mark** the site
   passing underneath.
 
+`samples` sets how many pickups are samples rather than boost cells (0 for a
+host with no use for them) and `boostGain` how much charge a cell adds.
+
 A flight cannot be lost: a hit slows the craft and wears the hull, which never
 falls below 0.1. What a hit costs is the host's decision.
 
@@ -103,17 +106,45 @@ const flight = createFlightScene({
   onEvent: (e) => { /* phase · hit · pickup · sample · boost · lap · overhead · site */ },
 });
 flight.start();
-flight.snapshot(); // { phase, percent, boosts, canMark, prompt, … } for your HUD
+flight.snapshot(); // FlightHUD from Go: { phase, percent, boosts, canMark, prompt, … }
 ```
 
 | Piece | Where | What it owns |
 |---|---|---|
 | Rules | `go/flight.go` | Corridor, collisions, boost, phases, orbit, sites, snapshot. Fixed 60 Hz |
-| `FlightSim` | `flight/sim.ts` | Synchronous handle over the Go flight |
+| Layout, HUD, touch | `go/flight_draw.go` | `FlightStage.Draw` → `FlightDraw`: every frame as screen-space shapes in paint order (camera, projection, craft lathe, fades, shake). `FlightHUDOf` words the HUD; `FlightTouchSteer` maps a finger to a nudge |
+| `FlightSim` | `flight/sim.ts` | Synchronous handle over the Go flight: `step`, `draw`, `hud`, `setCraft` |
 | `FlightBodyLook`, `bodyTexture`, `BodyRaster` | `flight/look.ts` | What a body looks like from space, as data and pixels. DOM-free |
-| `FlightCraftLook`, `drawCraft` | `flight/craft.ts` | The craft as sections along an axis, drawn as a lathe |
-| `FlightView` | `flight/view.ts` | The 3D view on Canvas 2D |
-| `createFlightScene` | `flight/scene.ts` | Canvas embed: loop, keyboard and pointer steering, snapshot |
+| `FlightCraftLook` | `flight/craft.ts` | The craft as sections along an axis (data; Go lays it out as a lathe) |
+| `FlightView` | `flight/view.ts` | Paints a `FlightDraw` on Canvas 2D, plus the sky, globe and limb textures |
+| `createFlightScene` | `flight/scene.ts` | Canvas embed: loop, keyboard and pointer steering, HUD |
+| iOS | `swift/Sources/TakeonCore/GoTakeonFlight.swift`, `TakeonFlightCanvas.swift` | `GoTakeonFlight` over `mobile.Flight`; `takeonPaintFlight` paints a `FlightDraw` into a SwiftUI `GraphicsContext` |
+| Android | `go/android/takeon-kotlin/.../TakeonFlight.kt`, `TakeonFlightPainter.kt` | `TakeonFlight` over `mobile.Flight`; `TakeonFlightPainter` paints a `FlightDraw` on an Android `Canvas` |
+
+**One picture on every platform.** The web, SwiftUI and Android views of a
+flight paint the same Go draw list, so they cannot drift apart. A native host
+is four calls a frame: feed input (`steer`, `steerToward` for a finger,
+`boost`, `mark`), `step(dt)`, `draw(width, height, dt)`, paint it; `hud()` gives
+the counts and the one line to show. Shapes are `ellipse`, `poly`, `line`,
+`glow` and `text`, plus `vignette` and three host textures placed by the list:
+`sky` (starfield, seeded by `skySeed`), `globe` (the destination ahead) and
+`limb` (the destination from orbit). A filled shape with `lit` is shaded across
+`lit` with the fill scaled 1.12, 0.92 and 0.42; that is how the craft and the
+debris read as solid.
+
+```swift
+let flight = try GoTakeonFlight(configJSON: #"{"seed":7,"duration":60,"debris":0.4,"pickups":0.4}"#)
+TakeonFlightCanvas(step: { dt, size in
+    try? flight.step(dt)
+    return try? flight.draw(width: size.width, height: size.height, dt: dt)
+}, touch: { flight.steerToward(tx: $0, ty: $1) }, release: { flight.steer(x: 0, y: 0) })
+```
+
+```kotlin
+val flight = TakeonFlight("""{"seed":7,"duration":60,"debris":0.4,"pickups":0.4}""")
+val painter = TakeonFlightPainter()
+// in onDraw(canvas): flight.step(dt); painter.paint(canvas, flight.draw(widthDp, heightDp, dt), density)
+```
 
 **Phases.** `departure → cruise → approach → orbit`, by course progress (0.08,
 0.86 and 1). The corridor only holds objects during cruise. `startPhase`

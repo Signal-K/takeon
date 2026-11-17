@@ -9,6 +9,13 @@ additive → minor, fixes → patch.
 
 ## Unreleased
 
+### @takeon/engine 0.3.0, @takeon/pixi 0.3.0 (breaking), Go core, Swift, Kotlin
+
+- **Flights draw the same on web, iOS and Android.** The Go core now lays out every flight frame (`go/flight_draw.go`): camera, projection, the craft lathe, corridor gates, dust, debris, pickups, the orbit limb and sites, fades, shake and the hit flash, as a flat list of screen-space shapes (`FlightDraw`). It also words the HUD (`FlightHUD`) and maps a finger to a nudge (`FlightTouchSteer`). `FlightView` is now only a painter of that list; `FlightSim` gains `draw`, `hud` and `setCraft`; `flightHud` and `flightTouchSteer` are exported.
+- Swift: `GoTakeonFlight` (over `mobile.Flight`), the `TakeonFlight*` models and `takeonPaintFlight` / `TakeonFlightCanvas` for SwiftUI. Kotlin: `TakeonFlight` and `TakeonFlightPainter` for an Android `Canvas`. `mobile.Flight` gains `SteerToward`, `SetCraftJSON`, `DrawJSON` and `HudJSON`.
+- Breaking: `drawCraft` and `CraftPose` are removed (Go draws the craft); `FlightView` no longer takes `craft` or `sites`, and `draw(state)` / `react(events)` are replaced by `paint(draw)`. `FlightSnapshot` is now an alias of `FlightHUD`.
+- Hosts pick how many pickups are samples (`samples`, default 0.4) and how much charge a boost cell adds (`boostGain`, default 0.34).
+
 ### @takeon/engine 0.2.5, @takeon/ui
 
 - **Space flight and in-orbit scenes** (`flight/`, rules in `go/flight.go`). A flight is a craft on a fixed course with limited control: the player nudges it inside a corridor to avoid debris and fly through boost cells and samples, spends boost, and in orbit trims the lap and marks the sites it passes over. Phases are departure, cruise, approach and orbit; a host can mount any one of them (`startPhase: 'orbit'` is an in-orbit scene) and can own the trip clock (`hostPaced` + `setProgress`). `FlightSim` is the handle over Go, `FlightView` the 3D view on Canvas 2D (perspective corridor, a lit turning globe generated from a `FlightBodyLook`, the craft as a lathe of sections), and `createFlightScene` the embed with keyboard and pointer steering and a `snapshot()` for HUDs. `bodyTexture`, `BodyRaster` and `flightLookForBody` are exported for hosts that want the globes elsewhere. Swift and Kotlin get the same rules through `mobile.NewFlight`.

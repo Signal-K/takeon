@@ -1,6 +1,6 @@
 {
   "name": "@takeon/editor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Mountable authoring tool for TakeOn worlds: inspector, live iso viewport, noise/terrain maps and in-editor play mode.",
   "license": "MIT",
   "type": "module",
@@ -45,8 +45,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@takeon/engine": "^0.2.0",
-    "@takeon/ui": "^0.2.0"
+    "@takeon/engine": "^0.3.0",
+    "@takeon/ui": "^0.3.0"
   },
   "peerDependencies": {
     "react": ">=18",

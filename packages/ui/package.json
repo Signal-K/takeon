@@ -1,6 +1,6 @@
 {
   "name": "@takeon/ui",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "React HUD and mission shell for @takeon/engine. Every component is replaceable by the host game.",
   "license": "MIT",
   "type": "module",
@@ -45,7 +45,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@takeon/engine": "^0.2.0"
+    "@takeon/engine": "^0.3.0"
   },
   "peerDependencies": {
     "react": ">=18",

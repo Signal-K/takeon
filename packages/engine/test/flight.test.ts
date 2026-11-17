@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FlightSim } from '../src/flight/sim.js';
+import { FlightSim, flightHud, flightTouchSteer } from '../src/flight/sim.js';
 import { BodyRaster, bodyTexture, FLIGHT_LOOKS, flightLookForBody } from '../src/flight/look.js';
 import { flightSnapshot } from '../src/flight/scene.js';
 import { defaultCraftLook, project } from '../src/flight/craft.js';
@@ -105,5 +105,22 @@ describe('space flight', () => {
     expect(project(cam, [1, 1, 10]).s).toBeCloseTo(project(cam, [1, 1, 20]).s * 2);
     expect(project(cam, [1, 0, 10]).x).toBeGreaterThan(project(cam, [1, 0, 20]).x);
     expect(defaultCraftLook().sections.at(-1)!.id).toBe('nose');
+  });
+
+  it('takes its picture, HUD words and touch steering from the Go core', () => {
+    const sim = new FlightSim({ seed: 9, duration: 20, debris: 0.5, pickups: 0.5 });
+    sim.setCraft({ sections: [{ id: 'hull', length: 1, r0: 0.2, r1: 0.1, color: '#dfd3cc' }], scale: 1.2 });
+    expect(() => sim.setCraft({ sections: [] })).toThrow(/sections/);
+    run(sim, 6);
+    const draw = sim.draw(390, 844, 1 / 60);
+    expect(draw.width).toBe(390);
+    expect(draw.shapes[0]!.k).toBe('sky');
+    expect(draw.shapes.some((s) => s.k === 'globe')).toBe(true);
+    expect(draw.shapes.some((s) => s.k === 'ellipse' && s.fill === '#dfd3cc' && s.lit)).toBe(true);
+    expect(sim.hud()).toEqual(flightHud(sim.state));
+    expect(sim.hud().prompt.length).toBeGreaterThan(0);
+    const [x] = flightTouchSteer({ ...sim.state, phase: 'cruise', x: 0.5 }, 0.5, 0);
+    expect(x).toBeCloseTo(0.225);
+    sim.dispose();
   });
 });

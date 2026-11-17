@@ -1,4 +1,5 @@
 import { coreCall } from '../go/sync.js';
+import type { FlightCraftLook as FlightCraftLookData } from './craft.js';
 
 /**
  * Space flight simulation. Every rule runs in the Go core (`go/flight.go`);
@@ -28,6 +29,10 @@ export interface FlightConfig {
   debris?: number;
   /** Chance, 0..1, that a free corridor slot holds a boost cell or a sample. */
   pickups?: number;
+  /** Share, 0..1, of pickups that are samples rather than boost cells (default 0.4). */
+  samples?: number;
+  /** Charge one boost cell adds (default 0.34: three cells make a boost). */
+  boostGain?: number;
   /** How quickly the craft answers a nudge. 1 is standard. */
   agility?: number;
   /** Boost charges at the start, 0..3. */
@@ -87,6 +92,68 @@ export interface FlightState {
   overhead?: string;
   marked: string[];
   objects: FlightObject[];
+}
+
+/** A colour stop of a radial glow. */
+export interface FlightStop { at: number; c: string; a: number }
+
+/**
+ * One screen-space primitive from the Go core (`go/flight_draw.go`). Absent
+ * numbers are 0. See `FlightShape` there for the painting contract every host
+ * (web, SwiftUI, Android) follows.
+ */
+export interface FlightShape {
+  k: 'sky' | 'globe' | 'limb' | 'ellipse' | 'poly' | 'line' | 'glow' | 'text' | 'vignette';
+  x?: number; y?: number; x2?: number; y2?: number;
+  rx?: number; ry?: number; rot?: number; spin?: number;
+  pts?: number[]; open?: boolean;
+  fill?: string; stroke?: string; w?: number; a?: number;
+  lit?: [number, number]; stops?: FlightStop[]; add?: boolean;
+  text?: string; size?: number;
+}
+
+/** One frame of a flight laid out by the Go core, painted in order. */
+export interface FlightDraw {
+  width: number;
+  height: number;
+  skySeed: number;
+  /** 0 corridor view .. 1 orbit view. */
+  orbitMix: number;
+  shapes: FlightShape[];
+}
+
+/** What a HUD shows about a flight, worded by the Go core. */
+export interface FlightHUD {
+  phase: FlightPhase;
+  /** 0..100. */
+  percent: number;
+  /** Whole boost charges ready to spend. */
+  boosts: number;
+  /** 0..1 toward the next charge. */
+  boostCharge: number;
+  boosting: boolean;
+  hull: number;
+  hits: number;
+  pickups: number;
+  samples: number;
+  laps: number;
+  /** An orbit site under the craft that has not been marked yet. */
+  canMark: boolean;
+  overhead: string | null;
+  marked: number;
+  sites: number;
+  /** One line a host may show. */
+  prompt: string;
+}
+
+/** HUD reading of a state you already hold (pure, Go-worded). */
+export function flightHud(state: FlightState, sites = 0): FlightHUD {
+  return coreCall<FlightHUD>('flight', { kind: 'hudOf', state, sites });
+}
+
+/** The nudge for a finger at (tx, ty), each -1..1 from the middle of the view, x right and y up. */
+export function flightTouchSteer(state: FlightState, tx: number, ty: number): [number, number] {
+  return coreCall<[number, number]>('flight', { kind: 'touchOf', state, fx: tx, fy: ty });
 }
 
 export class FlightSim {
@@ -151,6 +218,21 @@ export class FlightSim {
     });
     this.current = frame.state;
     return frame.events;
+  }
+
+  /** Lay out the current moment for a `width` x `height` view; `dt` eases fades and shake. */
+  draw(width: number, height: number, dt: number): FlightDraw {
+    return this.call<FlightDraw>('draw', { fw: width, fh: height, dt: Number.isFinite(dt) ? Math.max(0, dt) : 0 });
+  }
+
+  /** HUD reading of the current moment. */
+  hud(): FlightHUD {
+    return this.call<FlightHUD>('hud');
+  }
+
+  /** How the craft looks in `draw`. Throws on a look with no sections or absurd sizes. */
+  setCraft(craft: FlightCraftLookData): void {
+    this.call('craft', { craft });
   }
 
   /** Opaque versioned save; pass it back as `resume`. */

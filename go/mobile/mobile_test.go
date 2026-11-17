@@ -2,6 +2,7 @@ package mobile
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -46,5 +47,30 @@ func TestWindowJSON(t *testing.T) {
 	}
 	if _, err := e.WindowJSON(0, 0, 1000, 1000); err == nil {
 		t.Fatal("oversize window must error")
+	}
+}
+
+func TestFlightDrawAndHUDJSON(t *testing.T) {
+	f, err := NewFlight(`{"seed":4,"duration":20,"debris":0.4,"pickups":0.4}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetCraftJSON(`{"sections":[{"id":"b","length":1,"r0":0.2,"r1":0.1,"color":"#ddccbb"}],"scale":1.2}`); err != nil {
+		t.Fatal(err)
+	}
+	if f.SetCraftJSON(`{"sections":[]}`) == nil {
+		t.Fatal("empty craft accepted")
+	}
+	f.SteerToward(0.8, 0)
+	if _, err := f.Step(1); err != nil {
+		t.Fatal(err)
+	}
+	draw, err := f.DrawJSON(390, 844, 1.0/60)
+	if err != nil || !strings.Contains(draw, `"k":"sky"`) || !strings.Contains(draw, `"#ddccbb"`) {
+		t.Fatalf("draw json: %v %.200s", err, draw)
+	}
+	hud, err := f.HudJSON()
+	if err != nil || !strings.Contains(hud, `"prompt":`) {
+		t.Fatalf("hud json: %v %s", err, hud)
 	}
 }

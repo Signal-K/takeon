@@ -16,27 +16,32 @@ type Request struct {
 	Gain    takeon.Gain        `json:"gain"`
 	Raw     json.RawMessage    `json:"raw"`
 
-	Voxels   []int                `json:"voxels"`
-	Op       string               `json:"op"`
-	EngineID int                  `json:"engineId"`
-	Seed     uint32               `json:"seed"`
-	BodyID   string               `json:"bodyId"`
-	DT       float64              `json:"dt"`
-	Kind     string               `json:"kind"`
-	Arg      int                  `json:"arg"`
-	Text     string               `json:"text"`
-	X        int                  `json:"x"`
-	Y        int                  `json:"y"`
-	W        int                  `json:"w"`
-	H        int                  `json:"h"`
-	Snapshot string               `json:"snapshot"`
-	Cargo    map[string]float64   `json:"cargo"`
-	Config   *takeon.HostData     `json:"config"`
-	Host     *takeon.HostView     `json:"host"`
-	Flight   *takeon.FlightConfig `json:"flight"`
-	FX       float64              `json:"fx"`
-	FY       float64              `json:"fy"`
-	Progress *float64             `json:"progress"`
+	Voxels   []int                   `json:"voxels"`
+	Op       string                  `json:"op"`
+	EngineID int                     `json:"engineId"`
+	Seed     uint32                  `json:"seed"`
+	BodyID   string                  `json:"bodyId"`
+	DT       float64                 `json:"dt"`
+	Kind     string                  `json:"kind"`
+	Arg      int                     `json:"arg"`
+	Text     string                  `json:"text"`
+	X        int                     `json:"x"`
+	Y        int                     `json:"y"`
+	W        int                     `json:"w"`
+	H        int                     `json:"h"`
+	Snapshot string                  `json:"snapshot"`
+	Cargo    map[string]float64      `json:"cargo"`
+	Config   *takeon.HostData        `json:"config"`
+	Host     *takeon.HostView        `json:"host"`
+	Flight   *takeon.FlightConfig    `json:"flight"`
+	FX       float64                 `json:"fx"`
+	FY       float64                 `json:"fy"`
+	Progress *float64                `json:"progress"`
+	Craft    *takeon.FlightCraftLook `json:"craft"`
+	State    *takeon.FlightState     `json:"state"`
+	Sites    int                     `json:"sites"`
+	FW       float64                 `json:"fw"`
+	FH       float64                 `json:"fh"`
 }
 type response struct {
 	OK    bool   `json:"ok"`
@@ -52,6 +57,20 @@ type Session struct {
 // flight is the space flight boundary. Kind selects the call; EngineID names
 // the flight, so flights and rover games share one id space.
 func (s *Session) flight(r Request) (any, error) {
+	if r.Kind == "hudOf" {
+		// Pure read of a state the host already holds.
+		if r.State == nil {
+			return nil, fmt.Errorf("takeon: flight state required")
+		}
+		return takeon.FlightHUDOf(*r.State, r.Sites), nil
+	}
+	if r.Kind == "touchOf" {
+		if r.State == nil {
+			return nil, fmt.Errorf("takeon: flight state required")
+		}
+		x, y := takeon.FlightTouchSteer(*r.State, r.FX, r.FY)
+		return []float64{x, y}, nil
+	}
 	if r.Kind == "create" || r.Kind == "restore" {
 		var f *takeon.Flight
 		var err error
@@ -100,6 +119,18 @@ func (s *Session) flight(r Request) (any, error) {
 	case "snapshot":
 		v, err := f.Snapshot()
 		return string(v), err
+	case "craft":
+		if r.Craft == nil {
+			return nil, fmt.Errorf("takeon: craft look required")
+		}
+		return true, f.SetCraft(*r.Craft)
+	case "draw":
+		return f.Draw(r.FW, r.FH, r.DT), nil
+	case "hud":
+		return f.HUD(), nil
+	case "touch":
+		f.SteerToward(r.FX, r.FY)
+		return true, nil
 	}
 	return nil, fmt.Errorf("takeon: unknown flight operation %q", r.Kind)
 }

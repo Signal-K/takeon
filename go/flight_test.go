@@ -109,6 +109,36 @@ func TestFlightBoostAndHitChangePace(t *testing.T) {
 	}
 }
 
+func TestFlightHostChoosesSamplesAndBoostGain(t *testing.T) {
+	none := 0.0
+	f, _ := NewFlight(FlightConfig{Seed: 42, Duration: 60, Pickups: 1, Samples: &none, BoostGain: 0.5, StartPhase: FlightCruise})
+	seen := 0
+	for i := 0; i < 60*20; i++ {
+		frame, _ := f.Step(1.0 / 60)
+		for _, o := range frame.State.Objects {
+			if o.Kind == "sample" {
+				t.Fatal("a host that asked for no samples got one")
+			}
+			seen++
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no pickups generated")
+	}
+	g, _ := NewFlight(FlightConfig{Seed: 42, Duration: 60, Pickups: 1, Samples: &none, BoostGain: 0.5, StartPhase: FlightCruise})
+	st, _ := runFlight(t, g, 40, func(s FlightState) (float64, float64) {
+		for _, o := range s.Objects {
+			if !o.Done && o.Z > 0 && o.Z < 60 {
+				return clampF((o.X-s.X)*6, -1, 1), clampF((o.Y-s.Y)*6, -1, 1)
+			}
+		}
+		return 0, 0
+	})
+	if st.Pickups < 2 || math.Abs(st.Boost-math.Min(3, float64(st.Pickups)*0.5)) > 1e-9 {
+		t.Fatalf("boost gain not applied: %d pickups, %.2f charges", st.Pickups, st.Boost)
+	}
+}
+
 func TestFlightHostPacedFollowsTheTripClock(t *testing.T) {
 	f, _ := NewFlight(FlightConfig{Seed: 9, HostPaced: true, Debris: 0.3})
 	runFlight(t, f, 5, nil)

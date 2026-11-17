@@ -170,3 +170,31 @@ func (f *Flight) Step(dt float64) (string, error) {
 
 // Snapshot returns an opaque versioned save blob.
 func (f *Flight) Snapshot() ([]byte, error) { return f.f.Snapshot() }
+
+// SteerToward holds the nudge for a finger at (tx, ty), each -1..1 from the
+// middle of the view, x right and y up. The same mapping every host uses.
+func (f *Flight) SteerToward(tx, ty float64) { f.f.SteerToward(tx, ty) }
+
+// SetCraftJSON sets the craft look (takeon.FlightCraftLook JSON) used by DrawJSON.
+func (f *Flight) SetCraftJSON(lookJSON string) error {
+	var look takeon.FlightCraftLook
+	if err := json.Unmarshal([]byte(lookJSON), &look); err != nil {
+		return err
+	}
+	return f.f.SetCraft(look)
+}
+
+// DrawJSON lays out the current moment as a takeon.FlightDraw: screen-space
+// shapes for a w x h view in points, painted in order. dt is the seconds since
+// the last draw and only eases the view (fades, shake). Call it after Step.
+func (f *Flight) DrawJSON(w, h, dt float64) (string, error) {
+	b, err := json.Marshal(f.f.Draw(w, h, dt))
+	return string(b), err
+}
+
+// HudJSON is the takeon.FlightHUD for the current moment: counts, meters and
+// the one-line prompt, identical on every host.
+func (f *Flight) HudJSON() (string, error) {
+	b, err := json.Marshal(f.f.HUD())
+	return string(b), err
+}

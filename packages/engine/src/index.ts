@@ -277,6 +277,12 @@ export {
   type FlightObject,
   type FlightEvent,
   type FlightState,
+  type FlightDraw,
+  type FlightShape,
+  type FlightStop,
+  type FlightHUD,
+  flightHud,
+  flightTouchSteer,
 } from './flight/sim.js';
 export {
   FLIGHT_LOOKS,
@@ -290,11 +296,9 @@ export {
 } from './flight/look.js';
 export {
   defaultCraftLook,
-  drawCraft,
   type CraftSection,
   type FlightCraftLook,
   type FlightCamera,
-  type CraftPose,
 } from './flight/craft.js';
 export { FlightView, CORRIDOR, CRAFT_DEPTH, type FlightViewOptions } from './flight/view.js';
 export {
