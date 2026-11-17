@@ -16,23 +16,27 @@ type Request struct {
 	Gain    takeon.Gain        `json:"gain"`
 	Raw     json.RawMessage    `json:"raw"`
 
-	Voxels   []int              `json:"voxels"`
-	Op       string             `json:"op"`
-	EngineID int                `json:"engineId"`
-	Seed     uint32             `json:"seed"`
-	BodyID   string             `json:"bodyId"`
-	DT       float64            `json:"dt"`
-	Kind     string             `json:"kind"`
-	Arg      int                `json:"arg"`
-	Text     string             `json:"text"`
-	X        int                `json:"x"`
-	Y        int                `json:"y"`
-	W        int                `json:"w"`
-	H        int                `json:"h"`
-	Snapshot string             `json:"snapshot"`
-	Cargo    map[string]float64 `json:"cargo"`
-	Config   *takeon.HostData   `json:"config"`
-	Host     *takeon.HostView   `json:"host"`
+	Voxels   []int                `json:"voxels"`
+	Op       string               `json:"op"`
+	EngineID int                  `json:"engineId"`
+	Seed     uint32               `json:"seed"`
+	BodyID   string               `json:"bodyId"`
+	DT       float64              `json:"dt"`
+	Kind     string               `json:"kind"`
+	Arg      int                  `json:"arg"`
+	Text     string               `json:"text"`
+	X        int                  `json:"x"`
+	Y        int                  `json:"y"`
+	W        int                  `json:"w"`
+	H        int                  `json:"h"`
+	Snapshot string               `json:"snapshot"`
+	Cargo    map[string]float64   `json:"cargo"`
+	Config   *takeon.HostData     `json:"config"`
+	Host     *takeon.HostView     `json:"host"`
+	Flight   *takeon.FlightConfig `json:"flight"`
+	FX       float64              `json:"fx"`
+	FY       float64              `json:"fy"`
+	Progress *float64             `json:"progress"`
 }
 type response struct {
 	OK    bool   `json:"ok"`
@@ -41,7 +45,63 @@ type response struct {
 }
 type Session struct {
 	engines map[int]*takeon.Game
+	flights map[int]*takeon.Flight
 	next    int
+}
+
+// flight is the space flight boundary. Kind selects the call; EngineID names
+// the flight, so flights and rover games share one id space.
+func (s *Session) flight(r Request) (any, error) {
+	if r.Kind == "create" || r.Kind == "restore" {
+		var f *takeon.Flight
+		var err error
+		if r.Kind == "restore" {
+			f, err = takeon.RestoreFlight([]byte(r.Snapshot))
+		} else if r.Flight == nil {
+			err = fmt.Errorf("takeon: flight config required")
+		} else {
+			f, err = takeon.NewFlight(*r.Flight)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if s.flights == nil {
+			s.flights = map[int]*takeon.Flight{}
+		}
+		s.next++
+		s.flights[s.next] = f
+		return s.next, nil
+	}
+	f := s.flights[r.EngineID]
+	if f == nil {
+		return nil, fmt.Errorf("takeon: unknown or disposed flight %d", r.EngineID)
+	}
+	switch r.Kind {
+	case "dispose":
+		delete(s.flights, r.EngineID)
+		return true, nil
+	case "step":
+		// One call per frame: the held nudge and, for a host-paced flight, the
+		// trip clock ride along with the step.
+		f.Steer(r.FX, r.FY)
+		if r.Progress != nil {
+			f.SetProgress(*r.Progress)
+		}
+		return f.Step(r.DT)
+	case "steer":
+		f.Steer(r.FX, r.FY)
+		return true, nil
+	case "boost":
+		return f.Boost(), nil
+	case "mark":
+		return f.Mark(), nil
+	case "state":
+		return f.State(), nil
+	case "snapshot":
+		v, err := f.Snapshot()
+		return string(v), err
+	}
+	return nil, fmt.Errorf("takeon: unknown flight operation %q", r.Kind)
 }
 
 func (s *Session) Call(input string) string {
@@ -99,6 +159,9 @@ func (s *Session) dispatch(r Request) (any, error) {
 			return r.Module.Serialize()
 		}
 		return nil, fmt.Errorf("takeon: unknown module operation")
+	}
+	if r.Op == "flight" {
+		return s.flight(r)
 	}
 	if r.Op == "capabilities" {
 		return takeon.Capabilities(), nil

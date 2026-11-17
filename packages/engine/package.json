@@ -1,7 +1,7 @@
 {
   "name": "@takeon/engine",
-  "version": "0.2.4",
-  "description": "Framework-agnostic isometric voxel rover game engine. Zero runtime dependencies.",
+  "version": "0.2.5",
+  "description": "Framework-agnostic isometric voxel rover and space flight game engine. Zero runtime dependencies.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

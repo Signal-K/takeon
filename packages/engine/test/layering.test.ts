@@ -37,6 +37,8 @@ const ALLOWED: Record<string, string[]> = {
   core: ['scene', 'sim', 'render', 'input', 'audio', 'util', 'parts'],
   // Embeddable survey scene: a host-facing facade over the running game.
   survey: ['core', 'sim', 'render', 'world', 'util'],
+  // Space flight: its rules are in Go, so it needs only the bridge and the noise fields.
+  flight: ['go', 'util'],
 };
 
 function tsFiles(dir: string): string[] {

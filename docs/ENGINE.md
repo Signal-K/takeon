@@ -8,7 +8,7 @@ is enforced in CI by `test/layering.test.ts` — lower layers may never import
 upward.
 
 ```
-util ──► world ──► sim ──► scene ──► render ──► input
+util ──► world ──► sim ──► scene ──► render ──► input          go ──► flight (space flight · orbit)
  │        │         │        │          │
  │        │         │        │          └── iso diorama · flat 2D map · entity parts
  │        │         │        └── renderer-agnostic frame description
@@ -72,6 +72,83 @@ on TakeOn may want no diorama at all.
 
 To add a third view (WebGL, Pixi, SVG…), implement `SceneView` and draw from
 `buildScene(sim)`; nothing else needs to know.
+
+## Space flight and orbit
+
+`flight/` is a second kind of scene beside the surface: a craft travelling
+between bodies, then circling one. Its rules run in the Go core
+(`go/flight.go`), like every other rule; the TypeScript side is the handle,
+the view and the embed.
+
+Control is limited on purpose. The craft keeps its course and its speed. The
+player can only:
+
+- **nudge** it inside a corridor (each axis -1..1) to avoid debris and fly
+  through boost cells and samples;
+- **boost**, spending one whole charge to go faster for a moment;
+- in orbit, **trim** the lap (x) and the height (y), and **mark** the site
+  passing underneath.
+
+A flight cannot be lost: a hit slows the craft and wears the hull, which never
+falls below 0.1. What a hit costs is the host's decision.
+
+```ts
+import { createFlightScene, getBody } from '@takeon/engine';
+
+const flight = createFlightScene({
+  canvas,
+  destination: getBody('mars')!,            // or a FlightBodyLook of your own
+  config: { seed: 7, duration: 60, debris: 0.4, pickups: 0.4, boostCharges: 1,
+            sites: [{ id: 'basin', label: 'North basin', angle: 1.2 }] },
+  onEvent: (e) => { /* phase · hit · pickup · sample · boost · lap · overhead · site */ },
+});
+flight.start();
+flight.snapshot(); // { phase, percent, boosts, canMark, prompt, … } for your HUD
+```
+
+| Piece | Where | What it owns |
+|---|---|---|
+| Rules | `go/flight.go` | Corridor, collisions, boost, phases, orbit, sites, snapshot. Fixed 60 Hz |
+| `FlightSim` | `flight/sim.ts` | Synchronous handle over the Go flight |
+| `FlightBodyLook`, `bodyTexture`, `BodyRaster` | `flight/look.ts` | What a body looks like from space, as data and pixels. DOM-free |
+| `FlightCraftLook`, `drawCraft` | `flight/craft.ts` | The craft as sections along an axis, drawn as a lathe |
+| `FlightView` | `flight/view.ts` | The 3D view on Canvas 2D |
+| `createFlightScene` | `flight/scene.ts` | Canvas embed: loop, keyboard and pointer steering, snapshot |
+
+**Phases.** `departure → cruise → approach → orbit`, by course progress (0.08,
+0.86 and 1). The corridor only holds objects during cruise. `startPhase`
+mounts part of a flight: `'orbit'` is an in-orbit scene with no trip at all.
+
+**Who owns the clock.** By default the sim paces the trip over `duration`
+seconds. A host with its own persisted trip clock sets `hostPaced: true` and
+calls `setProgress(0..1)`; the corridor still scrolls and plays, and boosts and
+hits come back as events for the host to turn into time.
+
+**The corridor is endless and stored nowhere.** Objects are generated per
+60-unit segment from the seed, so a save holds only which ones were used.
+`snapshot()` / `resume` round-trip a flight exactly.
+
+**The view** is perspective drawn on Canvas 2D, with no GL dependency:
+
+- the destination is a real globe: an equirectangular surface map painted from
+  the look (seamless noise sampled on the sphere), rastered once into
+  per-pixel latitude, longitude and light, then looked up at a new rotation
+  each frame. Asteroids get an uneven outline, atmospheres a limb glow, gas
+  giants bands and rings;
+- corridor frames, dust streaks, debris and pickups are projected through one
+  camera and depth-sorted around the craft;
+- the craft is a lathe: every section is a run of lit rings along the axis, so
+  one description reads from behind in flight and from the side in orbit.
+  Describe a vehicle as `sections` (tail first), `fins` and `boosters`;
+- in orbit only the visible limb of a very large globe is rastered, and it
+  turns with the craft's angle.
+
+The view draws the world only. Text, buttons and meters belong to the host;
+`@takeon/ui` ships `<TakeOnFlight>` with a `FlightScreen` slot as stock chrome.
+
+Native hosts bind the same rules through `mobile.NewFlight(configJSON)`
+(`Steer`, `Boost`, `Mark`, `SetProgress`, `Step`, `Snapshot`) and draw with
+their own renderer.
 
 ## Entities are assembled from parts
 

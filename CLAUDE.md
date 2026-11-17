@@ -31,6 +31,9 @@ Runtime verification recipe: `.claude/skills/verify/SKILL.md`.
   flattens a frame into renderer-agnostic entities; `render/` has two views
   (`IsoRenderer`, `FlatRenderer`) behind the `SceneView` interface. Architecture
   overview: `docs/ENGINE.md`.
+- **Space flight is its own scene family** (`flight/`, rules in `go/flight.go`): limited-control flight between
+  bodies and in-orbit scenes, drawn by `FlightView` on Canvas 2D. It imports only `go` and `util`. See the
+  "Space flight and orbit" section of `docs/ENGINE.md`.
 - **Entity art is componentised**: the rover is a list of registered parts
   (`render/rover.ts`, `registerRoverPart`), the 2D view has a painter per entity
   kind (`registerFlatPainter`). Add hardware as a part, not as more branches.

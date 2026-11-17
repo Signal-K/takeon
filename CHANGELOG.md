@@ -9,6 +9,11 @@ additive → minor, fixes → patch.
 
 ## Unreleased
 
+### @takeon/engine 0.2.5, @takeon/ui
+
+- **Space flight and in-orbit scenes** (`flight/`, rules in `go/flight.go`). A flight is a craft on a fixed course with limited control: the player nudges it inside a corridor to avoid debris and fly through boost cells and samples, spends boost, and in orbit trims the lap and marks the sites it passes over. Phases are departure, cruise, approach and orbit; a host can mount any one of them (`startPhase: 'orbit'` is an in-orbit scene) and can own the trip clock (`hostPaced` + `setProgress`). `FlightSim` is the handle over Go, `FlightView` the 3D view on Canvas 2D (perspective corridor, a lit turning globe generated from a `FlightBodyLook`, the craft as a lathe of sections), and `createFlightScene` the embed with keyboard and pointer steering and a `snapshot()` for HUDs. `bodyTexture`, `BodyRaster` and `flightLookForBody` are exported for hosts that want the globes elsewhere. Swift and Kotlin get the same rules through `mobile.NewFlight`.
+- `@takeon/ui`: `<TakeOnFlight>` and the `FlightScreen` slot.
+
 ### @takeon/engine, @takeon/pixi
 
 - A scene only has a rover when it brings one. `spec` is now optional on `RoverGameOptions` / `mountRoverGame` / `Simulation`: with a spec the rover is drawn (as before), without one the ground is drawn with no rover (a landing, a flyover). `showRover` overrides it. Both views.

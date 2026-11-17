@@ -46,6 +46,7 @@ export {
 
 export { TakeOnMission, type TakeOnMissionProps } from './TakeOnMission.js';
 export { TakeOnSurvey, type TakeOnSurveyProps } from './TakeOnSurvey.js';
+export { TakeOnFlight, FlightScreen, type TakeOnFlightProps, type FlightScreenProps } from './TakeOnFlight.js';
 
 export { MissionScreen, type MissionScreenProps, type MissionScreenPart } from './components/MissionScreen.js';
 export { SurveyScreen, type SurveyScreenProps } from './components/SurveyScreen.js';
@@ -70,6 +71,7 @@ export { Meter, Modal, Chip, type MeterProps, type ModalProps, type ChipProps } 
 export const SLOT_KEYS = [
   'MissionScreen',
   'SurveyScreen',
+  'FlightScreen',
   'MissionCanvas',
   'HudBar',
   'DPad',

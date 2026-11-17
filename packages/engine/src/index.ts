@@ -268,3 +268,39 @@ export {
   type SurveySceneOptions,
   type SurveySceneHandle,
 } from './survey/scene.js';
+
+export {
+  FlightSim,
+  type FlightPhase,
+  type FlightSite,
+  type FlightConfig,
+  type FlightObject,
+  type FlightEvent,
+  type FlightState,
+} from './flight/sim.js';
+export {
+  FLIGHT_LOOKS,
+  flightLookForBody,
+  bodyTexture,
+  BodyRaster,
+  type FlightBodyKind,
+  type FlightBodyLook,
+  type BodyTexture,
+  type BodyRasterOptions,
+} from './flight/look.js';
+export {
+  defaultCraftLook,
+  drawCraft,
+  type CraftSection,
+  type FlightCraftLook,
+  type FlightCamera,
+  type CraftPose,
+} from './flight/craft.js';
+export { FlightView, CORRIDOR, CRAFT_DEPTH, type FlightViewOptions } from './flight/view.js';
+export {
+  flightSnapshot,
+  createFlightScene,
+  type FlightSnapshot,
+  type FlightSceneOptions,
+  type FlightSceneHandle,
+} from './flight/scene.js';

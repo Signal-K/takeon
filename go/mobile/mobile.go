@@ -120,3 +120,53 @@ func (e *Engine) ConfigureJSON(configuration string, seed int64) error {
 	e.g = game
 	return nil
 }
+
+// Flight wraps one space flight (takeon.Flight) for Swift and Kotlin hosts.
+type Flight struct{ f *takeon.Flight }
+
+// NewFlight starts a flight from a FlightConfig JSON object.
+func NewFlight(configJSON string) (*Flight, error) {
+	var cfg takeon.FlightConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return nil, err
+	}
+	f, err := takeon.NewFlight(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &Flight{f}, nil
+}
+
+// RestoreFlight rebuilds a flight from a Snapshot blob.
+func RestoreFlight(b []byte) (*Flight, error) {
+	f, err := takeon.RestoreFlight(b)
+	if err != nil {
+		return nil, err
+	}
+	return &Flight{f}, nil
+}
+
+// Steer holds a nudge, each axis -1..1.
+func (f *Flight) Steer(x, y float64) { f.f.Steer(x, y) }
+
+// SetProgress reports the trip clock (0..1) to a host-paced flight.
+func (f *Flight) SetProgress(p float64) { f.f.SetProgress(p) }
+
+// Boost spends one boost charge.
+func (f *Flight) Boost() bool { return f.f.Boost() }
+
+// Mark records the orbit site under the craft.
+func (f *Flight) Mark() bool { return f.f.Mark() }
+
+// Step advances dt seconds and returns {"state":…, "events":[…]} as JSON.
+func (f *Flight) Step(dt float64) (string, error) {
+	frame, err := f.f.Step(dt)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(frame)
+	return string(b), err
+}
+
+// Snapshot returns an opaque versioned save blob.
+func (f *Flight) Snapshot() ([]byte, error) { return f.f.Snapshot() }

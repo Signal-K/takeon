@@ -1134,3 +1134,42 @@ button.tk-chip:hover {
     height: 42px;
   }
 }
+
+/* ── Space flight ─────────────────────────────────────────────────────── */
+.tk-flight {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #04060c;
+  touch-action: none;
+}
+.tk-flight-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* The chrome reuses the survey controls; only the canvas takes pointer steering. */
+.tk-flight-chrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.tk-flight-chrome button,
+.tk-flight-chrome .tk-survey-pill {
+  pointer-events: auto;
+}
+.tk-flight-prompt {
+  position: absolute;
+  left: 50%;
+  top: calc(max(14px, env(safe-area-inset-top)) + 56px);
+  transform: translateX(-50%);
+  margin: 0;
+  width: min(46ch, 86%);
+  text-align: center;
+  font-size: 14px;
+  color: #e6ecf7;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
