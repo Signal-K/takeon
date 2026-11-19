@@ -57,11 +57,12 @@ export class IsoTerrainLayer {
   draw(context: CanvasRenderingContext2D, camera: Camera): void {
     const sorted = [...this.chunks].sort((a, b) => a.cx + a.cy - (b.cx + b.cy));
     for (const chunk of sorted) {
-      if (chunk.dirty) this.rebuildChunk(chunk);
       const screen = camera.toScreen(chunk.originX, chunk.originY);
       const width = chunk.canvas.width * camera.zoom;
       const height = chunk.canvas.height * camera.zoom;
+      // Off-screen chunks stay dirty until they come into view.
       if (screen.x > camera.viewW || screen.y > camera.viewH || screen.x + width < 0 || screen.y + height < 0) continue;
+      if (chunk.dirty) this.rebuildChunk(chunk);
       context.drawImage(chunk.canvas as CanvasImageSource, screen.x, screen.y, width, height);
     }
   }

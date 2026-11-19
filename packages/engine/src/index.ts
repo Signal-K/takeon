@@ -277,8 +277,16 @@ export {
   findMinimalDeposit,
   outpostProps,
   createMinimalScene,
+  MINIMAL_FOUNDING,
+  MINIMAL_BASE_LAYOUT,
+  type MinimalFoundingStage,
+  type MinimalBase,
+  type MinimalBuildStep,
   type MinimalSceneKind,
   type MinimalDeposit,
   type MinimalSceneOptions,
   type MinimalSceneHandle,
 } from './minimal/scene.js';
+
+// The asset and build-site kit (KES-533), also importable alone as `@takeon/engine/kit`.
+export * as kit from './kit/index.js';

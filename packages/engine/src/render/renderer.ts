@@ -14,6 +14,7 @@ import { hash2, hash3 } from '../util/rng.js';
 import { fbm2 } from '../util/noise/index.js';
 import { smoothedSurfaceCorners, surfaceHeightAtView, surfaceViewToWorld, worldToSurfaceView } from '../world/surface-view.js';
 import { IsoTerrainLayer, type TerrainProjector } from './iso-terrain-layer.js';
+import { BuildSite, constructionParts, debrisParts, dozerParts, drawDust, drawModel, drawRoad, getAsset, mixHex, paverParts, rocketParts, STRUCTURE_END, type Projector } from '../kit/index.js';
 
 interface Particle {
   x: number;
@@ -178,6 +179,14 @@ export class IsoRenderer implements SceneView {
   relief: ((x: number, y: number) => number) | null = null;
   /** Size of drawn-only props (`props`) relative to one tile. Presentation only. */
   propScale = 1;
+  /**
+   * A build site drawn on the terrain (KES-533): ground roughened, cleared
+   * and graded, structures going up, roads being laid, machines at work.
+   * Presentation only; the renderer re-caches the ground as the site's
+   * ground work moves on.
+   */
+  site: BuildSite | null = null;
+  private siteKey = '';
   /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
   private visualFacing = 0;
   private calmCache = new Map<number, string>();
@@ -245,11 +254,14 @@ export class IsoRenderer implements SceneView {
   }
 
   private heightV(u: number, v: number): number {
-    if (!this.relief) return surfaceHeightAtView(this.sim.world, u, v, this.rotation);
+    if (!this.relief && !this.site) return surfaceHeightAtView(this.sim.world, u, v, this.rotation);
     const size = this.sim.world.size;
     if (u < 0 || v < 0 || u >= size || v >= size) return -1;
     const w = this.toWorld(u, v);
-    return this.sim.world.height(w.x, w.y) < 0 ? -1 : this.relief(w.x, w.y);
+    const raw = this.sim.world.height(w.x, w.y);
+    if (raw < 0) return -1;
+    const base = this.relief ? this.relief(w.x, w.y) : raw;
+    return this.site ? this.site.heightAt(w.x, w.y, base) : base;
   }
 
   setRotation(rotation: ViewRotation): void {
@@ -275,7 +287,7 @@ export class IsoRenderer implements SceneView {
    * neighbourhood clamp back to the tile's own height (cliff edge).
    */
   private tileCorners(u: number, v: number, h: number): [number, number, number, number] {
-    return smoothedSurfaceCorners(this.sim.world, u, v, h, this.rotation, SMOOTH_STEP, this.relief ? (hu, hv) => this.heightV(hu, hv) : undefined);
+    return smoothedSurfaceCorners(this.sim.world, u, v, h, this.rotation, SMOOTH_STEP, this.relief || this.site ? (hu, hv) => this.heightV(hu, hv) : undefined);
   }
 
   /** Smoothed surface height at a tile centre (world coords), for entities. */
@@ -382,10 +394,13 @@ export class IsoRenderer implements SceneView {
     }
 
     // ── Top polygon ─────────────────────────────────────────────────────
-    const m = world.get(w.x, w.y, this.relief ? world.height(w.x, w.y) : h) || Material.Regolith;
+    const m = world.get(w.x, w.y, this.relief || this.site ? world.height(w.x, w.y) : h) || Material.Regolith;
     const def = MATERIALS[m];
     const calm = this.ground === 'calm';
-    const topColor = calm ? this.calmTone(w.x, w.y, m) : this.tinted(m, 0);
+    let topColor = calm ? this.calmTone(w.x, w.y, m) : this.tinted(m, 0);
+    // Graded site ground reads as compacted, paler and greyer than the wild ground.
+    const graded = this.site ? this.site.flattened(w.x, w.y) : 0;
+    if (graded > 0) topColor = mixHex(topColor, '#c4bcae', 0.55 * graded);
     // Lighting: sun from screen top-left; slope toward it brightens.
     // Ground tone varies in smooth organic blobs (low-frequency noise) plus
     // a whisper of per-tile grain — no checkerboard, Crashlands-style patches.
@@ -507,7 +522,8 @@ export class IsoRenderer implements SceneView {
     // Decorative scatter: tufts, rock clusters and shards on ~1 in 14 open
     // tiles. Part of the cached chunk, so it costs nothing per frame.
     const doodadRoll = hash2(w.x, w.y, 0xd00d);
-    if (doodadRoll < (calm ? 0.035 : 0.07) && m !== Material.Basalt && m !== Material.Rock) {
+    const swept = this.site ? this.site.cleared(w.x, w.y) > 0.5 || graded > 0.3 : false;
+    if (!swept && doodadRoll < (calm ? 0.035 : 0.07) && m !== Material.Basalt && m !== Material.Rock) {
       const cz = (cs[0] + cs[1] + cs[2] + cs[3]) / 4;
       const c = proj(u, v, cz);
       const ox = (hash2(w.x, w.y, 0xa11) - 0.5) * 10 * scale;
@@ -722,6 +738,16 @@ export class IsoRenderer implements SceneView {
       camera.cy += (p.sy - camera.cy) * 0.15;
     }
 
+    // A build site moves its ground work on with the drawn clock.
+    if (this.site) {
+      this.site.setTime(this.renderTime);
+      const key = this.site.terrainKey();
+      if (key !== this.siteKey) {
+        this.siteKey = key;
+        this.terrainLayer.invalidateAll();
+      }
+    }
+
     // Terrain chunks in painter order.
     this.terrainLayer.draw(ctx, camera);
 
@@ -742,6 +768,7 @@ export class IsoRenderer implements SceneView {
     }
     this.drawRoute(rover.renderPos);
     this.drawFormationRing();
+    this.drawSiteRoads(daylight);
 
     // Entities in view-space diagonal order.
     type Ent = { s: number; draw: () => void };
@@ -773,6 +800,7 @@ export class IsoRenderer implements SceneView {
         },
       });
     }
+    this.pushSiteEntities(ents, daylight);
     if (this.showRover) {
       const p = camera.toScreen(...projXY(rv.x, rv.y, rz + 0.55));
       const screenFacing = (((rover.facing - this.rotation) % 4) + 4) % 4;
@@ -865,7 +893,8 @@ export class IsoRenderer implements SceneView {
       if (alpha <= 0) continue;
       drawLaunch(ctx, p.x, p.y, camera.zoom, age, true);
       ctx.globalAlpha = alpha;
-      drawSolid(ctx, (px, py) => camera.toScreen(px, py), { x: lv.x, y: lv.y, z: lz + 0.5 + 0.1 * Math.SQRT2 + rise / TILE_Z, heading: 0, scale: 1, zPerUnit: Math.SQRT2, shadow: false }, rocketModel(0));
+      if (this.siteAt(l.pos)) drawModel(ctx, this.projector(), { x: lv.x, y: lv.y, z: lz + 0.5 + 0.14 * Math.SQRT2 + rise / TILE_Z, heading: 0, scale: 1, zPerUnit: Math.SQRT2 }, rocketParts(0), { shadow: false, time: this.renderTime });
+      else drawSolid(ctx, (px, py) => camera.toScreen(px, py), { x: lv.x, y: lv.y, z: lz + 0.5 + 0.1 * Math.SQRT2 + rise / TILE_Z, heading: 0, scale: 1, zPerUnit: Math.SQRT2, shadow: false }, rocketModel(0));
       ctx.globalAlpha = 1;
     }
   }
@@ -1446,6 +1475,87 @@ export class IsoRenderer implements SceneView {
         if (h <= z + 0.5) continue; // cannot occlude the entity
         this.drawColumnV(ctx, u, v, proj, camera.zoom, true);
       }
+    }
+  }
+
+  /** View-space point (x, y, terrain z) to canvas pixels, for kit models. */
+  private projector(): Projector {
+    const camera = this.camera;
+    return (x, y, z) => {
+      const q = project(x, y, z);
+      return camera.toScreen(q.sx, q.sy);
+    };
+  }
+
+  /** A site building standing on this tile, if any. */
+  private siteAt(pos: Vec2) {
+    return this.site?.buildings.find((b) => b.at.x === pos.x && b.at.y === pos.y) ?? null;
+  }
+
+  /** The site's roads, laid on the ground before anything stands on it. */
+  private drawSiteRoads(daylight: number): void {
+    const site = this.site;
+    if (!site) return;
+    const proj = this.projector();
+    const zoom = this.camera.zoom;
+    // A road half a tile wide: the screen width of half a tile across a tile edge.
+    const width = Math.hypot(TILE_W / 4, TILE_H / 4) * zoom * 0.9;
+    for (const road of site.roads) {
+      const t = site.roadProgress(road);
+      if (t <= 0) continue;
+      const pts = road.path.map((p) => {
+        const v = this.toView(p.x, p.y);
+        return proj(v.x, v.y, this.surfaceZ(p.x, p.y) + 0.5);
+      });
+      drawRoad(this.ctx, pts, t, width, 1 - daylight);
+    }
+  }
+
+  /** Site buildings, debris and machines, depth-sorted with the other entities. */
+  private pushSiteEntities(ents: { s: number; draw: () => void }[], daylight: number): void {
+    const site = this.site;
+    if (!site) return;
+    const ctx = this.ctx;
+    const proj = this.projector();
+    const time = this.renderTime;
+    const night = Math.max(0, Math.min(1, (1 - daylight) * 1.3));
+    const place = (x: number, y: number, heading: number) => {
+      const v = this.toView(x, y);
+      return { v, pl: { x: v.x, y: v.y, z: this.surfaceZ(x, y) + 0.5, heading, scale: 1, zPerUnit: Math.SQRT2 } };
+    };
+    for (const d of site.standingDebris()) {
+      const { v, pl } = place(d.x, d.y, (d.seed % 628) / 100);
+      const g = this.calmTone(Math.round(d.x), Math.round(d.y), this.sim.world.get(Math.round(d.x), Math.round(d.y), Math.max(0, this.sim.world.height(Math.round(d.x), Math.round(d.y)))) || Material.Regolith);
+      pl.scale = d.size * d.left;
+      ents.push({ s: v.x + v.y - 0.02, draw: () => drawModel(ctx, proj, pl, debrisParts(d.kind, d.seed, g), { time }) });
+    }
+    for (const b of site.shownBuildings()) {
+      const def = getAsset(b.asset);
+      if (!def) continue;
+      const { v, pl } = place(b.at.x, b.at.y, (b.facing * Math.PI) / 2);
+      const flying = this.propLaunches.some((l) => l.pos.x === b.at.x && l.pos.y === b.at.y);
+      // Big footprints sort by their front edge, so the ground around them is not drawn over them.
+      const s = v.x + v.y + (def.footprint - 1) * 0.5;
+      ents.push({
+        s,
+        draw: () => {
+          const progress = site.buildProgress(b);
+          const model = def.model({ time, rocket: !flying });
+          if (progress < STRUCTURE_END) drawModel(ctx, proj, pl, model, { ghost: true });
+          drawModel(ctx, proj, pl, constructionParts(model, progress, time + b.start), { time, night });
+        },
+      });
+    }
+    for (const m of site.vehicles()) {
+      const { v, pl } = place(m.x, m.y, m.heading);
+      ents.push({
+        s: v.x + v.y + 0.01,
+        draw: () => {
+          const c = proj(pl.x, pl.y, pl.z);
+          drawModel(ctx, proj, pl, m.kind === 'dozer' ? dozerParts(time) : paverParts(time), { time, night });
+          drawDust(ctx, c, 7 * this.camera.zoom, time, m.x * 7 + m.y);
+        },
+      });
     }
   }
 

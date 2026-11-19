@@ -6,6 +6,7 @@ import { MATERIALS } from '../world/materials.js';
 import { getBody } from '../world/registry.js';
 import { surveySpec } from '../survey/scene.js';
 import { setCameraElevation } from '../render/sprites.js';
+import { BuildSite, getAsset, lPath } from '../kit/index.js';
 
 /**
  * Minimal scenes: small, read-only dioramas for hosts that need a picture of a
@@ -150,7 +151,7 @@ function outpostSite(sim: Simulation): Vec2 {
  * step apart, which the renderer draws as one continuous slope, not cliffs.
  * Drawing only: the sim's voxels, mining and saves never see it.
  */
-export function minimalRelief(world: Simulation['world'], subject: Vec2): (x: number, y: number) => number {
+export function minimalRelief(world: Simulation['world'], subject: Vec2, flatRadius: number | null = FLAT_RADIUS): (x: number, y: number) => number {
   const n = world.size;
   let cur = new Float32Array(n * n);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) cur[y * n + x] = Math.max(0, world.height(x, y));
@@ -177,7 +178,7 @@ export function minimalRelief(world: Simulation['world'], subject: Vec2): (x: nu
   for (let y = 0; y < n; y++)
     for (let x = 0; x < n; x++) {
       const d = Math.hypot(x - subject.x, y - subject.y);
-      const t = Math.min(1, Math.max(0, (d - FLAT_RADIUS) / FLAT_EASE));
+      const t = flatRadius == null ? 1 : Math.min(1, Math.max(0, (d - flatRadius) / FLAT_EASE));
       const ease = t * t * (3 - 2 * t);
       out[y * n + x] = Math.max(0, Math.min(world.maxHeight - 1, base + (cur[y * n + x] - base) * ease));
     }
@@ -215,6 +216,49 @@ export function outpostProps(sim: Simulation, pad: Vec2): Structure[] {
   return props;
 }
 
+/**
+ * How far a base has got (KES-533). The story founds it in four steps —
+ * clear the ground, flatten it, place the agency, build the launch pad —
+ * and every chapter after that adds a building, each joined to the agency
+ * by a road.
+ */
+export type MinimalFoundingStage = 'raw' | 'cleared' | 'flattened' | 'agency' | 'founded';
+export const MINIMAL_FOUNDING: readonly MinimalFoundingStage[] = ['raw', 'cleared', 'flattened', 'agency', 'founded'];
+
+export interface MinimalBase {
+  stage: MinimalFoundingStage;
+  /** Buildings beyond the agency and pad (kit asset ids), standing already. */
+  buildings?: readonly string[];
+}
+
+/** A step the host can play on a base scene: the founding steps, or a kit asset id to raise. */
+export type MinimalBuildStep = 'clear' | 'flatten' | 'agency' | 'pad' | (string & {});
+
+/** Where each building stands, in tiles from the site's centre. */
+export const MINIMAL_BASE_LAYOUT: Record<string, { dx: number; dy: number }> = {
+  'agency-hq': { dx: -2, dy: 1 },
+  'launch-pad': { dx: 2, dy: -1 },
+  'solar-farm': { dx: -2, dy: -2 },
+  'fuel-depot': { dx: 3, dy: 2 },
+  'comms-dish': { dx: 0, dy: 3 },
+  warehouse: { dx: -4, dy: 2 },
+  hangar: { dx: -4, dy: -1 },
+  habitat: { dx: -3, dy: 4 },
+  silo: { dx: 1, dy: -3 },
+  'assembly-hall': { dx: 4, dy: -3 },
+  observatory: { dx: -1, dy: -4 },
+  'drill-rig': { dx: 4, dy: 4 },
+};
+/** Ground the founding clears and grades, in tiles from the centre. */
+const SITE_RADIUS = 5.5;
+
+/** A road from the agency to a building, trimmed to run between their footprints. */
+function roadBetween(from: Vec2, fromFoot: number, to: Vec2, toFoot: number): Vec2[] {
+  const path = lPath(from, to);
+  const inside = (p: Vec2, c: Vec2, foot: number) => Math.max(Math.abs(p.x - c.x), Math.abs(p.y - c.y)) < foot / 2;
+  return path.filter((p, i) => i === 0 || i === path.length - 1 || (!inside(p, from, fromFoot) && !inside(p, to, toFoot)));
+}
+
 export interface MinimalSceneOptions {
   canvas: HTMLCanvasElement;
   /** Which picture. Default `deposit`. */
@@ -247,6 +291,12 @@ export interface MinimalSceneOptions {
   focus?: { x: number; y: number };
   /** Camera zoom. Default MINIMAL_ZOOM. */
   zoom?: number;
+  /**
+   * `outpost` and `launch`: draw the player's own base with the kit
+   * (KES-533) instead of the stock outpost props: the founding stage it has
+   * reached and the buildings it has. Play further steps with `handle.step`.
+   */
+  base?: MinimalBase;
 }
 
 export interface MinimalSceneHandle {
@@ -257,6 +307,15 @@ export interface MinimalSceneHandle {
   pad: Vec2 | null;
   /** The outpost's props as placed; a host may restyle them and pass them to `game.showProps`. */
   props: Structure[];
+  /** The base's build site, when the scene was given a `base`. */
+  site: BuildSite | null;
+  /** Where each base building stands (world tiles), when the scene has a base. */
+  layout: Record<string, Vec2>;
+  /**
+   * Play one build step on the base (clear, flatten, agency, pad, or an
+   * asset id to raise with its road). Returns milliseconds until it is done.
+   */
+  step(step: MinimalBuildStep): number;
   /** Fire one rocket from the pad now (drawn only). No-op without a pad. */
   launch(): void;
   start(): void;
@@ -303,6 +362,9 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
   let pad: Vec2 | null = null;
   let props: Structure[] = [];
   let focus: Vec2 = sim.rover.pos;
+  let site: BuildSite | null = null;
+  let siteCenter: Vec2 | null = null;
+  const layout: Record<string, Vec2> = {};
   if (kind === 'deposit') {
     deposit = findMinimalDeposit(sim, opts.highlight);
     if (deposit) {
@@ -312,6 +374,17 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
       // Frame the midpoint of rover and deposit.
       focus = { x: Math.round((sim.rover.pos.x + deposit.pos.x) / 2), y: Math.round((sim.rover.pos.y + deposit.pos.y) / 2) };
     }
+  } else if (opts.base) {
+    // The player's base, built (or being built) with the kit.
+    const c = outpostSite(sim);
+    for (const [id, at] of Object.entries(MINIMAL_BASE_LAYOUT)) {
+      const x = c.x + at.dx, y = c.y + at.dy;
+      layout[id] = sim.world.inBounds(x, y) ? { x, y } : { ...c };
+    }
+    pad = layout['launch-pad'];
+    site = new BuildSite(sim.seed);
+    focus = kind === 'launch' ? pad : c;
+    siteCenter = c;
   } else {
     pad = outpostSite(sim);
     props = outpostProps(sim, pad);
@@ -325,12 +398,48 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
 
   if (opts.ground !== 'field') {
     game.iso.ground = 'calm';
-    game.iso.relief = minimalRelief(sim.world, focus);
+    // A base's site does its own flattening; unbroken ground keeps its lumps.
+    game.iso.relief = minimalRelief(sim.world, focus, site ? null : FLAT_RADIUS);
+  }
+  const area = siteCenter ? { center: siteCenter, radius: SITE_RADIUS } : null;
+  const level = siteCenter ? Math.round(game.iso.relief ? game.iso.relief(siteCenter.x, siteCenter.y) : sim.world.height(siteCenter.x, siteCenter.y)) : 0;
+  const foot = (id: string) => getAsset(id)?.footprint ?? 1;
+  const roadTo = (id: string, instant: boolean) => {
+    const hq = layout['agency-hq'];
+    const at = layout[id];
+    if (!site || !hq || !at || id === 'agency-hq') return;
+    site.road(roadBetween(hq, foot('agency-hq'), at, foot(id)), { instant });
+  };
+  const playStep = (step: MinimalBuildStep, instant: boolean): number => {
+    if (!site || !area) return 0;
+    if (step === 'clear') site.clear(area, { instant });
+    else if (step === 'flatten') site.flatten(area, level, { instant });
+    else if (step === 'agency') {
+      site.remove('survey-flag');
+      site.build('agency-hq', layout['agency-hq'], { instant, id: 'agency-hq' });
+    } else if (step === 'pad') {
+      site.build('launch-pad', layout['launch-pad'], { instant, id: 'launch-pad' });
+      roadTo('launch-pad', instant);
+    } else if (getAsset(step) && layout[step]) {
+      site.build(step, layout[step], { instant, id: step });
+      roadTo(step, instant);
+    }
+    return Math.round(site.remaining() * 1000);
+  };
+  if (site && area && opts.base) {
+    const reached = MINIMAL_FOUNDING.indexOf(opts.base.stage);
+    site.roughen(area);
+    site.scatter(area, (x, y) => sim.world.inBounds(x, y) && sim.world.isSolid(x, y));
+    site.build('survey-flag', area.center, { instant: true, id: 'survey-flag' });
+    const steps: MinimalBuildStep[] = ['clear', 'flatten', 'agency', 'pad'];
+    for (let i = 0; i < reached; i++) playStep(steps[i], true);
+    if (reached >= MINIMAL_FOUNDING.indexOf('founded')) for (const id of opts.base.buildings ?? []) playStep(id, true);
+    game.iso.site = site;
   }
   game.iso.propScale = opts.propScale ?? MINIMAL_PROP_SCALE;
 
   // The launch frames the pad alone; a parked rover would stand in front of it.
-  game.iso.showRover = opts.rover ?? kind !== 'launch';
+  game.iso.showRover = opts.rover ?? (kind !== 'launch' && !opts.base);
   game.iso.roverScale = opts.roverScale ?? MINIMAL_ROVER_SCALE;
   game.iso.art = 'solid';
 
@@ -344,6 +453,12 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
   game.renderer.focusTile(focus);
   const home = { cx: game.camera.cx, cy: game.camera.cy };
 
+  // A base's pad flies only once it stands finished.
+  const padReady = () => {
+    if (!pad) return false;
+    const built = site?.buildings.find((b) => b.id === 'launch-pad');
+    return !site || (!!built && site.buildProgress(built) >= 1);
+  };
   let raf = 0;
   const drift = opts.drift !== false && typeof requestAnimationFrame === 'function';
   let nextLaunch = 0.8;
@@ -355,8 +470,8 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
   };
   const tick = (t: number) => {
     place(t);
-    if (kind === 'launch' && autoLaunch && pad && game.iso.renderTime >= nextLaunch) {
-      game.showLaunch(pad);
+    if (kind === 'launch' && autoLaunch && padReady() && game.iso.renderTime >= nextLaunch) {
+      game.showLaunch(pad as Vec2);
       nextLaunch = game.iso.renderTime + LAUNCH_EVERY;
     }
     raf = requestAnimationFrame(tick);
@@ -367,8 +482,11 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
     deposit,
     pad,
     props,
+    site,
+    layout,
+    step: (s) => playStep(s, false),
     launch: () => {
-      if (pad) game.showLaunch(pad);
+      if (pad && padReady()) game.showLaunch(pad as Vec2);
     },
     start: () => {
       game.start();
