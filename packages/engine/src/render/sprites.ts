@@ -9,15 +9,30 @@ import { hash3 } from '../util/rng.js';
  * shorter cliff faces. Tile metrics are derived from this so every
  * procedural sprite re-projects with the angle.
  */
-export const CAMERA_ELEVATION_DEG = 60;
-const CAMERA_ELEVATION = (CAMERA_ELEVATION_DEG * Math.PI) / 180;
+export const DEFAULT_CAMERA_ELEVATION_DEG = 60;
+export let CAMERA_ELEVATION_DEG = DEFAULT_CAMERA_ELEVATION_DEG;
 
 /** Tile metrics at base scale, before camera zoom. */
 export const TILE_W = 32;
 /** Ground depth scale: TILE_W * sin(elevation). */
-export const TILE_H = Math.round(TILE_W * Math.sin(CAMERA_ELEVATION));
+export let TILE_H = 0;
 /** Cliff height scale: (TILE_W / 2) * cos(elevation). */
-export const TILE_Z = Math.round((TILE_W / 2) * Math.cos(CAMERA_ELEVATION));
+export let TILE_Z = 0;
+
+/**
+ * Change the camera elevation for every iso view mounted after this call
+ * (tile metrics are module-wide, like the material registry). 30 is classic
+ * 2:1 isometric, which matches the three-quarter entity art; 60 is the survey
+ * default. Set it before mounting and keep one elevation per page; mounted
+ * views do not re-project their cached terrain. Presentation only.
+ */
+export function setCameraElevation(deg = DEFAULT_CAMERA_ELEVATION_DEG): void {
+  const rad = (deg * Math.PI) / 180;
+  CAMERA_ELEVATION_DEG = deg;
+  TILE_H = Math.round(TILE_W * Math.sin(rad));
+  TILE_Z = Math.round((TILE_W / 2) * Math.cos(rad));
+}
+setCameraElevation();
 
 export function shade(hex: string, f: number): string {
   const n = parseInt(hex.slice(1), 16);

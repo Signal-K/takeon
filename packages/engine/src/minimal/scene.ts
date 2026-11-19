@@ -5,6 +5,7 @@ import type { Simulation } from '../sim/simulation.js';
 import { MATERIALS } from '../world/materials.js';
 import { getBody } from '../world/registry.js';
 import { surveySpec } from '../survey/scene.js';
+import { setCameraElevation } from '../render/sprites.js';
 
 /**
  * Minimal scenes: small, read-only dioramas for hosts that need a picture of a
@@ -24,6 +25,14 @@ import { surveySpec } from '../survey/scene.js';
 
 /** Closer than the survey framing so the rover, route and deposit fill a phone frame. */
 export const MINIMAL_ZOOM = 2.6;
+/**
+ * Near-isometric: low enough that ground, cliffs and the three-quarter entity
+ * art share one perspective (60° reads as a flat map under 3D sprites), high
+ * enough that a route on the ground stays long and rough cliffs stay short.
+ */
+export const MINIMAL_ELEVATION = 40;
+/** The stock rover is drawn about two tiles wide; a diorama wants it one tile wide. */
+export const MINIMAL_ROVER_SCALE = 0.62;
 /** Tiles between the rover and the deposit, so the route reads at a glance. */
 const STAND_OFF = 4;
 /** How far under the surface a deposit may sit and still count (ore is shallow, not on top). */
@@ -165,8 +174,18 @@ export interface MinimalSceneOptions {
   spec?: RoverSpec;
   /** Resources to highlight, in order of preference (host mineral ids that TakeOn knows). */
   highlight?: readonly ResourceKey[];
+  /**
+   * Camera elevation in degrees. Default 40 (near-isometric), so the ground,
+   * cliffs and three-quarter entity art share one perspective. Module-wide
+   * (see `setCameraElevation`); the scene restores the survey default on destroy.
+   */
+  elevation?: number;
+  /** Rover size relative to its stock art. Default 0.62, in proportion with tiles and buildings. */
+  roverScale?: number;
   /** Draw the rover. Default true, except `launch` (it would stand in front of the pad). */
   rover?: boolean;
+  /** `launch`: fire a rocket every few seconds on its own. Off when the host fires them (`handle.launch()`). Default true. */
+  autoLaunch?: boolean;
   /** Slow camera drift (and, in `launch`, the rockets). Off for reduced motion. Default true. */
   drift?: boolean;
   /** Where the rover-and-deposit pair sits in the view, as fractions (0..1). Default {x: 0.5, y: 0.36}, above a bottom card. */
@@ -181,6 +200,10 @@ export interface MinimalSceneHandle {
   deposit: MinimalDeposit | null;
   /** The outpost's launch pad (`outpost` and `launch` scenes). */
   pad: Vec2 | null;
+  /** The outpost's props as placed; a host may restyle them and pass them to `game.showProps`. */
+  props: Structure[];
+  /** Fire one rocket from the pad now (drawn only). No-op without a pad. */
+  launch(): void;
   start(): void;
   stop(): void;
   resize(width: number, height: number, dpr?: number): void;
@@ -199,6 +222,7 @@ function resolveBody(body: BodyDef | string | undefined): BodyDef {
 /** Canvas embed: a read-only diorama. Nothing reacts to keys, taps or drags. */
 export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandle {
   const kind = opts.kind ?? 'deposit';
+  setCameraElevation(opts.elevation ?? MINIMAL_ELEVATION);
   const game = createRoverGame({
     canvas: opts.canvas,
     body: resolveBody(opts.body),
@@ -218,9 +242,11 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
   // A diorama frames one thing; landmark anomalies elsewhere read as stray marks.
   game.iso.showAnomalies = false;
   game.iso.fieldGrid = false;
+  game.iso.facingHint = false;
 
   let deposit: MinimalDeposit | null = null;
   let pad: Vec2 | null = null;
+  let props: Structure[] = [];
   let focus: Vec2 = sim.rover.pos;
   if (kind === 'deposit') {
     deposit = findMinimalDeposit(sim, opts.highlight);
@@ -233,10 +259,10 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
     }
   } else {
     pad = outpostSite(sim);
-    const props = outpostProps(sim, pad);
+    props = outpostProps(sim, pad);
     game.showProps(props);
     const taken = new Set(props.map((p) => `${p.pos.x},${p.pos.y}`));
-    const park = [{ x: pad.x + 2, y: pad.y + 1 }, { x: pad.x + 1, y: pad.y + 1 }, { x: pad.x - 1, y: pad.y + 2 }]
+    const park = [{ x: pad.x + 3, y: pad.y + 2 }, { x: pad.x + 2, y: pad.y + 3 }, { x: pad.x + 3, y: pad.y + 1 }, { x: pad.x - 1, y: pad.y + 3 }]
       .find((p) => sim.world.inBounds(p.x, p.y) && sim.world.isSolid(p.x, p.y) && !taken.has(`${p.x},${p.y}`));
     if (park) parkRover({ ...park, facing: 1 });
     focus = pad;
@@ -244,6 +270,7 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
 
   // The launch frames the pad alone; a parked rover would stand in front of it.
   game.iso.showRover = opts.rover ?? kind !== 'launch';
+  game.iso.roverScale = opts.roverScale ?? MINIMAL_ROVER_SCALE;
 
   const zoom = opts.zoom ?? MINIMAL_ZOOM;
   game.camera.zoom = zoom;
@@ -258,6 +285,7 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
   let raf = 0;
   const drift = opts.drift !== false && typeof requestAnimationFrame === 'function';
   let nextLaunch = 0.8;
+  const autoLaunch = opts.autoLaunch !== false;
   const place = (t: number) => {
     const sway = drift ? 1 : 0;
     game.camera.cx = home.cx + (0.5 - frame.x) * game.camera.viewW / game.camera.zoom + Math.sin(t / 5200) * 6 * sway;
@@ -265,7 +293,7 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
   };
   const tick = (t: number) => {
     place(t);
-    if (kind === 'launch' && pad && game.iso.renderTime >= nextLaunch) {
+    if (kind === 'launch' && autoLaunch && pad && game.iso.renderTime >= nextLaunch) {
       game.showLaunch(pad);
       nextLaunch = game.iso.renderTime + LAUNCH_EVERY;
     }
@@ -276,6 +304,10 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
     game,
     deposit,
     pad,
+    props,
+    launch: () => {
+      if (pad) game.showLaunch(pad);
+    },
     start: () => {
       game.start();
       // Reduced motion: no sway and no rockets; the pad stands ready.
@@ -301,6 +333,7 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       game.dispose();
+      setCameraElevation();
     },
   };
 }

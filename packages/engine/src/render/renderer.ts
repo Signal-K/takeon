@@ -151,6 +151,10 @@ export class IsoRenderer implements SceneView {
   propLaunches: { pos: Vec2; t: number }[] = [];
   /** Draw landmark anomalies (wreckage, spires…) even before a scan. A diorama that frames something else turns this off. */
   showAnomalies = true;
+  /** Rover size relative to its stock art (which is drawn large to read on a phone field). Presentation only. */
+  roverScale = 1;
+  /** Outline the tile the rover faces (a driving aid). A diorama turns it off. */
+  facingHint = true;
   /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
   private visualFacing = 0;
   // ── Adaptive resolution ───────────────────────────────────────────────
@@ -644,7 +648,7 @@ export class IsoRenderer implements SceneView {
     const fx = rover.pos.x + d.x;
     const fy = rover.pos.y + d.y;
     // No rover drawn, no facing tile: an outline with nothing behind it reads as a stray mark.
-    if (this.showRover && world.isSolid(fx, fy)) {
+    if (this.showRover && this.facingHint && world.isSolid(fx, fy)) {
       this.strokeTilePolygon(fx, fy, 'rgba(255,255,255,0.35)');
     }
     if (this.showRover && rover.mining) {
@@ -685,7 +689,7 @@ export class IsoRenderer implements SceneView {
       const turnLean = Math.max(-0.22, Math.min(0.22, (this.visualFacing - screenFacing) * 0.22));
       ents.push({
         s: rv.x + rv.y,
-        draw: () => drawRover(ctx, p.x, p.y, camera.zoom, rover, daylight, screenFacing as 0 | 1 | 2 | 3, this.renderTime, turnLean),
+        draw: () => drawRover(ctx, p.x, p.y, camera.zoom * this.roverScale, rover, daylight, screenFacing as 0 | 1 | 2 | 3, this.renderTime, turnLean),
       });
     }
     // Wind strength for flora sway — stiffens in dust weather.
