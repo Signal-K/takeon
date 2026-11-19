@@ -9,6 +9,11 @@ additive → minor, fixes → patch.
 
 ## Unreleased
 
+### @takeon/engine: solid art (KES-530)
+
+- `render/solid.ts`: entities modelled as boxes, discs and frustums in world units and drawn through the terrain projection, so they keep the ground's perspective at any camera elevation. `roverModel` (a one-tile rover that follows the build) and `structureModel` (pad, habitat, frame, solar, beacon, rig, cache, refinery, generator, pylon).
+- `IsoRenderer.art: 'sprite' | 'solid'` (default `sprite`, so existing views are unchanged). Minimal scenes use `solid`; `MINIMAL_ROVER_SCALE` is now 1.35 tiles.
+
 ### @takeon/engine, @takeon/pixi
 
 - Minimal scenes (KES-530): `createMinimalScene({ kind })` gives hosts read-only dioramas, pictures of a place rather than a field to drive (Landnam Minimal). `deposit` (default) parks the rover a few tiles from the nearest shallow deposit of a wanted resource, with a dashed route to a pulsing gold goal ring. `outpost` sets a small settlement (pad, habitat, solar, drill rig, beacon) on the flattest ground near the landing site, with the rover parked beside it. `launch` frames that outpost on its pad, with a rocket lifting off every few seconds. The camera drifts slowly; reduced-motion hosts pass `drift: false`, which also stops the rockets. Hosts set `focus` and `zoom` per layout. Minimal scenes use a near-isometric camera (`elevation`, default 40°, via the new module-wide `setCameraElevation`; the survey default stays 60°) and draw the rover at `roverScale` 0.62, so ground, cliffs and entity art share one perspective. `handle.launch()` fires a rocket on demand (`autoLaunch: false` turns off the automatic ones) and `handle.props` exposes the outpost for a host to restyle (a build rising). Supporting presentation-only API: `IsoRenderer.roverScale` and `IsoRenderer.facingHint`, plus `RoverGame.showRoute(route)` (a route the rover does not drive), `RoverGame.showProps(structures)` and `RoverGame.showLaunch(pos)` (buildings and rockets that are drawn, never simulated or saved), `IsoRenderer.fieldGrid` (default on) and `IsoRenderer.showAnomalies` (default on). No new rules; generation output unchanged.

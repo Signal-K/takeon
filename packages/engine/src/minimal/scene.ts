@@ -32,7 +32,7 @@ export const MINIMAL_ZOOM = 2.6;
  */
 export const MINIMAL_ELEVATION = 40;
 /** The stock rover is drawn about two tiles wide; a diorama wants it one tile wide. */
-export const MINIMAL_ROVER_SCALE = 0.62;
+export const MINIMAL_ROVER_SCALE = 1.35;
 /** Tiles between the rover and the deposit, so the route reads at a glance. */
 const STAND_OFF = 4;
 /** How far under the surface a deposit may sit and still count (ore is shallow, not on top). */
@@ -271,6 +271,7 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
   // The launch frames the pad alone; a parked rover would stand in front of it.
   game.iso.showRover = opts.rover ?? kind !== 'launch';
   game.iso.roverScale = opts.roverScale ?? MINIMAL_ROVER_SCALE;
+  game.iso.art = 'solid';
 
   const zoom = opts.zoom ?? MINIMAL_ZOOM;
   game.camera.zoom = zoom;

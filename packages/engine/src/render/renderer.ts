@@ -6,6 +6,7 @@ import { Camera } from './camera.js';
 import type { SceneView, ViewRotation } from './view.js';
 import { drawAnomaly, drawLaunch, drawStructure } from './entities.js';
 import { drawRover } from './rover.js';
+import { drawSolid, roverModel, structureModel } from './solid.js';
 import { project, TILE_H, TILE_W, TILE_Z, shade } from './sprites.js';
 import { MATERIALS } from '../world/materials.js';
 import { skinBiome } from '../world/terrain.js';
@@ -153,6 +154,12 @@ export class IsoRenderer implements SceneView {
   showAnomalies = true;
   /** Rover size relative to its stock art (which is drawn large to read on a phone field). Presentation only. */
   roverScale = 1;
+  /**
+   * `sprite`: the stock three-quarter drawing (`rover.ts`). `solid`: the rover
+   * modelled in world units and drawn through the terrain's projection
+   * (`solid.ts`), so it keeps the ground's perspective at any elevation.
+   */
+  art: 'sprite' | 'solid' = 'sprite';
   /** Outline the tile the rover faces (a driving aid). A diorama turns it off. */
   facingHint = true;
   /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
@@ -678,7 +685,14 @@ export class IsoRenderer implements SceneView {
       const powered = sim.powered.has(st.id) || this.props.includes(st);
       ents.push({
         s: sv.x + sv.y,
-        draw: () => drawStructure(ctx, p.x, p.y, camera.zoom, st, sim.time, daylight, powered),
+        draw: () => {
+          // A pad whose rocket is mid-launch stands empty until the next one is rolled out.
+          const flying = this.propLaunches.some((l) => l.pos.x === st.pos.x && l.pos.y === st.pos.y);
+          const ready = st.cooldownUntil == null || sim.time >= st.cooldownUntil;
+          const model = this.art === 'solid' ? structureModel(st.type, st.progress ?? 1, ready && !flying) : null;
+          if (model) drawSolid(ctx, (px, py) => camera.toScreen(px, py), { x: sv.x, y: sv.y, z: sz + 0.5, heading: 0, scale: 1, zPerUnit: Math.SQRT2 }, model);
+          else drawStructure(ctx, p.x, p.y, camera.zoom, st, sim.time, daylight, powered);
+        },
       });
     }
     if (this.showRover) {
@@ -689,7 +703,17 @@ export class IsoRenderer implements SceneView {
       const turnLean = Math.max(-0.22, Math.min(0.22, (this.visualFacing - screenFacing) * 0.22));
       ents.push({
         s: rv.x + rv.y,
-        draw: () => drawRover(ctx, p.x, p.y, camera.zoom * this.roverScale, rover, daylight, screenFacing as 0 | 1 | 2 | 3, this.renderTime, turnLean),
+        draw: () =>
+          this.art === 'solid'
+            ? drawSolid(ctx, (px, py) => camera.toScreen(px, py), {
+                x: rv.x,
+                y: rv.y,
+                z: rz + 0.5,
+                heading: (this.visualFacing * Math.PI) / 2,
+                scale: this.roverScale,
+                zPerUnit: Math.SQRT2,
+              }, roverModel(rover))
+            : drawRover(ctx, p.x, p.y, camera.zoom * this.roverScale, rover, daylight, screenFacing as 0 | 1 | 2 | 3, this.renderTime, turnLean),
       });
     }
     // Wind strength for flora sway — stiffens in dust weather.
