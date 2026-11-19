@@ -74,6 +74,8 @@ export class RoverGame {
   private order: RoverOrder | null = null;
   /** Planned safe steps for a tap-to-drive order. Never used for manual input. */
   private route: Vec2[] = [];
+  /** Host-shown route (presentation only): drawn instead of the planned route, never driven or saved. */
+  private shownRoute: readonly Vec2[] | null = null;
   private opts: RoverGameOptions;
 
   constructor(opts: RoverGameOptions) {
@@ -159,7 +161,7 @@ export class RoverGame {
         this.acc -= TICK_DT;
       }
       this.sim.interpolateRender(this.acc);
-      this.iso.setRoute(this.route);
+      this.iso.setRoute(this.shownRoute ?? this.route);
       this.renderer.draw();
       this.raf = requestAnimationFrame(frame);
     };
@@ -295,6 +297,15 @@ export class RoverGame {
     this.route = path;
     this.order = { type: 'goto', pos: { ...waypoints[waypoints.length - 1] } };
     return true;
+  }
+
+  /**
+   * Draw a route the rover does not drive (a diorama's "go here" line). Pass
+   * null to go back to showing the planned route. Presentation only.
+   */
+  showRoute(route: readonly Vec2[] | null): void {
+    this.shownRoute = route;
+    this.iso.routeGoalRing = route !== null;
   }
 
   /** Remaining safe route steps, suitable for a host route readout. */

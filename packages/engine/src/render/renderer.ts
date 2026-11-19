@@ -137,6 +137,10 @@ export class IsoRenderer implements SceneView {
   private route: readonly Vec2[] = [];
   /** Draw the rover. Off until the game turns it on: a landscape has no vehicle in it unless one is brought. */
   showRover = false;
+  /** Faint survey grid on terrain tops. Hosts that want a clean diorama turn it off before the first draw. */
+  fieldGrid = true;
+  /** Pulse a gold ring on the route's last point (a host-shown goal). */
+  routeGoalRing = false;
   /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
   private visualFacing = 0;
   // ── Adaptive resolution ───────────────────────────────────────────────
@@ -348,9 +352,11 @@ export class IsoRenderer implements SceneView {
     g.fill();
     // Faint field grid, re-projected with the tile so the higher camera
     // still reads as a surveyed surface rather than a painted blob.
-    g.strokeStyle = 'rgba(186, 214, 230, 0.32)';
-    g.lineWidth = Math.max(0.6, 0.75 * scale);
-    g.stroke();
+    if (this.fieldGrid) {
+      g.strokeStyle = 'rgba(186, 214, 230, 0.32)';
+      g.lineWidth = Math.max(0.6, 0.75 * scale);
+      g.stroke();
+    }
 
     // Soil texture: clipped speckles, grain streaks and occasional pebbles.
     // A caller may request just the stable base polygon for a low-detail
@@ -1336,6 +1342,18 @@ export class IsoRenderer implements SceneView {
       ctx.beginPath();
       ctx.arc(p.x, p.y, Math.max(2.6, camera.zoom * (final ? 3.5 : 2.6)), 0, Math.PI * 2);
       ctx.fill();
+      if (final && this.routeGoalRing) {
+        const pulse = 0.55 + 0.45 * Math.sin(this.renderTime * 2.6);
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, TILE_W * camera.zoom * (0.55 + 0.08 * pulse), TILE_H * camera.zoom * (0.55 + 0.08 * pulse), 0, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(246, 201, 106, ${0.95 * pulse})`;
+        ctx.lineWidth = Math.max(2.2, camera.zoom * 0.9);
+        ctx.shadowColor = 'rgba(246, 201, 106, 0.9)';
+        ctx.shadowBlur = 18;
+        ctx.stroke();
+        ctx.restore();
+      }
     }
     ctx.restore();
   }

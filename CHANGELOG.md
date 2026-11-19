@@ -11,6 +11,7 @@ additive → minor, fixes → patch.
 
 ### @takeon/engine, @takeon/pixi
 
+- Minimal scene (KES-530): `createMinimalScene` is a read-only diorama for hosts that need a picture of a place, not a field to drive (Landnam Minimal). The rover parks a few tiles from the nearest shallow deposit of a wanted resource, a dashed route runs to it with a pulsing gold goal ring, and the camera drifts slowly; hosts set `focus` and `zoom` per layout. Supporting presentation-only API: `RoverGame.showRoute(route)` draws a route the rover does not drive, and `IsoRenderer.fieldGrid` (default on) turns off the terrain survey grid before the first draw. No new rules; generation output unchanged.
 - A scene only has a rover when it brings one. `spec` is now optional on `RoverGameOptions` / `mountRoverGame` / `Simulation`: with a spec the rover is drawn (as before), without one the ground is drawn with no rover (a landing, a flyover). `showRover` overrides it. Both views.
 
 ### @takeon/pixi

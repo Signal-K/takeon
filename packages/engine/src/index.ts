@@ -268,3 +268,13 @@ export {
   type SurveySceneOptions,
   type SurveySceneHandle,
 } from './survey/scene.js';
+
+// Minimal scene (KES-530): a read-only diorama for hosts like Landnam Minimal.
+export {
+  MINIMAL_ZOOM,
+  findMinimalDeposit,
+  createMinimalScene,
+  type MinimalDeposit,
+  type MinimalSceneOptions,
+  type MinimalSceneHandle,
+} from './minimal/scene.js';
