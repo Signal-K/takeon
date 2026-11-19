@@ -1,4 +1,4 @@
-import type { BodyDef, MissionState, RoverSpec, StructureType, Vec2 } from '../types.js';
+import type { BodyDef, MissionState, RoverSpec, Structure, StructureType, Vec2 } from '../types.js';
 import { EventBus } from '../util/events.js';
 import { defaultSpec } from '../parts/assembly.js';
 import { DIRS, Simulation, TICK_DT } from '../sim/simulation.js';
@@ -306,6 +306,19 @@ export class RoverGame {
   showRoute(route: readonly Vec2[] | null): void {
     this.shownRoute = route;
     this.iso.routeGoalRing = route !== null;
+  }
+
+  /**
+   * Draw structures that are not simulated (a diorama's outpost). They never
+   * reach the sim, the economy or a save. Pass [] to clear. Presentation only.
+   */
+  showProps(props: readonly Structure[]): void {
+    this.iso.props = props.map((p) => ({ ...p, buffer: { ...p.buffer } }));
+  }
+
+  /** Fire a rocket from a tile, drawn only (no cargo, no cooldown). Presentation only. */
+  showLaunch(pos: Vec2): void {
+    this.iso.propLaunches.push({ pos: { ...pos }, t: this.iso.renderTime });
   }
 
   /** Remaining safe route steps, suitable for a host route readout. */

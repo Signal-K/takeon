@@ -1,19 +1,25 @@
 import type { RoverGame } from '../core/game.js';
 import { createRoverGame } from '../core/game.js';
-import type { BodyDef, ResourceKey, RoverSpec, Vec2 } from '../types.js';
+import type { BodyDef, ResourceKey, RoverSpec, Structure, Vec2 } from '../types.js';
 import type { Simulation } from '../sim/simulation.js';
 import { MATERIALS } from '../world/materials.js';
 import { getBody } from '../world/registry.js';
 import { surveySpec } from '../survey/scene.js';
 
 /**
- * The minimal scene: a small, read-only diorama for hosts that need a picture
- * of a place, not a field to drive (Landnam Minimal, KES-530 / SSL-864).
+ * Minimal scenes: small, read-only dioramas for hosts that need a picture of a
+ * place, not a field to drive (Landnam Minimal, KES-530 / SSL-864).
  *
- * The rover stands a few tiles from one ore deposit, a dashed route runs from
- * it to the deposit (gold end dot), and the camera drifts slowly over the
- * pair. No controls, no HUD, nothing to learn. It frames the existing Go-backed
- * world only: no new rules, and generation output is unchanged.
+ * - `deposit`: the rover stands a few tiles from one ore deposit, a dashed
+ *   route runs to it and a gold ring pulses on it. "This is where you dig."
+ * - `outpost`: a small settlement on flat ground (pad, habitat, solar,
+ *   beacon, drill rig) with the rover parked beside it. "This is home."
+ * - `launch`: the same outpost framed on its pad, a rocket lifting off every
+ *   few seconds. "Off you go."
+ *
+ * The camera drifts slowly; there are no controls, no HUD, nothing to learn.
+ * Outpost buildings and rockets are props (drawn, never simulated), so these
+ * frame the existing Go-backed world only: no new rules, generation unchanged.
  */
 
 /** Closer than the survey framing so the rover, route and deposit fill a phone frame. */
@@ -79,15 +85,89 @@ function standFor(sim: Simulation, deposit: Vec2): (Vec2 & { facing: 0 | 1 | 2 |
   return null;
 }
 
+export type MinimalSceneKind = 'deposit' | 'outpost' | 'launch';
+
+/** Seconds between drawn rocket launches in the `launch` scene. */
+const LAUNCH_EVERY = 5.5;
+
+/** How uneven a 5x5 patch may be (summed height difference) to host the outpost. */
+function roughness(sim: Simulation, cx: number, cy: number): number {
+  const world = sim.world;
+  const h0 = world.height(cx, cy);
+  let sum = 0;
+  for (let dy = -2; dy <= 2; dy++)
+    for (let dx = -2; dx <= 2; dx++) {
+      const x = cx + dx;
+      const y = cy + dy;
+      if (!world.inBounds(x, y) || !world.isSolid(x, y)) return Infinity;
+      sum += Math.abs(world.height(x, y) - h0);
+    }
+  return sum;
+}
+
+/** The flattest patch near the landing site: where the outpost goes. */
+function outpostSite(sim: Simulation): Vec2 {
+  const origin = sim.landingSite;
+  let best = { x: origin.x, y: origin.y };
+  let bestScore = Infinity;
+  for (let r = 0; r <= 12 && bestScore > 0; r++) {
+    for (let dy = -r; dy <= r; dy++)
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const score = roughness(sim, origin.x + dx, origin.y + dy);
+        if (score < bestScore) {
+          bestScore = score;
+          best = { x: origin.x + dx, y: origin.y + dy };
+        }
+      }
+  }
+  return best;
+}
+
+/** Outpost layout around its pad, in tile offsets (pad first). */
+const OUTPOST: Array<{ type: Structure['type']; dx: number; dy: number; facing?: 0 | 1 | 2 | 3 }> = [
+  { type: 'launch-pad', dx: 0, dy: 0 },
+  { type: 'habitat', dx: -2, dy: 1 },
+  { type: 'solar-array', dx: -2, dy: -1 },
+  { type: 'solar-array', dx: -3, dy: 0 },
+  { type: 'drill-rig', dx: 2, dy: -1 },
+  { type: 'beacon', dx: 1, dy: 2 },
+];
+
+/** Props for the outpost at `pad`, each nudged to the nearest solid tile it may stand on. */
+export function outpostProps(sim: Simulation, pad: Vec2): Structure[] {
+  const taken = new Set<string>();
+  const props: Structure[] = [];
+  for (const [i, item] of OUTPOST.entries()) {
+    let spot: Vec2 | null = null;
+    for (let r = 0; r <= 2 && !spot; r++)
+      for (let dy = -r; dy <= r && !spot; dy++)
+        for (let dx = -r; dx <= r && !spot; dx++) {
+          const x = pad.x + item.dx + dx;
+          const y = pad.y + item.dy + dy;
+          if (taken.has(`${x},${y}`) || !sim.world.inBounds(x, y) || !sim.world.isSolid(x, y)) continue;
+          spot = { x, y };
+        }
+    if (!spot) continue;
+    taken.add(`${spot.x},${spot.y}`);
+    props.push({ id: `minimal-${item.type}-${i}`, type: item.type, pos: spot, buffer: {}, facing: item.facing ?? 0, progress: 1 });
+  }
+  return props;
+}
+
 export interface MinimalSceneOptions {
   canvas: HTMLCanvasElement;
+  /** Which picture. Default `deposit`. */
+  kind?: MinimalSceneKind;
   /** Host body, or a registered body id. Defaults to the Moon. */
   body?: BodyDef | string;
   seed?: number;
   spec?: RoverSpec;
   /** Resources to highlight, in order of preference (host mineral ids that TakeOn knows). */
   highlight?: readonly ResourceKey[];
-  /** Slow camera drift. Off for reduced motion. Default true. */
+  /** Draw the rover. Default true, except `launch` (it would stand in front of the pad). */
+  rover?: boolean;
+  /** Slow camera drift (and, in `launch`, the rockets). Off for reduced motion. Default true. */
   drift?: boolean;
   /** Where the rover-and-deposit pair sits in the view, as fractions (0..1). Default {x: 0.5, y: 0.36}, above a bottom card. */
   focus?: { x: number; y: number };
@@ -99,6 +179,8 @@ export interface MinimalSceneHandle {
   game: RoverGame;
   /** The deposit the route points at, if the body has one. */
   deposit: MinimalDeposit | null;
+  /** The outpost's launch pad (`outpost` and `launch` scenes). */
+  pad: Vec2 | null;
   start(): void;
   stop(): void;
   resize(width: number, height: number, dpr?: number): void;
@@ -116,6 +198,7 @@ function resolveBody(body: BodyDef | string | undefined): BodyDef {
 
 /** Canvas embed: a read-only diorama. Nothing reacts to keys, taps or drags. */
 export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandle {
+  const kind = opts.kind ?? 'deposit';
   const game = createRoverGame({
     canvas: opts.canvas,
     body: resolveBody(opts.body),
@@ -126,34 +209,55 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
     startView: 'iso',
   });
   const sim = game.sim;
-  const deposit = findMinimalDeposit(sim, opts.highlight);
-  if (deposit) {
-    const stand = standFor(sim, deposit.pos);
-    if (stand) {
-      sim.rover.pos = { x: stand.x, y: stand.y };
-      sim.rover.renderPos = { x: stand.x, y: stand.y };
-      sim.rover.facing = stand.facing;
-      sim.rover.moveFrom = null;
+  const parkRover = (at: Vec2 & { facing: 0 | 1 | 2 | 3 }) => {
+    sim.rover.pos = { x: at.x, y: at.y };
+    sim.rover.renderPos = { x: at.x, y: at.y };
+    sim.rover.facing = at.facing;
+    sim.rover.moveFrom = null;
+  };
+  // A diorama frames one thing; landmark anomalies elsewhere read as stray marks.
+  game.iso.showAnomalies = false;
+  game.iso.fieldGrid = false;
+
+  let deposit: MinimalDeposit | null = null;
+  let pad: Vec2 | null = null;
+  let focus: Vec2 = sim.rover.pos;
+  if (kind === 'deposit') {
+    deposit = findMinimalDeposit(sim, opts.highlight);
+    if (deposit) {
+      const stand = standFor(sim, deposit.pos);
+      if (stand) parkRover(stand);
+      game.showRoute([deposit.pos]);
+      // Frame the midpoint of rover and deposit.
+      focus = { x: Math.round((sim.rover.pos.x + deposit.pos.x) / 2), y: Math.round((sim.rover.pos.y + deposit.pos.y) / 2) };
     }
-    game.showRoute([deposit.pos]);
+  } else {
+    pad = outpostSite(sim);
+    const props = outpostProps(sim, pad);
+    game.showProps(props);
+    const taken = new Set(props.map((p) => `${p.pos.x},${p.pos.y}`));
+    const park = [{ x: pad.x + 2, y: pad.y + 1 }, { x: pad.x + 1, y: pad.y + 1 }, { x: pad.x - 1, y: pad.y + 2 }]
+      .find((p) => sim.world.inBounds(p.x, p.y) && sim.world.isSolid(p.x, p.y) && !taken.has(`${p.x},${p.y}`));
+    if (park) parkRover({ ...park, facing: 1 });
+    focus = pad;
   }
 
-  // Frame the midpoint of rover and deposit, then drift gently around it.
-  const focus = deposit
-    ? { x: Math.round((sim.rover.pos.x + deposit.pos.x) / 2), y: Math.round((sim.rover.pos.y + deposit.pos.y) / 2) }
-    : sim.rover.pos;
+  // The launch frames the pad alone; a parked rover would stand in front of it.
+  game.iso.showRover = opts.rover ?? kind !== 'launch';
+
   const zoom = opts.zoom ?? MINIMAL_ZOOM;
   game.camera.zoom = zoom;
   game.camera.minZoom = zoom;
   game.camera.maxZoom = zoom;
-  let frame = opts.focus ?? { x: 0.5, y: 0.36 };
+  // The launch scene keeps the pad low so the rocket climbs into the frame.
+  let frame = opts.focus ?? (kind === 'launch' ? { x: 0.5, y: 0.62 } : { x: 0.5, y: 0.36 });
   game.setCameraFollow(false);
-  game.iso.fieldGrid = false;
   game.renderer.focusTile(focus);
   const home = { cx: game.camera.cx, cy: game.camera.cy };
 
   let raf = 0;
   const drift = opts.drift !== false && typeof requestAnimationFrame === 'function';
+  let nextLaunch = 0.8;
   const place = (t: number) => {
     const sway = drift ? 1 : 0;
     game.camera.cx = home.cx + (0.5 - frame.x) * game.camera.viewW / game.camera.zoom + Math.sin(t / 5200) * 6 * sway;
@@ -161,14 +265,20 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
   };
   const tick = (t: number) => {
     place(t);
+    if (kind === 'launch' && pad && game.iso.renderTime >= nextLaunch) {
+      game.showLaunch(pad);
+      nextLaunch = game.iso.renderTime + LAUNCH_EVERY;
+    }
     raf = requestAnimationFrame(tick);
   };
 
   return {
     game,
     deposit,
+    pad,
     start: () => {
       game.start();
+      // Reduced motion: no sway and no rockets; the pad stands ready.
       if (drift && !raf) raf = requestAnimationFrame(tick);
     },
     stop: () => {
@@ -180,8 +290,8 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
       game.resize(width, height, dpr);
       place(typeof performance !== 'undefined' ? performance.now() : 0);
     },
-    setFocus: (focus, nextZoom) => {
-      frame = focus;
+    setFocus: (next, nextZoom) => {
+      frame = next;
       if (nextZoom) {
         game.camera.minZoom = game.camera.maxZoom = game.camera.zoom = nextZoom;
       }

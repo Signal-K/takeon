@@ -1,4 +1,4 @@
-import { Material, type Vec2 } from '../types.js';
+import { Material, type Structure, type Vec2 } from '../types.js';
 import type { Simulation } from '../sim/simulation.js';
 import { DIRS } from '../sim/simulation.js';
 import { POWER_RANGE } from '../sim/structures.js';
@@ -132,7 +132,8 @@ export class IsoRenderer implements SceneView {
   private ambient!: AmbientProfile;
   private lastDrawMs = 0;
   /** Smooth per-frame clock for animation (sim.time only ticks at 10 Hz). */
-  private renderTime = 0;
+  /** Seconds of drawn time; `propLaunches` are stamped against it. */
+  renderTime = 0;
   /** Host-planned route, drawn as a presentation-only surface overlay. */
   private route: readonly Vec2[] = [];
   /** Draw the rover. Off until the game turns it on: a landscape has no vehicle in it unless one is brought. */
@@ -141,6 +142,15 @@ export class IsoRenderer implements SceneView {
   fieldGrid = true;
   /** Pulse a gold ring on the route's last point (a host-shown goal). */
   routeGoalRing = false;
+  /**
+   * Structures drawn but not simulated (a diorama's outpost). They never reach
+   * the sim, the economy or a save; they read as powered. Presentation only.
+   */
+  props: Structure[] = [];
+  /** Rocket launches drawn but not simulated; `t` is in render seconds (`renderTime`). */
+  propLaunches: { pos: Vec2; t: number }[] = [];
+  /** Draw landmark anomalies (wreckage, spires…) even before a scan. A diorama that frames something else turns this off. */
+  showAnomalies = true;
   /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
   private visualFacing = 0;
   // ── Adaptive resolution ───────────────────────────────────────────────
@@ -633,10 +643,11 @@ export class IsoRenderer implements SceneView {
     const d = DIRS[rover.facing];
     const fx = rover.pos.x + d.x;
     const fy = rover.pos.y + d.y;
-    if (world.isSolid(fx, fy)) {
+    // No rover drawn, no facing tile: an outline with nothing behind it reads as a stray mark.
+    if (this.showRover && world.isSolid(fx, fy)) {
       this.strokeTilePolygon(fx, fy, 'rgba(255,255,255,0.35)');
     }
-    if (rover.mining) {
+    if (this.showRover && rover.mining) {
       const pulse = 0.35 + (Math.sin(sim.time * 10) + 1) * 0.2;
       this.strokeTilePolygon(rover.mining.pos.x, rover.mining.pos.y, `rgba(125,214,232,${pulse})`);
     }
@@ -646,7 +657,7 @@ export class IsoRenderer implements SceneView {
     // Entities in view-space diagonal order.
     type Ent = { s: number; draw: () => void };
     const ents: Ent[] = [];
-    for (const a of sim.anomalies) {
+    for (const a of this.showAnomalies ? sim.anomalies : []) {
       if (world.height(a.pos.x, a.pos.y) < 0) continue;
       const av = this.toView(a.pos.x, a.pos.y);
       const az = this.surfaceZ(a.pos.x, a.pos.y);
@@ -656,11 +667,11 @@ export class IsoRenderer implements SceneView {
         draw: () => drawAnomaly(ctx, p.x, p.y, camera.zoom, a, sim.time),
       });
     }
-    for (const st of sim.structures) {
+    for (const st of sim.structures.concat(this.props)) {
       const sv = this.toView(st.pos.x, st.pos.y);
       const sz = this.surfaceZ(st.pos.x, st.pos.y);
       const p = camera.toScreen(...projXY(sv.x, sv.y, sz + 0.55));
-      const powered = sim.powered.has(st.id);
+      const powered = sim.powered.has(st.id) || this.props.includes(st);
       ents.push({
         s: sv.x + sv.y,
         draw: () => drawStructure(ctx, p.x, p.y, camera.zoom, st, sim.time, daylight, powered),
@@ -732,6 +743,13 @@ export class IsoRenderer implements SceneView {
       const lz = this.surfaceZ(l.pos.x, l.pos.y);
       const p = camera.toScreen(...projXY(lv.x, lv.y, lz + 0.55));
       drawLaunch(ctx, p.x, p.y, camera.zoom, sim.time - l.t);
+    }
+    this.propLaunches = this.propLaunches.filter((l) => this.renderTime - l.t < 3.2);
+    for (const l of this.propLaunches) {
+      const lv = this.toView(l.pos.x, l.pos.y);
+      const lz = this.surfaceZ(l.pos.x, l.pos.y);
+      const p = camera.toScreen(...projXY(lv.x, lv.y, lz + 0.55));
+      drawLaunch(ctx, p.x, p.y, camera.zoom, this.renderTime - l.t);
     }
   }
 
@@ -1232,13 +1250,13 @@ export class IsoRenderer implements SceneView {
   /** Faint energised lines from power sources to the structures they feed. */
   private drawPowerLinks(daylight: number): void {
     const { ctx, camera, sim } = this;
-    const structs = sim.structures;
+    const structs = sim.structures.concat(this.props);
     if (structs.length < 2) return;
     const emitters = structs.filter(
       (s) =>
         s.type === 'generator' ||
         (s.type === 'solar-array' && daylight > 0) ||
-        (s.type === 'pylon' && sim.powered.has(s.id)),
+        (s.type === 'pylon' && (sim.powered.has(s.id) || this.props.includes(s))),
     );
     if (emitters.length === 0) return;
     const screenOf = (st: { pos: Vec2 }): { x: number; y: number } => {
@@ -1251,7 +1269,7 @@ export class IsoRenderer implements SceneView {
     ctx.save();
     ctx.lineCap = 'round';
     for (const s of structs) {
-      if (!sim.powered.has(s.id)) continue;
+      if (!sim.powered.has(s.id) && !this.props.includes(s)) continue;
       let best: (typeof structs)[number] | null = null;
       let bestD = Infinity;
       for (const e of emitters) {
