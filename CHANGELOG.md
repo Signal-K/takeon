@@ -12,6 +12,8 @@ additive → minor, fixes → patch.
 ### @takeon/engine: solid art (KES-530)
 
 - `render/solid.ts`: entities modelled as boxes, discs and frustums in world units and drawn through the terrain projection, so they keep the ground's perspective at any camera elevation. `roverModel` (a one-tile rover that follows the build) and `structureModel` (pad, habitat, frame, solar, beacon, rig, cache, refinery, generator, pylon).
+- Solid launches: the pad's rocket climbs out of its flame and smoke as a model (`rocketModel`, `launchArc`; `drawLaunch(..., bodyless)` draws only the plume).
+- Cliff faces end on the neighbour's smoothed surface instead of its flat column height, so stepped terrain at low elevations no longer shows black notches under each step.
 - `IsoRenderer.art: 'sprite' | 'solid'` (default `sprite`, so existing views are unchanged). Minimal scenes use `solid`; `MINIMAL_ROVER_SCALE` is now 1.35 tiles.
 
 ### @takeon/engine, @takeon/pixi

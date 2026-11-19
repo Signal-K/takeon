@@ -91,6 +91,8 @@ export interface SolidPlacement {
   scale: number;
   /** Ground z units per horizontal unit, so a model unit cube stays cubic on screen. */
   zPerUnit: number;
+  /** Draw a contact shadow under the model (off for something in the air). Default true. */
+  shadow?: boolean;
 }
 
 function frame(pl: SolidPlacement) {
@@ -136,9 +138,10 @@ export function drawSolid(ctx: CanvasRenderingContext2D, toScreen: ToScreen, pl:
     aMin = Math.min(aMin, part.s - hw); aMax = Math.max(aMax, part.s + hw);
   }
   const g = (f: number, a: number) => scr(fr.at(f, a, 0));
-  ctx.globalAlpha = 0.28;
-  poly(ctx, [g(fMin - 0.04, aMin - 0.04), g(fMax + 0.04, aMin - 0.04), g(fMax + 0.04, aMax + 0.04), g(fMin - 0.04, aMax + 0.04)], '#10161f');
-  ctx.globalAlpha = 1;
+  const alpha = ctx.globalAlpha;
+  ctx.globalAlpha = alpha * 0.28;
+  if (pl.shadow !== false) poly(ctx, [g(fMin - 0.04, aMin - 0.04), g(fMax + 0.04, aMin - 0.04), g(fMax + 0.04, aMax + 0.04), g(fMin - 0.04, aMax + 0.04)], '#10161f');
+  ctx.globalAlpha = alpha;
   for (const { part } of sorted) {
     if (part.kind === 'box') drawBox(ctx, scr, fr, part);
     else if (part.kind === 'cyl') drawCyl(ctx, scr, fr, part);
@@ -314,9 +317,7 @@ export function structureModel(type: string, progress = 1, rocket = true): Parts
       // Gantry tower on the back corner.
       parts.push(box(-0.3, -0.3, 0.08, 0.1, 0.1, 1.2, '#8a929b'));
       if (rocket) {
-        for (const [f, a] of [[0.13, 0], [-0.13, 0], [0, 0.13], [0, -0.13]]) parts.push(box(f, a, 0.1, f ? 0.1 : 0.03, a ? 0.1 : 0.03, 0.2, '#c1442e'));
-        parts.push(cyl(0, 0, 0.1, 0.14, 0.14, 0.86, '#f2f5f8'));
-        parts.push(cyl(0, 0, 0.96, 0.14, 0, 0.3, '#c1442e'));
+        parts.push(...rocketModel(0.1));
         parts.push(box(-0.15, -0.15, 0.7, 0.2, 0.04, 0.04, '#8a929b'));
       }
       return parts;
@@ -324,4 +325,13 @@ export function structureModel(type: string, progress = 1, rocket = true): Parts
     default:
       return null;
   }
+}
+
+/** The pad's rocket on its own, base at height `z` (a launch lifts it). */
+export function rocketModel(z = 0): Parts {
+  const parts: Parts = [];
+  for (const [f, a] of [[0.13, 0], [-0.13, 0], [0, 0.13], [0, -0.13]]) parts.push(box(f, a, z, f ? 0.1 : 0.03, a ? 0.1 : 0.03, 0.2, '#c1442e'));
+  parts.push(cyl(0, 0, z, 0.14, 0.14, 0.86, '#f2f5f8'));
+  parts.push(cyl(0, 0, z + 0.86, 0.14, 0, 0.3, '#c1442e'));
+  return parts;
 }

@@ -4,9 +4,9 @@ import { DIRS } from '../sim/simulation.js';
 import { POWER_RANGE } from '../sim/structures.js';
 import { Camera } from './camera.js';
 import type { SceneView, ViewRotation } from './view.js';
-import { drawAnomaly, drawLaunch, drawStructure } from './entities.js';
+import { drawAnomaly, drawLaunch, drawStructure, launchArc } from './entities.js';
 import { drawRover } from './rover.js';
-import { drawSolid, roverModel, structureModel } from './solid.js';
+import { drawSolid, rocketModel, roverModel, structureModel } from './solid.js';
 import { project, TILE_H, TILE_W, TILE_Z, shade } from './sprites.js';
 import { MATERIALS } from '../world/materials.js';
 import { skinBiome } from '../world/terrain.js';
@@ -344,11 +344,20 @@ export class IsoRenderer implements SceneView {
     // ── Cliff faces first (they sit behind/below the top) ──────────────
     const hSE = this.heightV(u + 1, v);
     const hSW = this.heightV(u, v + 1);
-    if (cs[1] > hSE + 0.01 || cs[2] > hSE + 0.01 || hSE < 0) {
-      this.drawFace(g, proj, scale, w.x, w.y, u + 0.5, v - 0.5, cs[1], u + 0.5, v + 0.5, cs[2], hSE, 2);
+    // A face's foot follows the neighbour's smoothed surface along the shared
+    // edge, not its flat column height: a smoothed neighbour dips below that,
+    // and the gap read as black notches under every step.
+    const nSE = hSE >= 0 ? this.tileCorners(u + 1, v, hSE) : null;
+    const nSW = hSW >= 0 ? this.tileCorners(u, v + 1, hSW) : null;
+    const seA = nSE ? nSE[0] : hSE;
+    const seB = nSE ? nSE[3] : hSE;
+    const swA = nSW ? nSW[1] : hSW;
+    const swB = nSW ? nSW[0] : hSW;
+    if (cs[1] > seA + 0.01 || cs[2] > seB + 0.01 || hSE < 0) {
+      this.drawFace(g, proj, scale, w.x, w.y, u + 0.5, v - 0.5, cs[1], u + 0.5, v + 0.5, cs[2], hSE, 2, seA, seB);
     }
-    if (cs[2] > hSW + 0.01 || cs[3] > hSW + 0.01 || hSW < 0) {
-      this.drawFace(g, proj, scale, w.x, w.y, u + 0.5, v + 0.5, cs[2], u - 0.5, v + 0.5, cs[3], hSW, 1);
+    if (cs[2] > swA + 0.01 || cs[3] > swB + 0.01 || hSW < 0) {
+      this.drawFace(g, proj, scale, w.x, w.y, u + 0.5, v + 0.5, cs[2], u - 0.5, v + 0.5, cs[3], hSW, 1, swA, swB);
     }
 
     // ── Top polygon ─────────────────────────────────────────────────────
@@ -540,20 +549,26 @@ export class IsoRenderer implements SceneView {
     zb: number,
     neighbourH: number,
     colorIdx: 1 | 2,
+    /** The neighbour's surface height under each end of the edge. */
+    footA = neighbourH,
+    footB = neighbourH,
   ): void {
     const world = this.sim.world;
     // An absent neighbour is the true rim of the world, not empty map space.
     // Give it a substantial stratified cutaway so an asteroid/planet feels
     // like a contained chunk of geology in the diorama. Interior cliffs keep
     // their exact simulation-derived height.
-    const bottom = Math.min(edgeFaceBottom(neighbourH), Math.min(za, zb));
+    const rim = neighbourH < 0;
+    const footAz = Math.min(za, rim ? edgeFaceBottom(neighbourH) : footA);
+    const footBz = Math.min(zb, rim ? edgeFaceBottom(neighbourH) : footB);
+    const bottom = Math.min(footAz, footBz);
     const top = Math.max(za, zb);
     if (top <= bottom + 0.01) return;
 
     const pa = proj(ua, va, za);
     const pb = proj(ub, vb, zb);
-    const pa0 = proj(ua, va, bottom);
-    const pb0 = proj(ub, vb, bottom);
+    const pa0 = proj(ua, va, footAz);
+    const pb0 = proj(ub, vb, footBz);
 
     g.beginPath();
     g.moveTo(pa.x, pa.y);
@@ -777,7 +792,18 @@ export class IsoRenderer implements SceneView {
       const lv = this.toView(l.pos.x, l.pos.y);
       const lz = this.surfaceZ(l.pos.x, l.pos.y);
       const p = camera.toScreen(...projXY(lv.x, lv.y, lz + 0.55));
-      drawLaunch(ctx, p.x, p.y, camera.zoom, this.renderTime - l.t);
+      const age = this.renderTime - l.t;
+      if (this.art !== 'solid') {
+        drawLaunch(ctx, p.x, p.y, camera.zoom, age);
+        continue;
+      }
+      // Solid rocket climbing out of its own flame and smoke.
+      const { rise, alpha } = launchArc(age);
+      if (alpha <= 0) continue;
+      drawLaunch(ctx, p.x, p.y, camera.zoom, age, true);
+      ctx.globalAlpha = alpha;
+      drawSolid(ctx, (px, py) => camera.toScreen(px, py), { x: lv.x, y: lv.y, z: lz + 0.5 + 0.1 * Math.SQRT2 + rise / TILE_Z, heading: 0, scale: 1, zPerUnit: Math.SQRT2, shadow: false }, rocketModel(0));
+      ctx.globalAlpha = 1;
     }
   }
 

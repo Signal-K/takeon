@@ -350,16 +350,25 @@ export function drawStructure(
  * A cargo rocket climbing away from a launch pad. `age` is seconds since the
  * launch fired (fades out by ~3s). Drawn by the renderer as a scene overlay.
  */
+/** How far a launched rocket has climbed (base-scale px) and how visible it still is. */
+export function launchArc(age: number): { rise: number; alpha: number } {
+  return {
+    rise: Math.pow(Math.min(1, age / 2.2), 0.85) * 92,
+    alpha: age < 2.4 ? 1 : Math.max(0, 1 - (age - 2.4) / 0.6),
+  };
+}
+
 export function drawLaunch(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   s: number,
   age: number,
+  /** Smoke and flame only: the host draws the rocket itself (solid art). */
+  bodyless = false,
 ): void {
-  const alpha = age < 2.4 ? 1 : Math.max(0, 1 - (age - 2.4) / 0.6);
+  const { rise, alpha } = launchArc(age);
   if (alpha <= 0) return;
-  const rise = Math.pow(Math.min(1, age / 2.2), 0.85) * 92;
   const thrusting = age < 2.1;
   ctx.save();
   ctx.translate(x, y);
@@ -393,6 +402,12 @@ export function drawLaunch(
     ctx.lineTo(0, 2 + fl);
     ctx.closePath();
     ctx.fill();
+  }
+  if (bodyless) {
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    return;
   }
   // Fins.
   ctx.fillStyle = '#c1442e';
