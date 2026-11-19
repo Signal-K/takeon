@@ -18,13 +18,22 @@ import { setCameraElevation } from '../render/sprites.js';
  * - `launch`: the same outpost framed on its pad, a rocket lifting off every
  *   few seconds. "Off you go."
  *
- * The camera drifts slowly; there are no controls, no HUD, nothing to learn.
+ * The camera holds still at a fixed angle, so up and down on screen always
+ * mean the same thing; there are no controls, no HUD, nothing to learn. The
+ * ground is drawn calm (one clean tone per tile, biome edges blended) over a
+ * display relief that is smoothed and flattened around the frame's subject,
+ * so it rolls instead of stepping (KES-532).
  * Outpost buildings and rockets are props (drawn, never simulated), so these
  * frame the existing Go-backed world only: no new rules, generation unchanged.
  */
 
 /** Closer than the survey framing so the rover, route and deposit fill a phone frame. */
-export const MINIMAL_ZOOM = 2.6;
+export const MINIMAL_ZOOM = 3.4;
+/** Drawn-only buildings at about two tiles, so a small outpost reads as places, not marks. */
+export const MINIMAL_PROP_SCALE = 1.7;
+/** Tiles around the subject that are drawn dead flat, and the ring over which that eases out. */
+const FLAT_RADIUS = 5;
+const FLAT_EASE = 6;
 /**
  * Near-isometric: low enough that ground, cliffs and the three-quarter entity
  * art share one perspective (60° reads as a flat map under 3D sprites), high
@@ -133,14 +142,56 @@ function outpostSite(sim: Simulation): Vec2 {
   return best;
 }
 
+/**
+ * A display heightfield for the diorama: the world's heights blurred twice
+ * (5x5 box), kept fractional (whole-voxel rounding drew every gentle rise as
+ * a lit or shaded diamond), then pressed flat to the subject's height within
+ * FLAT_RADIUS and eased back over FLAT_EASE. Neighbours end up well under a
+ * step apart, which the renderer draws as one continuous slope, not cliffs.
+ * Drawing only: the sim's voxels, mining and saves never see it.
+ */
+export function minimalRelief(world: Simulation['world'], subject: Vec2): (x: number, y: number) => number {
+  const n = world.size;
+  let cur = new Float32Array(n * n);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) cur[y * n + x] = Math.max(0, world.height(x, y));
+  for (let pass = 0; pass < 2; pass++) {
+    const next = new Float32Array(n * n);
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++) {
+        let sum = 0;
+        let count = 0;
+        for (let dy = -2; dy <= 2; dy++)
+          for (let dx = -2; dx <= 2; dx++) {
+            const sx = x + dx;
+            const sy = y + dy;
+            if (sx < 0 || sy < 0 || sx >= n || sy >= n || world.height(sx, sy) < 0) continue;
+            sum += cur[sy * n + sx];
+            count++;
+          }
+        next[y * n + x] = count ? sum / count : cur[y * n + x];
+      }
+    cur = next;
+  }
+  const base = Math.round(cur[subject.y * n + subject.x]);
+  const out = new Float32Array(n * n);
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const d = Math.hypot(x - subject.x, y - subject.y);
+      const t = Math.min(1, Math.max(0, (d - FLAT_RADIUS) / FLAT_EASE));
+      const ease = t * t * (3 - 2 * t);
+      out[y * n + x] = Math.max(0, Math.min(world.maxHeight - 1, base + (cur[y * n + x] - base) * ease));
+    }
+  return (x, y) => out[y * n + x];
+}
+
 /** Outpost layout around its pad, in tile offsets (pad first). */
 const OUTPOST: Array<{ type: Structure['type']; dx: number; dy: number; facing?: 0 | 1 | 2 | 3 }> = [
   { type: 'launch-pad', dx: 0, dy: 0 },
-  { type: 'habitat', dx: -2, dy: 1 },
-  { type: 'solar-array', dx: -2, dy: -1 },
-  { type: 'solar-array', dx: -3, dy: 0 },
-  { type: 'drill-rig', dx: 2, dy: -1 },
-  { type: 'beacon', dx: 1, dy: 2 },
+  { type: 'habitat', dx: -3, dy: 1 },
+  { type: 'solar-array', dx: -2, dy: -2 },
+  { type: 'solar-array', dx: -4, dy: -1 },
+  { type: 'drill-rig', dx: 3, dy: -1 },
+  { type: 'beacon', dx: 1, dy: 3 },
 ];
 
 /** Props for the outpost at `pad`, each nudged to the nearest solid tile it may stand on. */
@@ -186,8 +237,12 @@ export interface MinimalSceneOptions {
   rover?: boolean;
   /** `launch`: fire a rocket every few seconds on its own. Off when the host fires them (`handle.launch()`). Default true. */
   autoLaunch?: boolean;
-  /** Slow camera drift (and, in `launch`, the rockets). Off for reduced motion. Default true. */
+  /** Animation: in `launch`, the rockets. Off for reduced motion. Default true. (The camera no longer drifts.) */
   drift?: boolean;
+  /** Ground look. Default `calm` (smoothed relief, clean tones); `field` keeps the rover game's ground. */
+  ground?: 'calm' | 'field';
+  /** Drawn building size relative to a tile. Default MINIMAL_PROP_SCALE. */
+  propScale?: number;
   /** Where the rover-and-deposit pair sits in the view, as fractions (0..1). Default {x: 0.5, y: 0.36}, above a bottom card. */
   focus?: { x: number; y: number };
   /** Camera zoom. Default MINIMAL_ZOOM. */
@@ -262,11 +317,17 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
     props = outpostProps(sim, pad);
     game.showProps(props);
     const taken = new Set(props.map((p) => `${p.pos.x},${p.pos.y}`));
-    const park = [{ x: pad.x + 3, y: pad.y + 2 }, { x: pad.x + 2, y: pad.y + 3 }, { x: pad.x + 3, y: pad.y + 1 }, { x: pad.x - 1, y: pad.y + 3 }]
+    const park = [{ x: pad.x + 3, y: pad.y + 2 }, { x: pad.x + 2, y: pad.y + 2 }, { x: pad.x + 3, y: pad.y + 3 }, { x: pad.x - 1, y: pad.y + 3 }]
       .find((p) => sim.world.inBounds(p.x, p.y) && sim.world.isSolid(p.x, p.y) && !taken.has(`${p.x},${p.y}`));
     if (park) parkRover({ ...park, facing: 1 });
     focus = pad;
   }
+
+  if (opts.ground !== 'field') {
+    game.iso.ground = 'calm';
+    game.iso.relief = minimalRelief(sim.world, focus);
+  }
+  game.iso.propScale = opts.propScale ?? MINIMAL_PROP_SCALE;
 
   // The launch frames the pad alone; a parked rover would stand in front of it.
   game.iso.showRover = opts.rover ?? kind !== 'launch';
@@ -287,10 +348,10 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
   const drift = opts.drift !== false && typeof requestAnimationFrame === 'function';
   let nextLaunch = 0.8;
   const autoLaunch = opts.autoLaunch !== false;
-  const place = (t: number) => {
-    const sway = drift ? 1 : 0;
-    game.camera.cx = home.cx + (0.5 - frame.x) * game.camera.viewW / game.camera.zoom + Math.sin(t / 5200) * 6 * sway;
-    game.camera.cy = home.cy + (0.5 - frame.y) * game.camera.viewH / game.camera.zoom + Math.cos(t / 7100) * 3 * sway;
+  // A fixed camera: a drifting one left nothing to anchor direction to.
+  const place = (_t: number) => {
+    game.camera.cx = home.cx + (0.5 - frame.x) * game.camera.viewW / game.camera.zoom;
+    game.camera.cy = home.cy + (0.5 - frame.y) * game.camera.viewH / game.camera.zoom;
   };
   const tick = (t: number) => {
     place(t);
@@ -311,7 +372,7 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
     },
     start: () => {
       game.start();
-      // Reduced motion: no sway and no rockets; the pad stands ready.
+      // Reduced motion: no rockets; the pad stands ready.
       if (drift && !raf) raf = requestAnimationFrame(tick);
     },
     stop: () => {

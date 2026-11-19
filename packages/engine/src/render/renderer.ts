@@ -162,8 +162,25 @@ export class IsoRenderer implements SceneView {
   art: 'sprite' | 'solid' = 'sprite';
   /** Outline the tile the rover faces (a driving aid). A diorama turns it off. */
   facingHint = true;
+  /**
+   * `textured`: the field look (tone blobs, grain, pebbles, scalloped biome
+   * edges, scatter). `calm`: one clean tone per tile lit only by its slope,
+   * biome colours blended across a tile and no scatter, so a small phone
+   * diorama reads as one ground instead of a quilt. Set before the first draw.
+   */
+  ground: 'textured' | 'calm' = 'textured';
+  /**
+   * Display heightfield (world coords → column height) that replaces the
+   * world's heights for drawing only: a diorama passes a smoothed, flattened
+   * copy so its ground rolls instead of stepping. Never touches the sim, its
+   * voxels or a save. Set before the first draw (chunks are cached).
+   */
+  relief: ((x: number, y: number) => number) | null = null;
+  /** Size of drawn-only props (`props`) relative to one tile. Presentation only. */
+  propScale = 1;
   /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
   private visualFacing = 0;
+  private calmCache = new Map<number, string>();
   // ── Adaptive resolution ───────────────────────────────────────────────
   private cssW = 800;
   private cssH = 600;
@@ -228,7 +245,11 @@ export class IsoRenderer implements SceneView {
   }
 
   private heightV(u: number, v: number): number {
-    return surfaceHeightAtView(this.sim.world, u, v, this.rotation);
+    if (!this.relief) return surfaceHeightAtView(this.sim.world, u, v, this.rotation);
+    const size = this.sim.world.size;
+    if (u < 0 || v < 0 || u >= size || v >= size) return -1;
+    const w = this.toWorld(u, v);
+    return this.sim.world.height(w.x, w.y) < 0 ? -1 : this.relief(w.x, w.y);
   }
 
   setRotation(rotation: ViewRotation): void {
@@ -254,7 +275,7 @@ export class IsoRenderer implements SceneView {
    * neighbourhood clamp back to the tile's own height (cliff edge).
    */
   private tileCorners(u: number, v: number, h: number): [number, number, number, number] {
-    return smoothedSurfaceCorners(this.sim.world, u, v, h, this.rotation, SMOOTH_STEP);
+    return smoothedSurfaceCorners(this.sim.world, u, v, h, this.rotation, SMOOTH_STEP, this.relief ? (hu, hv) => this.heightV(hu, hv) : undefined);
   }
 
   /** Smoothed surface height at a tile centre (world coords), for entities. */
@@ -361,16 +382,19 @@ export class IsoRenderer implements SceneView {
     }
 
     // ── Top polygon ─────────────────────────────────────────────────────
-    const m = world.get(w.x, w.y, h) || Material.Regolith;
+    const m = world.get(w.x, w.y, this.relief ? world.height(w.x, w.y) : h) || Material.Regolith;
     const def = MATERIALS[m];
-    const topColor = this.tinted(m, 0);
+    const calm = this.ground === 'calm';
+    const topColor = calm ? this.calmTone(w.x, w.y, m) : this.tinted(m, 0);
     // Lighting: sun from screen top-left; slope toward it brightens.
     // Ground tone varies in smooth organic blobs (low-frequency noise) plus
     // a whisper of per-tile grain — no checkerboard, Crashlands-style patches.
     const slope = (cs[0] - cs[2]) * 0.16 + (cs[3] - cs[1]) * 0.07;
-    const blob = (fbm2(w.x * 0.11, w.y * 0.11, this.sim.seed ^ 0x600d, 3) - 0.5) * 0.34;
-    const grain = (hash2(w.x, w.y, 0xf00d) - 0.5) * def.jitter * 0.6;
-    const bright = Math.max(0.62, Math.min(1.36, 1 + slope + blob + grain));
+    const blob = calm
+      ? (fbm2(w.x * 0.045, w.y * 0.045, this.sim.seed ^ 0x600d, 2) - 0.5) * 0.12
+      : (fbm2(w.x * 0.11, w.y * 0.11, this.sim.seed ^ 0x600d, 3) - 0.5) * 0.34;
+    const grain = calm ? 0 : (hash2(w.x, w.y, 0xf00d) - 0.5) * def.jitter * 0.6;
+    const bright = Math.max(0.62, Math.min(1.36, 1 + slope * (calm ? 0.8 : 1) + blob + grain));
 
     g.beginPath();
     g.moveTo(pT.x, pT.y);
@@ -380,6 +404,13 @@ export class IsoRenderer implements SceneView {
     g.closePath();
     g.fillStyle = shade(topColor, bright);
     g.fill();
+    // Calm ground: a hairline of the same colour closes the anti-aliased
+    // seams between tiles, which otherwise read as a faint grid.
+    if (calm) {
+      g.strokeStyle = g.fillStyle;
+      g.lineWidth = Math.max(0.8, 0.9 * scale);
+      g.stroke();
+    }
     // Faint field grid, re-projected with the tile so the higher camera
     // still reads as a surveyed surface rather than a painted blob.
     if (this.fieldGrid) {
@@ -400,7 +431,7 @@ export class IsoRenderer implements SceneView {
     // reaches into this tile, paint soft intrusions of its colour. Interior
     // tiles (all samples agree) get none and stay clean, so only boundaries
     // pick up the organic, interlocking patch look.
-    if (m === Material.Regolith || m === Material.Dust || m === Material.Silica) {
+    if (!calm && (m === Material.Regolith || m === Material.Dust || m === Material.Silica)) {
       const cz = (cs[0] + cs[1] + cs[2] + cs[3]) / 4;
       for (const [du, dv] of BIOME_SAMPLES) {
         const ws = this.toWorld(u + du, v + dv);
@@ -423,7 +454,7 @@ export class IsoRenderer implements SceneView {
       const y2 = pL.y + (pB.y - pL.y) * a;
       return { x: x1 + (x2 - x1) * b, y: y1 + (y2 - y1) * b };
     };
-    const n = 9;
+    const n = calm ? 0 : 9;
     for (let i = 0; i < n; i++) {
       const r1 = hash3(w.x, w.y, i, 0xcafe);
       const r2 = hash3(w.x, w.y, i, 0xdead);
@@ -476,13 +507,45 @@ export class IsoRenderer implements SceneView {
     // Decorative scatter: tufts, rock clusters and shards on ~1 in 14 open
     // tiles. Part of the cached chunk, so it costs nothing per frame.
     const doodadRoll = hash2(w.x, w.y, 0xd00d);
-    if (doodadRoll < 0.07 && m !== Material.Basalt && m !== Material.Rock) {
+    if (doodadRoll < (calm ? 0.035 : 0.07) && m !== Material.Basalt && m !== Material.Rock) {
       const cz = (cs[0] + cs[1] + cs[2] + cs[3]) / 4;
       const c = proj(u, v, cz);
       const ox = (hash2(w.x, w.y, 0xa11) - 0.5) * 10 * scale;
       const oy = (hash2(w.x, w.y, 0xb22) - 0.5) * 5 * scale;
       this.drawDoodad(g, c.x + ox, c.y + oy, scale, w.x, w.y, m, bright);
     }
+  }
+
+  /**
+   * Calm ground's tile colour: the surface biome colours of the 3x3
+   * neighbourhood averaged, so a biome edge fades over a tile or two
+   * instead of meeting in a hard, scalloped line.
+   */
+  private calmTone(x: number, y: number, m: Material): string {
+    const key = (x << 16) ^ y;
+    const hit = this.calmCache.get(key);
+    if (hit) return hit;
+    const world = this.sim.world;
+    let r = 0, gg = 0, b = 0, n = 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!world.inBounds(nx, ny) || world.height(nx, ny) < 0) continue;
+        const nm = world.get(nx, ny, world.height(nx, ny)) || Material.Regolith;
+        // The tile's own colour weighs double, so ore and ice still read as themselves.
+        const c = parseInt(this.tinted(dx === 0 && dy === 0 ? m : nm, 0).slice(1), 16);
+        const wgt = dx === 0 && dy === 0 ? 2 : 1;
+        r += ((c >> 16) & 255) * wgt;
+        gg += ((c >> 8) & 255) * wgt;
+        b += (c & 255) * wgt;
+        n += wgt;
+      }
+    const hex = n
+      ? `#${((Math.round(r / n) << 16) | (Math.round(gg / n) << 8) | Math.round(b / n)).toString(16).padStart(6, '0')}`
+      : this.tinted(m, 0);
+    this.calmCache.set(key, hex);
+    return hex;
   }
 
   /** Small hand-placed-looking props with chunky outlines. */
@@ -705,7 +768,7 @@ export class IsoRenderer implements SceneView {
           const flying = this.propLaunches.some((l) => l.pos.x === st.pos.x && l.pos.y === st.pos.y);
           const ready = st.cooldownUntil == null || sim.time >= st.cooldownUntil;
           const model = this.art === 'solid' ? structureModel(st.type, st.progress ?? 1, ready && !flying) : null;
-          if (model) drawSolid(ctx, (px, py) => camera.toScreen(px, py), { x: sv.x, y: sv.y, z: sz + 0.5, heading: 0, scale: 1, zPerUnit: Math.SQRT2 }, model);
+          if (model) drawSolid(ctx, (px, py) => camera.toScreen(px, py), { x: sv.x, y: sv.y, z: sz + 0.5, heading: 0, scale: this.props.includes(st) ? this.propScale : 1, zPerUnit: Math.SQRT2 }, model);
           else drawStructure(ctx, p.x, p.y, camera.zoom, st, sim.time, daylight, powered);
         },
       });
