@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BuildSite, clipModel, constructionParts, getAsset, listAssets, lPath, modelBounds, PhysicsWorld, pointAlong } from '../src/kit/index.js';
+import { BuildSite, clipModel, constructionParts, getAsset, listAssets, lPath, modelBounds, PhysicsWorld, pointAlong, segmentHitsBox } from '../src/kit/index.js';
 
 describe('kit assets', () => {
   it('every catalogue asset builds a model inside about its footprint', () => {
@@ -113,6 +113,13 @@ describe('kit physics', () => {
 });
 
 describe('kit site objects', () => {
+  it('tests cable spans against building footprints', () => {
+    expect(segmentHitsBox(-2, 0, 2, 0, 0, 0, 0.5, 0.5)).toBe(true);
+    expect(segmentHitsBox(-2, 1, 2, 1, 0, 0, 0.5, 0.5)).toBe(false);
+    expect(segmentHitsBox(-2, -2, -1, -1, 0, 0, 0.5, 0.5)).toBe(false);
+    expect(segmentHitsBox(0, -2, 0, 2, 0, 0, 0.5, 0.5)).toBe(true);
+  });
+
   const area = { center: { x: 10, y: 10 }, radius: 4 };
   it('every thing on the site is an object with a body', () => {
     const site = new BuildSite(5);

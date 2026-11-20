@@ -143,6 +143,24 @@ export function lPath(a: SitePoint, b: SitePoint): SitePoint[] {
   return out;
 }
 
+/** Whether the segment a→b passes through the axis-aligned box centred (cx, cy) with half extents (hx, hy). */
+export function segmentHitsBox(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, hx: number, hy: number): boolean {
+  let t0 = 0, t1 = 1;
+  const d = [bx - ax, by - ay], o = [ax - cx, ay - cy], h = [hx, hy];
+  for (let i = 0; i < 2; i++) {
+    if (Math.abs(d[i]) < 1e-9) {
+      if (Math.abs(o[i]) > h[i]) return false;
+      continue;
+    }
+    let ta = (-h[i] - o[i]) / d[i], tb = (h[i] - o[i]) / d[i];
+    if (ta > tb) [ta, tb] = [tb, ta];
+    t0 = Math.max(t0, ta);
+    t1 = Math.min(t1, tb);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
 /** A building's footprint in world tiles: centre and half extents (axis-aligned, quarter turns only). */
 export function buildingFootprint(b: Pick<SiteBuilding, 'asset' | 'at' | 'facing'>): { x: number; y: number; hx: number; hy: number; h: number } | null {
   const def = getAsset(b.asset);
@@ -418,6 +436,10 @@ export class BuildSite {
   wires(): SiteWire[] {
     const out: SiteWire[] = [];
     const poles: Body[] = [];
+    // A cable never crosses a building: a span through any footprint is skipped.
+    const walls = this.objects().filter((o) => o.kind === 'building' && o.body.shape.kind === 'box').map((o) => o.body);
+    const crosses = (a: Body, b: Body) =>
+      walls.some((w) => w.shape.kind === 'box' && segmentHitsBox(a.x, a.y, b.x, b.y, w.x, w.y, w.shape.hx + 0.05, w.shape.hy + 0.05));
     for (const f of this.fixtures) {
       if (f.kind !== 'pole') continue;
       const b = this.physics.get(f.id);
@@ -425,7 +447,7 @@ export class BuildSite {
       let best: Body | null = null, bestD = 2.3;
       for (const q of poles) {
         const d = Math.hypot(q.x - b.x, q.y - b.y);
-        if (d < bestD) {
+        if (d < bestD && !crosses(q, b)) {
           bestD = d;
           best = q;
         }

@@ -22,6 +22,8 @@ export interface Placement {
   scale: number;
   /** Terrain z units per model unit of height, so a unit cube stays cubic on screen. */
   zPerUnit: number;
+  /** Optional pitch about the model's across axis, in radians (a tumbling rock rocks over). */
+  tilt?: number;
 }
 
 export type Face = '+f' | '-f' | '+s' | '-s';
@@ -221,12 +223,21 @@ export function mixHex(a: string, b: string, t: number): string {
 function frameOf(pl: Placement) {
   const c = Math.cos(pl.heading);
   const s = Math.sin(pl.heading);
-  const at = (f: number, a: number, z: number): V3 => ({
-    x: pl.x + (f * c - a * s) * pl.scale,
-    y: pl.y + (f * s + a * c) * pl.scale,
-    z: pl.z + z * pl.scale * pl.zPerUnit,
-  });
-  const dir = (f: number, a: number, z: number): V3 => norm({ x: f * c - a * s, y: f * s + a * c, z });
+  // Tilt pitches the model about its across axis (nose down for positive tilt).
+  const tc = Math.cos(pl.tilt ?? 0), ts = Math.sin(pl.tilt ?? 0);
+  const pitch = (f: number, z: number): [number, number] => (pl.tilt ? [f * tc + z * ts, z * tc - f * ts] : [f, z]);
+  const at = (f0: number, a: number, z0: number): V3 => {
+    const [f, z] = pitch(f0, z0);
+    return {
+      x: pl.x + (f * c - a * s) * pl.scale,
+      y: pl.y + (f * s + a * c) * pl.scale,
+      z: pl.z + z * pl.scale * pl.zPerUnit,
+    };
+  };
+  const dir = (f0: number, a: number, z0: number): V3 => {
+    const [f, z] = pitch(f0, z0);
+    return norm({ x: f * c - a * s, y: f * s + a * c, z });
+  };
   return { at, dir, across: { x: -s, y: c } };
 }
 

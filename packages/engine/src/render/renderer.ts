@@ -14,7 +14,7 @@ import { hash2, hash3 } from '../util/rng.js';
 import { fbm2 } from '../util/noise/index.js';
 import { smoothedSurfaceCorners, surfaceHeightAtView, surfaceViewToWorld, worldToSurfaceView } from '../world/surface-view.js';
 import { IsoTerrainLayer, type TerrainProjector } from './iso-terrain-layer.js';
-import { BuildSite, constructionParts, crateParts, debrisParts, dozerParts, drawDust, drawModel, drawRoad, drawWire, drumParts, getAsset, lampParts, ring, mixHex, rgbOf, paverParts, poleParts, POLE_TIP, rocketParts, STRUCTURE_END, wirePoints, type Projector, type SiteObject } from '../kit/index.js';
+import { BuildSite, constructionParts, crateParts, debrisParts, dozerParts, drawDust, drawModel, drawRoad, drawWire, drumParts, getAsset, lampParts, ring, mixHex, rgbOf, paverParts, poleParts, POLE_TIP, rocketParts, STRUCTURE_END, wirePoints, type Placement, type Projector, type SiteObject } from '../kit/index.js';
 
 interface Particle {
   x: number;
@@ -437,11 +437,30 @@ export class IsoRenderer implements SceneView {
         const w0 = this.toWorld(cu, cv), w1 = this.toWorld(cu + 1, cv + 1);
         const wx = (w0.x + w1.x) / 2, wy = (w0.y + w1.y) / 2;
         const lit = 1 + (-(du + dv) * 0.16 + (dv - du) * 0.07) * 0.8 + (fbm2(wx * 0.045, wy * 0.045, this.sim.seed ^ 0x600d, 2) - 0.5) * 0.12;
+        // The corner's colour is shared by the four tiles round it, so tints
+        // blend across tile edges instead of stepping along them.
+        let r = 0, gg2 = 0, bb2 = 0, n = 0;
+        for (const [ou, ov] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+          const tw = this.toWorld(cu + ou, cv + ov);
+          const tm = world.inBounds(tw.x, tw.y) && world.height(tw.x, tw.y) >= 0 ? world.get(tw.x, tw.y, world.height(tw.x, tw.y)) || Material.Regolith : null;
+          const [cr, cg, cb] = rgbOf(tm == null ? base : this.calmTone(tw.x, tw.y, tm));
+          r += cr; gg2 += cg; bb2 += cb; n++;
+        }
+        const mixed = `#${((Math.round(r / n) << 16) | (Math.round(gg2 / n) << 8) | Math.round(bb2 / n)).toString(16).padStart(6, '0')}`;
         const gr = this.site ? this.site.flattened(wx, wy) : 0;
-        const tone = gr > 0 ? mixHex(base, '#c4bcae', 0.55 * gr) : base;
+        const tone = gr > 0 ? mixHex(mixed, '#c4bcae', 0.55 * gr) : mixed;
         return shade(tone, Math.max(0.62, Math.min(1.36, lit)));
       };
       const cT = corner(u - 1, v - 1), cR = corner(u, v - 1), cB = corner(u, v), cL = corner(u - 1, v);
+      // Fill a hair larger than the tile, so neighbours overlap instead of
+      // leaving an anti-aliased seam (a stroke drew its own line in one colour).
+      const grow = 0.75;
+      g.beginPath();
+      g.moveTo(pT.x, pT.y - grow);
+      g.lineTo(pR.x + grow, pR.y);
+      g.lineTo(pB.x, pB.y + grow);
+      g.lineTo(pL.x - grow, pL.y);
+      g.closePath();
       const ramp = g.createLinearGradient(pT.x, pT.y, pB.x, pB.y);
       ramp.addColorStop(0, cT);
       ramp.addColorStop(1, cB);
@@ -457,10 +476,6 @@ export class IsoRenderer implements SceneView {
         g.fillStyle = side;
         g.fill();
       }
-      // A hairline of the blended colour closes the anti-aliased seams between tiles.
-      g.strokeStyle = ramp;
-      g.lineWidth = Math.max(0.8, 0.9 * scale);
-      g.stroke();
     } else {
       g.fillStyle = shade(topColor, bright);
       g.fill();
@@ -1589,7 +1604,8 @@ export class IsoRenderer implements SceneView {
     const place = (o: SiteObject) => {
       const b = o.body;
       const v = this.toView(b.x, b.y);
-      return { v, pl: { x: v.x, y: v.y, z: b.z * Math.SQRT2 + 0.5, heading: b.heading, scale: 1, zPerUnit: Math.SQRT2 } };
+      const pl: Placement = { x: v.x, y: v.y, z: b.z * Math.SQRT2 + 0.5, heading: b.heading, scale: 1, zPerUnit: Math.SQRT2 };
+      return { v, pl };
     };
     for (const o of site.objects()) {
       const { v, pl } = place(o);
@@ -1626,7 +1642,14 @@ export class IsoRenderer implements SceneView {
           const g = this.calmTone(tx, ty, this.sim.world.get(tx, ty, Math.max(0, this.sim.world.height(tx, ty))) || Material.Regolith);
           pl.scale = d.size;
           // A shoved boulder turns as it rolls.
-          if (d.kind === 'boulder') pl.heading += b.rolled * 1.6;
+          if (d.kind === 'boulder') {
+            pl.heading += b.rolled * 1.6;
+            // It tumbles too: rocking over its edges while it moves, settling flat as it slows.
+            const speed = Math.hypot(b.vx, b.vy);
+            const tilt = Math.sin(b.rolled * 5.5) * 0.45 * Math.min(1, speed / 0.6);
+            pl.tilt = tilt;
+            pl.z += Math.abs(Math.sin(tilt)) * 0.2 * d.size * Math.SQRT2;
+          }
           ents.push({ s: v.x + v.y - 0.02, draw: () => drawModel(ctx, proj, pl, debrisParts(d.kind, d.seed, g), { time }) });
           break;
         }
