@@ -14,7 +14,7 @@ import { hash2, hash3 } from '../util/rng.js';
 import { fbm2 } from '../util/noise/index.js';
 import { smoothedSurfaceCorners, surfaceHeightAtView, surfaceViewToWorld, worldToSurfaceView } from '../world/surface-view.js';
 import { IsoTerrainLayer, type TerrainProjector } from './iso-terrain-layer.js';
-import { BuildSite, constructionParts, debrisParts, dozerParts, drawDust, drawModel, drawRoad, getAsset, mixHex, paverParts, rocketParts, STRUCTURE_END, type Projector } from '../kit/index.js';
+import { BuildSite, constructionParts, crateParts, debrisParts, dozerParts, drawDust, drawModel, drawRoad, drawWire, drumParts, getAsset, lampParts, ring, mixHex, rgbOf, paverParts, poleParts, POLE_TIP, rocketParts, STRUCTURE_END, wirePoints, type Projector, type SiteObject } from '../kit/index.js';
 
 interface Particle {
   x: number;
@@ -187,6 +187,10 @@ export class IsoRenderer implements SceneView {
    */
   site: BuildSite | null = null;
   private siteKey = '';
+  /** A site building the host has picked out (drawn with a ring round it). */
+  siteSelected: string | null = null;
+  /** Site ground heights by world tile (terrain z units), for the site's physics. */
+  private siteGround = new Map<number, number>();
   /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
   private visualFacing = 0;
   private calmCache = new Map<number, string>();
@@ -417,14 +421,49 @@ export class IsoRenderer implements SceneView {
     g.lineTo(pB.x, pB.y);
     g.lineTo(pL.x, pL.y);
     g.closePath();
-    g.fillStyle = shade(topColor, bright);
-    g.fill();
-    // Calm ground: a hairline of the same colour closes the anti-aliased
-    // seams between tiles, which otherwise read as a faint grid.
     if (calm) {
-      g.strokeStyle = g.fillStyle;
+      // Calm ground is lit per corner, from the slope and grading shared by the
+      // four tiles round it, and blended across the tile: neighbours agree at
+      // every corner, so the ground reads as one smooth surface, not facets.
+      const base = this.calmTone(w.x, w.y, m);
+      const corner = (cu: number, cv: number): string => {
+        const hv = (a: number, b: number) => {
+          const x = this.heightV(a, b);
+          return x < 0 ? h : x;
+        };
+        const a = hv(cu, cv), b = hv(cu + 1, cv), c = hv(cu, cv + 1), d = hv(cu + 1, cv + 1);
+        const cl = (x: number) => Math.max(-2.5, Math.min(2.5, x));
+        const du = cl((b + d - a - c) / 2), dv = cl((c + d - a - b) / 2);
+        const w0 = this.toWorld(cu, cv), w1 = this.toWorld(cu + 1, cv + 1);
+        const wx = (w0.x + w1.x) / 2, wy = (w0.y + w1.y) / 2;
+        const lit = 1 + (-(du + dv) * 0.16 + (dv - du) * 0.07) * 0.8 + (fbm2(wx * 0.045, wy * 0.045, this.sim.seed ^ 0x600d, 2) - 0.5) * 0.12;
+        const gr = this.site ? this.site.flattened(wx, wy) : 0;
+        const tone = gr > 0 ? mixHex(base, '#c4bcae', 0.55 * gr) : base;
+        return shade(tone, Math.max(0.62, Math.min(1.36, lit)));
+      };
+      const cT = corner(u - 1, v - 1), cR = corner(u, v - 1), cB = corner(u, v), cL = corner(u - 1, v);
+      const ramp = g.createLinearGradient(pT.x, pT.y, pB.x, pB.y);
+      ramp.addColorStop(0, cT);
+      ramp.addColorStop(1, cB);
+      g.fillStyle = ramp;
+      g.fill();
+      // The side corners blend in from their ends toward the tile's middle.
+      const midX = (pL.x + pR.x) / 2, midY = (pL.y + pR.y) / 2;
+      for (const [pt, col] of [[pL, cL], [pR, cR]] as const) {
+        const [r, gg, bb] = rgbOf(col);
+        const side = g.createLinearGradient(pt.x, pt.y, midX, midY);
+        side.addColorStop(0, `rgba(${r},${gg},${bb},1)`);
+        side.addColorStop(1, `rgba(${r},${gg},${bb},0)`);
+        g.fillStyle = side;
+        g.fill();
+      }
+      // A hairline of the blended colour closes the anti-aliased seams between tiles.
+      g.strokeStyle = ramp;
       g.lineWidth = Math.max(0.8, 0.9 * scale);
       g.stroke();
+    } else {
+      g.fillStyle = shade(topColor, bright);
+      g.fill();
     }
     // Faint field grid, re-projected with the tile so the higher camera
     // still reads as a surveyed surface rather than a painted blob.
@@ -740,10 +779,13 @@ export class IsoRenderer implements SceneView {
 
     // A build site moves its ground work on with the drawn clock.
     if (this.site) {
+      // Its bodies stand on the ground as drawn (in tiles of height).
+      this.site.physics.ground = (x, y) => this.siteGroundAt(x, y);
       this.site.setTime(this.renderTime);
       const key = this.site.terrainKey();
       if (key !== this.siteKey) {
         this.siteKey = key;
+        this.siteGround.clear();
         this.terrainLayer.invalidateAll();
       }
     }
@@ -1511,7 +1553,32 @@ export class IsoRenderer implements SceneView {
     }
   }
 
-  /** Site buildings, debris and machines, depth-sorted with the other entities. */
+  /** The site's ground at a world point, in tiles of height (bilinear over tile centres). */
+  private siteGroundAt(x: number, y: number): number {
+    const size = this.sim.world.size;
+    const at = (i: number, j: number) => {
+      const ci = Math.max(0, Math.min(size - 1, i)), cj = Math.max(0, Math.min(size - 1, j));
+      const key = cj * size + ci;
+      let h = this.siteGround.get(key);
+      if (h === undefined) {
+        const v = this.toView(ci, cj);
+        h = Math.max(0, this.heightV(v.x, v.y));
+        this.siteGround.set(key, h);
+      }
+      return h;
+    };
+    const x0 = Math.floor(x), y0 = Math.floor(y);
+    const fx = x - x0, fy = y - y0;
+    const top = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * fx;
+    const bottom = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * fx;
+    return (top + (bottom - top) * fy) / Math.SQRT2;
+  }
+
+  /**
+   * Every site game object (buildings, debris, crates, drums, lamps, poles,
+   * machines) where its body is, depth-sorted with the other entities, and
+   * the cables between poles.
+   */
   private pushSiteEntities(ents: { s: number; draw: () => void }[], daylight: number): void {
     const site = this.site;
     if (!site) return;
@@ -1519,41 +1586,87 @@ export class IsoRenderer implements SceneView {
     const proj = this.projector();
     const time = this.renderTime;
     const night = Math.max(0, Math.min(1, (1 - daylight) * 1.3));
-    const place = (x: number, y: number, heading: number) => {
-      const v = this.toView(x, y);
-      return { v, pl: { x: v.x, y: v.y, z: this.surfaceZ(x, y) + 0.5, heading, scale: 1, zPerUnit: Math.SQRT2 } };
+    const place = (o: SiteObject) => {
+      const b = o.body;
+      const v = this.toView(b.x, b.y);
+      return { v, pl: { x: v.x, y: v.y, z: b.z * Math.SQRT2 + 0.5, heading: b.heading, scale: 1, zPerUnit: Math.SQRT2 } };
     };
-    for (const d of site.standingDebris()) {
-      const { v, pl } = place(d.x, d.y, (d.seed % 628) / 100);
-      const g = this.calmTone(Math.round(d.x), Math.round(d.y), this.sim.world.get(Math.round(d.x), Math.round(d.y), Math.max(0, this.sim.world.height(Math.round(d.x), Math.round(d.y)))) || Material.Regolith);
-      pl.scale = d.size * d.left;
-      ents.push({ s: v.x + v.y - 0.02, draw: () => drawModel(ctx, proj, pl, debrisParts(d.kind, d.seed, g), { time }) });
+    for (const o of site.objects()) {
+      const { v, pl } = place(o);
+      const b = o.body;
+      switch (o.kind) {
+        case 'building': {
+          const sb = o.building!;
+          const def = getAsset(sb.asset);
+          if (!def) break;
+          // The model stands on its anchor tile; the body is its footprint.
+          const av = this.toView(sb.at.x, sb.at.y);
+          const bpl = { ...pl, x: av.x, y: av.y };
+          const flying = this.propLaunches.some((l) => l.pos.x === sb.at.x && l.pos.y === sb.at.y);
+          // Big footprints sort by their front edge, so the ground around them is not drawn over them.
+          ents.push({
+            s: av.x + av.y + (def.footprint - 1) * 0.5,
+            draw: () => {
+              const progress = site.buildProgress(sb);
+              const model = def.model({ time, rocket: !flying });
+              if (this.siteSelected === sb.id) {
+                // A picked building stands in a pulsing ring.
+                const r = def.footprint * 0.62 + Math.sin(time * 4) * 0.03;
+                drawModel(ctx, proj, bpl, [ring(0, 0, r, 0.06, '#7fe7ff', 0.01)], { shadow: false });
+              }
+              if (progress < STRUCTURE_END) drawModel(ctx, proj, bpl, model, { ghost: true });
+              drawModel(ctx, proj, bpl, constructionParts(model, progress, time + sb.start), { time, night });
+            },
+          });
+          break;
+        }
+        case 'debris': {
+          const d = o.debris!;
+          const tx = Math.round(b.x), ty = Math.round(b.y);
+          const g = this.calmTone(tx, ty, this.sim.world.get(tx, ty, Math.max(0, this.sim.world.height(tx, ty))) || Material.Regolith);
+          pl.scale = d.size;
+          // A shoved boulder turns as it rolls.
+          if (d.kind === 'boulder') pl.heading += b.rolled * 1.6;
+          ents.push({ s: v.x + v.y - 0.02, draw: () => drawModel(ctx, proj, pl, debrisParts(d.kind, d.seed, g), { time }) });
+          break;
+        }
+        case 'crate':
+        case 'drum':
+          ents.push({ s: v.x + v.y, draw: () => drawModel(ctx, proj, pl, o.kind === 'crate' ? crateParts(o.seed) : drumParts(o.seed), { time, night }) });
+          break;
+        case 'lamp':
+          ents.push({ s: v.x + v.y, draw: () => drawModel(ctx, proj, pl, lampParts(), { time, night, shadow: false }) });
+          break;
+        case 'pole':
+          ents.push({ s: v.x + v.y, draw: () => drawModel(ctx, proj, pl, poleParts(), { time, night }) });
+          break;
+        case 'vehicle':
+          ents.push({
+            s: v.x + v.y + 0.01,
+            draw: () => {
+              const c = proj(pl.x, pl.y, pl.z);
+              drawModel(ctx, proj, pl, o.vehicle === 'dozer' ? dozerParts(time) : paverParts(time), { time, night });
+              drawDust(ctx, c, 7 * this.camera.zoom, time, b.x * 7 + b.y);
+            },
+          });
+          break;
+      }
     }
-    for (const b of site.shownBuildings()) {
-      const def = getAsset(b.asset);
-      if (!def) continue;
-      const { v, pl } = place(b.at.x, b.at.y, (b.facing * Math.PI) / 2);
-      const flying = this.propLaunches.some((l) => l.pos.x === b.at.x && l.pos.y === b.at.y);
-      // Big footprints sort by their front edge, so the ground around them is not drawn over them.
-      const s = v.x + v.y + (def.footprint - 1) * 0.5;
+    // Cables hang between pole tops, two per span, drawn with the nearer pole.
+    const width = Math.max(0.7, this.camera.zoom * 0.45);
+    for (const w of site.wires()) {
+      const av = this.toView(w.a.x, w.a.y), bv = this.toView(w.b.x, w.b.y);
+      const len = Math.hypot(bv.x - av.x, bv.y - av.y) || 1;
+      // Across the span, for the two insulators.
+      const nx = -(bv.y - av.y) / len, ny = (bv.x - av.x) / len;
+      const za = w.a.z * Math.SQRT2 + 0.5 + POLE_TIP.z * Math.SQRT2, zb = w.b.z * Math.SQRT2 + 0.5 + POLE_TIP.z * Math.SQRT2;
       ents.push({
-        s,
+        s: Math.max(av.x + av.y, bv.x + bv.y) + 0.02,
         draw: () => {
-          const progress = site.buildProgress(b);
-          const model = def.model({ time, rocket: !flying });
-          if (progress < STRUCTURE_END) drawModel(ctx, proj, pl, model, { ghost: true });
-          drawModel(ctx, proj, pl, constructionParts(model, progress, time + b.start), { time, night });
-        },
-      });
-    }
-    for (const m of site.vehicles()) {
-      const { v, pl } = place(m.x, m.y, m.heading);
-      ents.push({
-        s: v.x + v.y + 0.01,
-        draw: () => {
-          const c = proj(pl.x, pl.y, pl.z);
-          drawModel(ctx, proj, pl, m.kind === 'dozer' ? dozerParts(time) : paverParts(time), { time, night });
-          drawDust(ctx, c, 7 * this.camera.zoom, time, m.x * 7 + m.y);
+          for (const side of [-1, 1]) {
+            const o = POLE_TIP.s * side;
+            drawWire(ctx, wirePoints({ x: av.x + nx * o, y: av.y + ny * o, z: za }, { x: bv.x + nx * o, y: bv.y + ny * o, z: zb }, 0.12, proj), width, night);
+          }
         },
       });
     }
@@ -1624,6 +1737,30 @@ export class IsoRenderer implements SceneView {
     for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.closePath();
     ctx.stroke();
+  }
+
+  /**
+   * The site building drawn under a canvas-space point (CSS pixels), front-most
+   * first: its footprint box from ground to roof, as projected.
+   */
+  pickSite(canvasX: number, canvasY: number): string | null {
+    const site = this.site;
+    if (!site) return null;
+    const proj = this.projector();
+    const hits = site.objects().filter((o) => o.kind === 'building').map((o) => {
+      const b = o.body;
+      const [hx, hy] = b.shape.kind === 'box' ? [b.shape.hx, b.shape.hy] : [0.5, 0.5];
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const dx of [-hx, hx]) for (const dy of [-hy, hy]) for (const z of [b.z, b.z + b.h]) {
+        const v = this.toView(b.x + dx, b.y + dy);
+        const p = proj(v.x, v.y, z * Math.SQRT2 + 0.5);
+        x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+      }
+      const v = this.toView(b.x, b.y);
+      return { id: o.id, depth: v.x + v.y, hit: canvasX >= x0 && canvasX <= x1 && canvasY >= y0 && canvasY <= y1 };
+    }).filter((h) => h.hit);
+    hits.sort((a, b) => b.depth - a.depth);
+    return hits[0]?.id ?? null;
   }
 
   /** World tile under a canvas-space point (front-most surface wins). */

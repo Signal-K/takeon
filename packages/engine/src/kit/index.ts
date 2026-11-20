@@ -12,7 +12,10 @@
  *   tower crane, then the finished building.
  * - `site`: the ground work and build timeline (roughen, scatter, clear,
  *   flatten, build, road) a renderer queries each frame.
- * - `ground`: roads, debris, machines and dust.
+ * - `ground`: roads, debris, crates, drums, lamps, power poles and cable,
+ *   machines and dust.
+ * - `physics`: the rigid-body world every site object lives in (gravity,
+ *   slopes, friction, collisions, sleep), stepped at a fixed 60 Hz.
  *
  * Pure canvas drawing over a host projector: no sim, no world, no DOM
  * beyond the 2D context it is handed. TakeOn's `IsoRenderer` draws a
@@ -23,3 +26,4 @@ export * from './assets.js';
 export * from './construction.js';
 export * from './site.js';
 export * from './ground.js';
+export * from './physics.js';

@@ -316,6 +316,12 @@ export interface MinimalSceneHandle {
    * asset id to raise with its road). Returns milliseconds until it is done.
    */
   step(step: MinimalBuildStep): number;
+  /**
+   * The base building under a point on the canvas (CSS pixels from its top
+   * left), or null. `select` rings it (null clears the ring).
+   */
+  pick(x: number, y: number): { id: string; asset: string; name: string } | null;
+  select(id: string | null): void;
   /** Fire one rocket from the pad now (drawn only). No-op without a pad. */
   launch(): void;
   start(): void;
@@ -337,9 +343,10 @@ function resolveBody(body: BodyDef | string | undefined): BodyDef {
 export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandle {
   const kind = opts.kind ?? 'deposit';
   setCameraElevation(opts.elevation ?? MINIMAL_ELEVATION);
+  const bodyDef = resolveBody(opts.body);
   const game = createRoverGame({
     canvas: opts.canvas,
-    body: resolveBody(opts.body),
+    body: bodyDef,
     spec: opts.spec ?? surveySpec('minimal-rover'),
     seed: opts.seed,
     controls: false,
@@ -383,6 +390,8 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
     }
     pad = layout['launch-pad'];
     site = new BuildSite(sim.seed);
+    // The site's bodies fall at the body's own pull (eased, so a light world still reads).
+    site.physics.gravity = 9 * Math.sqrt(Math.max(0.05, bodyDef.gravity ?? 9.81) / 9.81);
     focus = kind === 'launch' ? pad : c;
     siteCenter = c;
   } else {
@@ -404,11 +413,34 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
   const area = siteCenter ? { center: siteCenter, radius: SITE_RADIUS } : null;
   const level = siteCenter ? Math.round(game.iso.relief ? game.iso.relief(siteCenter.x, siteCenter.y) : sim.world.height(siteCenter.x, siteCenter.y)) : 0;
   const foot = (id: string) => getAsset(id)?.footprint ?? 1;
+  // Roads grow as a network: each new one branches off the nearest road already laid
+  // (or the agency), and once the solar farm stands every new road carries power.
   const roadTo = (id: string, instant: boolean) => {
     const hq = layout['agency-hq'];
     const at = layout[id];
     if (!site || !hq || !at || id === 'agency-hq') return;
-    site.road(roadBetween(hq, foot('agency-hq'), at, foot(id)), { instant });
+    let from = hq, fromFoot = foot('agency-hq');
+    let best = Math.abs(at.x - hq.x) + Math.abs(at.y - hq.y);
+    for (const r of site.roads)
+      for (const p of r.path) {
+        const d = Math.abs(at.x - p.x) + Math.abs(at.y - p.y);
+        if (d < best - 0.5) {
+          best = d;
+          from = p;
+          fromFoot = 0;
+        }
+      }
+    const power = id === 'solar-farm' || site.buildings.some((b) => b.asset === 'solar-farm');
+    site.road(roadBetween(from, fromFoot, at, foot(id)), { instant, power });
+  };
+  /** The road into the base, from beyond the cleared ground to the agency's door. */
+  const entryRoad = (instant: boolean) => {
+    const hq = layout['agency-hq'];
+    if (!site || !siteCenter || !hq) return;
+    const gate = { x: siteCenter.x + 1, y: Math.min(sim.world.size - 1, siteCenter.y + Math.ceil(SITE_RADIUS) + 3) };
+    const bend = { x: gate.x, y: hq.y };
+    const path = [...lPath(gate, bend), ...lPath(bend, hq).slice(1)];
+    site.road(path.filter((p, i) => i === path.length - 1 || Math.max(Math.abs(p.x - hq.x), Math.abs(p.y - hq.y)) >= foot('agency-hq') / 2), { instant });
   };
   const playStep = (step: MinimalBuildStep, instant: boolean): number => {
     if (!site || !area) return 0;
@@ -417,6 +449,7 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
     else if (step === 'agency') {
       site.remove('survey-flag');
       site.build('agency-hq', layout['agency-hq'], { instant, id: 'agency-hq' });
+      entryRoad(instant);
     } else if (step === 'pad') {
       site.build('launch-pad', layout['launch-pad'], { instant, id: 'launch-pad' });
       roadTo('launch-pad', instant);
@@ -483,6 +516,15 @@ export function createMinimalScene(opts: MinimalSceneOptions): MinimalSceneHandl
     pad,
     props,
     site,
+    pick: (x, y) => {
+      const id = game.iso.pickSite(x, y);
+      const b = id ? site?.buildings.find((q) => q.id === id) : null;
+      if (!b || b.asset === 'survey-flag') return null;
+      return { id: b.id, asset: b.asset, name: getAsset(b.asset)?.name ?? b.asset };
+    },
+    select: (id) => {
+      game.iso.siteSelected = id;
+    },
     layout,
     step: (s) => playStep(s, false),
     launch: () => {

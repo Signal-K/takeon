@@ -1,4 +1,4 @@
-import { box, cyl, light, tone, type Part } from './mesh.js';
+import { beam, box, cyl, light, tone, type Part } from './mesh.js';
 import { ASPHALT_COLOR } from './assets.js';
 
 /** Things that live on the ground of a site: roads, debris, machines and their dust. */
@@ -107,6 +107,80 @@ export function paverParts(time = 0): Part[] {
     box(-0.28, 0.12, 0, 0.12, 0.06, 0.08, '#2c2f34'),
     light(-0.16, 0, 0.31, 0.018, '#ffb347', 1.4, 0.3),
   ];
+}
+
+/** A supply crate: planks with a darker band, its id stencil a stripe. */
+export function crateParts(seed = 0): Part[] {
+  const wood = ['#b98a52', '#a97c48', '#c49662'][seed % 3];
+  return [
+    box(0, 0, 0, 0.18, 0.18, 0.17, wood, { stripe: { z: 0.07, h: 0.03, color: tone(wood, 0.72) }, top: tone(wood, 1.12) }),
+    box(0, 0, 0.17, 0.12, 0.02, 0.004, tone(wood, 0.7)),
+  ];
+}
+
+/** A fuel drum with two rolling hoops. */
+export function drumParts(seed = 0): Part[] {
+  const paint = ['#3f7cc4', '#d8432f', '#e9b93a'][seed % 3];
+  return [
+    cyl(0, 0, 0, 0.07, 0.07, 0.16, paint, {
+      n: 10,
+      bands: [
+        { z: 0.04, h: 0.012, color: tone(paint, 0.7) },
+        { z: 0.11, h: 0.012, color: tone(paint, 0.7) },
+      ],
+      top: '#b9bec4',
+    }),
+  ];
+}
+
+/** A street lamp: a pole, an arm over the road and its lamp. */
+export function lampParts(): Part[] {
+  const h = 0.62;
+  return [
+    cyl(0, 0, 0, 0.035, 0.035, 0.03, '#6b737d', { n: 8 }),
+    beam([0, 0, 0], [0, 0, h], 0.018, '#8e979f'),
+    beam([0, 0, h], [0, 0.16, h + 0.03], 0.014, '#8e979f'),
+    box(0, 0.18, h - 0.005, 0.07, 0.05, 0.03, '#4b5561'),
+    light(0, 0.18, h - 0.02, 0.022, '#ffe2a0'),
+  ];
+}
+
+/** A power pole with a cross-arm and insulators; cable hangs from `POLE_TIP`. */
+export function poleParts(): Part[] {
+  const h = 0.95;
+  return [
+    cyl(0, 0, 0, 0.03, 0.022, h, '#7a5a3c', { n: 7 }),
+    box(0, 0, h - 0.1, 0.03, 0.32, 0.03, '#6a4c32'),
+    cyl(0, -0.13, h - 0.07, 0.012, 0.012, 0.04, '#cfe3e8', { n: 6 }),
+    cyl(0, 0.13, h - 0.07, 0.012, 0.012, 0.04, '#cfe3e8', { n: 6 }),
+  ];
+}
+
+/** Where a pole's two cables leave it, in model units (across, height). */
+export const POLE_TIP = { s: 0.13, z: 0.9 };
+
+type P3 = { x: number; y: number; z: number };
+
+/**
+ * A sagging cable between two points, as projected screen points: a
+ * catenary-like dip of `sag` (height units) at mid-span.
+ */
+export function wirePoints(a: P3, b: P3, sag: number, project: (x: number, y: number, z: number) => Pt, n = 10): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    out.push(project(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t - sag * 4 * t * (1 - t)));
+  }
+  return out;
+}
+
+/** Draw a cable along projected points. */
+export function drawWire(ctx: CanvasRenderingContext2D, pts: readonly Pt[], width: number, night = 0): void {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  stroke(ctx, pts, night > 0.5 ? 'rgba(20, 24, 30, 0.7)' : 'rgba(34, 38, 44, 0.78)', width);
+  ctx.restore();
 }
 
 /** A boulder (a few rough blocks) or a scrub tuft, coloured from the ground it sits on. */
