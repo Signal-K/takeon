@@ -297,6 +297,8 @@ The 3D field (KES-541, KES-543) is its own entry point, `import { mountFieldScen
 
 - `resources` lists ore by likelihood; the first one is always the seam nearest the landing, so list what the order wants first.
 - `capacity` is the hold size: the laser stops at it and a rover with a cargo bed shows a crate per quarter full.
+- `ship` picks the rocket on the orbit pass, one of Landnam's rocket types: `explorer` (default), `prospector` or `surveyor` (`FIELD_SHIP_KINDS`).
+- The rover is built from blocks on a 1 m grid, Haphazard Martians style: hex nodes, braced girders, wheels on the end columns, a blue Navcam mast at the front, one fitted part per bay. It is 1.8 m over the wheels.
 - `ORE_COLOURS` is mutable; write the host's mineral colours into it before mounting.
 - `terrain.credits` names the real DTM under Mars and Moon fields; show it.
 

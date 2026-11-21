@@ -107,7 +107,29 @@ describe('field vehicles match Landnam (KES-543)', () => {
     // Parts change the model: the heavy build has no wings or arm but more hardware elsewhere.
     expect(buildRover(heavy).body.length).not.toBe(buildRover(stock).body.length);
     expect(buildRover(heavy).wheels.length).toBe(4);
-    expect(buildRover(stock).wheels.length).toBe(6);
+    expect(buildRover(stock).wheels.length).toBe(4);
+  });
+
+  it('builds the rover from grid blocks: narrow, wheels on the end columns, the mast at the front', async () => {
+    const { buildRover, DEFAULT_ROVER_LOOK, DEFAULT_ROVER } = await import('../src/field/index.js');
+    const m = buildRover(DEFAULT_ROVER_LOOK);
+    let maxZ = 0;
+    for (let i = 2; i < m.body.length; i += 9) maxZ = Math.max(maxZ, Math.abs(m.body[i]));
+    // Nothing on the body is wider than the wheels, and the collider matches.
+    expect(maxZ).toBeLessThan(0.95);
+    expect(new Set(m.wheels.map(w => w[0]))).toEqual(new Set([-1, 1]));
+    expect(DEFAULT_ROVER.width).toBeLessThanOrEqual(1.9);
+    const hauler = buildRover({ ...DEFAULT_ROVER_LOOK, chassis: 'hauler' });
+    expect(new Set(hauler.wheels.map(w => w[0]))).toEqual(new Set([-1.5, 1.5]));
+  });
+
+  it('has a ship for each of Landnam\'s rocket types', async () => {
+    const { buildShip, FIELD_SHIP_KINDS } = await import('../src/field/index.js');
+    expect(FIELD_SHIP_KINDS).toEqual(['explorer', 'prospector', 'surveyor']);
+    const sizes = FIELD_SHIP_KINDS.map(k => buildShip(k).mesh.length);
+    expect(new Set(sizes).size).toBe(3);
+    expect(buildShip('surveyor').engines.length).toBe(2);
+    expect(buildShip().mesh.length).toBe(buildShip('explorer').mesh.length);
   });
 });
 

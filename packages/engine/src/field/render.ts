@@ -4,7 +4,7 @@ import type { FieldDeposit, FieldStyleId, FieldTerrain } from './terrain.js';
 import type { FieldTrackPoint, FieldVehicle } from './vehicle.js';
 import type { FieldOrbiter } from './miner.js';
 import { invert, lookAt, multiply, perspective, pose, transformPoint, type Mat4, type V3 } from './glmath.js';
-import { buildOre, buildRover, buildShip, hex, MeshBuilder, oreColour, type FieldRoverLook, type RGB, type RoverModel } from './meshes.js';
+import { buildOre, buildRover, buildShip, hex, MeshBuilder, oreColour, type FieldRoverLook, type FieldShipKind, type RGB, type RoverModel } from './meshes.js';
 import { roverLookFromSpec } from './look.js';
 import type { RoverSpec } from '../types.js';
 
@@ -35,6 +35,8 @@ export interface FieldRenderOptions {
   zoom?: number;
   /** The rover to build: a Landnam/TakeOn `RoverSpec` or a fit-out. Defaults to the stock rover. */
   rover?: RoverSpec | FieldRoverLook | boolean;
+  /** The rocket flying the orbit pass: one of Landnam's rocket types. Defaults to the Explorer. */
+  ship?: FieldShipKind;
 }
 
 export interface FieldStick { ox: number; oy: number; x: number; y: number }
@@ -411,9 +413,9 @@ export class FieldRenderer {
   }
 
   /** Add the mining ship; the orbit rig follows it. */
-  attachOrbiter(orbiter: FieldOrbiter): void {
+  attachOrbiter(orbiter: FieldOrbiter, kind?: FieldShipKind): void {
     this.orbiter = orbiter;
-    const s = buildShip();
+    const s = buildShip(kind);
     this.ship = { mesh: this.meshFrom(s.mesh), muzzle: s.muzzle, engines: s.engines };
     this.camX = orbiter.x;
     this.camZ = orbiter.y;

@@ -76,7 +76,7 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
   const vehicle = mode === 'surface' && opts.rover !== false ? new FieldVehicle(terrain) : null;
   const orbiter = mode === 'orbit' ? new FieldOrbiter(terrain) : null;
   const renderer = new FieldRenderer(canvas, terrain, vehicle, { ...opts, camera: mode });
-  if (orbiter) renderer.attachOrbiter(orbiter);
+  if (orbiter) renderer.attachOrbiter(orbiter, opts.ship);
   const miner = new FieldMiner(terrain, renderer.revealed, mode === 'orbit' ? ORBIT_LASER : ROVER_LASER);
   const full = new Map(terrain.deposits.map(d => [d.id, miner.left.get(d.id) ?? 1]));
   renderer.oreLeft = id => (miner.left.get(id) ?? 0) / (full.get(id) || 1);

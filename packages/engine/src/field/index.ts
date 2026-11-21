@@ -7,7 +7,10 @@ export {
   FieldOrbiter, FieldMiner, DEFAULT_ORBITER, ORBIT_LASER, ROVER_LASER, type OrbiterSpec, type MinerSpec,
 } from './miner.js';
 export { FieldRenderer, type FieldRenderOptions, type FieldStick, type FieldCamera, type FieldBeam } from './render.js';
-export { ORE_COLOURS, oreColour, buildRover, buildShip, DEFAULT_ROVER_LOOK, type FieldRoverLook, type RoverModel } from './meshes.js';
+export {
+  ORE_COLOURS, oreColour, buildRover, buildShip, DEFAULT_ROVER_LOOK, FIELD_SHIP_KINDS,
+  type FieldRoverLook, type FieldShipKind, type RoverModel,
+} from './meshes.js';
 export { roverLookFromSpec } from './look.js';
 export { mountFieldScene, type FieldSceneOptions, type FieldSceneHandle, type FieldOrder } from './scene.js';
 export {

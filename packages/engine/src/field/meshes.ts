@@ -260,7 +260,7 @@ export interface FieldRoverLook {
   cargo: boolean;
 }
 
-/** The default Landnam/TakeOn rover: scout chassis, rocker wheels, small solar, scoop and nav camera. */
+/** The default Landnam/TakeOn rover: scout frame, four wheels, small solar, scoop and nav camera. */
 export const DEFAULT_ROVER_LOOK: FieldRoverLook = {
   color: '#c8d6e5', chassis: 'scout', tracks: false, solar: true, rtg: false, camera: true, scanner: false, tool: true, cargo: false,
 };
@@ -268,190 +268,303 @@ export const DEFAULT_ROVER_LOOK: FieldRoverLook = {
 const shadeRGB = (c: RGB, k: number): RGB => [Math.min(1, c[0] * k), Math.min(1, c[1] * k), Math.min(1, c[2] * k)];
 
 /**
- * The Landnam/TakeOn rover in 3D (KES-543), part for part with the iso painter:
- * a rounded hull in the build's colour with a lighter roof, three dark spoked
- * wheels a side (or tracks), blue solar wings out to the sides, the ribbed
- * blue-grey aft tank, a white high-gain dish, a camera mast with a white head
- * and stereo eyes, a scanner whip with a cyan tip, a jointed tool arm, a green
- * charge strip and an amber beacon. No orange: the survey rover has none.
- * Colours are weathered at build time so it reads as painted metal.
+ * The Landnam/TakeOn rover in 3D (KES-543), built the way Haphazard Martians
+ * builds rovers: from blocks on a 1 m grid. Bolted hex nodes sit on the grid
+ * points, thin girders join neighbours with a diagonal in every bay so the
+ * frame is braced into triangles, wheels hang off the end nodes on stub axles,
+ * and a blue Navcam mast stands on the front node. Each fitted part is one
+ * block in one bay: the build's colour is a single avionics box, solar is a
+ * flat panel over a bay (not wings), cargo is an open bay with crates. The
+ * frame stays open and narrow (1.8 m over the wheels), so it reads as a lean
+ * rover from above, never a car body. No orange: the survey rover has none.
  */
 export function buildRover(look: FieldRoverLook = DEFAULT_ROVER_LOOK): RoverModel {
   const body = hex(/^#[0-9a-f]{6}$/i.test(look.color) ? look.color : '#c8d6e5');
-  const flank = shadeRGB(body, 0.78), roof = shadeRGB(body, 1.18), seam = hex('#3a4a5a');
-  const tyre = hex('#23222b'), hub = hex('#6c6a78'), steel = hex('#9aa3ad'), joint = hex('#5f656e');
-  const cell = hex('#1d3a6f'), cellTop = hex('#2c569c'), strut = hex('#8a8f98');
+  const roof = shadeRGB(body, 1.15);
+  const steel = hex('#c9ced8'), steelLt = hex('#e4e8ef'), iron = hex('#6b717c'), bolt = hex('#3c414b');
+  const tyre = hex('#23222b'), hub = hex('#8a909c');
+  const mastBlue = hex('#5aaae6'), mastLt = hex('#86c4f0');
+  const cell = hex('#1d3a6f'), cellTop = hex('#2c569c'), cellLine = hex('#6f8fd0');
   const tank = hex('#8ea6b8'), tankRib = hex('#5e7588'), white = hex('#f2f4f8'), whiteLo = hex('#b9c0cb');
   const eye = hex('#1a1e28'), lens = hex('#8fd0ff'), red = hex('#e05555'), cyan = hex('#7edcec');
-  const led = hex('#6fdc8c'), amber = hex('#ffb547'), rtgC = hex('#5a5f69'), dark = hex('#1d1e24');
-  const L = look.chassis === 'hauler' ? 1.25 : 1;
-  const tall = look.chassis === 'lab' ? 0.16 : 0;
-  const hx = 1.3 * L, hz = 0.82;
+  const led = hex('#6fdc8c'), amber = hex('#ffb547'), dark = hex('#1d1e24'), crate = hex('#b08968'), crateTop = hex('#c9a27e');
+  // The grid: one column of nodes per metre along the rover, two rails 0.9 m apart.
+  const xs = look.chassis === 'hauler' ? [-1.5, -0.5, 0.5, 1.5] : [-1, 0, 1];
+  const zr = 0.45, y = 0.66;
+  const front = xs[xs.length - 1], rear = xs[0];
   const b = new MeshBuilder();
-  const R = 0.44;
+  const R = 0.4;
   const wheels: [number, number, number][] = [];
   const crates: Float32Array[] = [];
-  const wz = 0.98;
+
+  const node = (x: number, yy: number, z: number) => {
+    b.disc(x, yy - 0.06, z, 0.17, 0.12, iron, 6, steel);
+    b.disc(x, yy + 0.06, z, 0.11, 0.015, steelLt, 6);
+    b.disc(x, yy + 0.075, z, 0.04, 0.02, bolt, 6);
+  };
+  // A girder from node to node, trimmed so it meets the plates, not their centres.
+  const girder = (a: number[], c: number[]) => {
+    const d = [c[0] - a[0], c[1] - a[1], c[2] - a[2]], l = Math.hypot(d[0], d[1], d[2]) || 1, t = 0.14 / l;
+    b.beam([a[0] + d[0] * t, a[1] + d[1] * t, a[2] + d[2] * t], [c[0] - d[0] * t, c[1] - d[1] * t, c[2] - d[2] * t], 0.04, iron);
+  };
+  const frame = (yy: number, cols: number[]) => {
+    for (const x of cols) for (const z of [-zr, zr]) node(x, yy, z);
+    for (let i = 0; i < cols.length; i++) {
+      girder([cols[i], yy, -zr], [cols[i], yy, zr]);
+      if (i === 0) continue;
+      for (const z of [-zr, zr]) girder([cols[i - 1], yy, z], [cols[i], yy, z]);
+      // The triangle block: one diagonal per bay locks the shape.
+      const s = i % 2 ? 1 : -1;
+      girder([cols[i - 1], yy, -s * zr], [cols[i], yy, s * zr]);
+    }
+  };
+  frame(y, xs);
+
+  // Wheels or tracks off the end columns.
+  const wz = 0.78;
   if (look.tracks) {
-    // Track belts: long dark pods with tread ribs, sprockets at each end spin.
     for (const s of [-1, 1]) {
-      b.bevelBox(-hx - 0.05, hx + 0.05, 0.04, 0.78, s * wz - 0.2, s * wz + 0.2, 0.16, tyre, hex('#3a3844'));
-      for (let x = -hx; x <= hx; x += 0.28) b.box(x - 0.05, x + 0.05, 0.76, 0.8, s * wz - 0.2, s * wz + 0.2, hex('#3a3844'));
-      for (const x of [-hx + 0.25, hx - 0.25]) wheels.push([x, 0.41, s * (wz + 0.21)]);
+      b.bevelBox(rear - 0.35, front + 0.35, 0.06, 0.62, s * wz - 0.13, s * wz + 0.13, 0.14, tyre, hex('#3a3844'));
+      for (let x = rear - 0.25; x <= front + 0.25; x += 0.25) b.box(x - 0.04, x + 0.04, 0.6, 0.64, s * wz - 0.13, s * wz + 0.13, hex('#3a3844'));
+      for (const x of [rear, front]) { girder([x, y, s * zr], [x, 0.36, s * (wz - 0.13)]); wheels.push([x, 0.34, s * (wz + 0.14)]); }
     }
   } else {
-    for (const x of [-1.0 * L, 0, 1.0 * L]) for (const s of [-1, 1]) wheels.push([x, R, s * wz]);
-    // Rocker arms down to each hub.
-    for (const s of [-1, 1]) {
-      b.bevelBox(-1.05 * L, 1.05 * L, 0.66, 0.76, s * 0.86 - 0.05, s * 0.86 + 0.05, 0.03, joint);
-      for (const x of [-1.0 * L, 0, 1.0 * L]) b.bevelBox(x - 0.06, x + 0.06, R, 0.72, s * 0.86 - 0.05, s * 0.86 + 0.05, 0.02, joint);
+    for (const x of [rear, front]) for (const s of [-1, 1]) {
+      b.beam([x, y, s * (zr + 0.12)], [x, R, s * (wz - 0.12)], 0.045, iron);
+      wheels.push([x, R, s * wz]);
     }
   }
-  // Hull: the flank band, then the rounded roof the camera sees.
-  b.bevelBox(-hx, hx, 0.58, 1.02 + tall, -hz, hz, 0.14, flank, body);
-  b.bevelBox(-hx + 0.08, hx - 0.08, 0.98 + tall, 1.34 + tall, -hz + 0.06, hz - 0.06, 0.24, body, roof);
-  const top = 1.34 + tall;
-  // Roof seam across the deck, like the painter's line.
-  b.box(-hx + 0.2, hx - 0.2, top - 0.01, top + 0.005, -0.02, 0.02, shadeRGB(seam, 1.6));
-  // Charge strip: four green pips and an empty one on each flank.
-  for (const s of [-1, 1]) for (let i = 0; i < 5; i++) {
-    const x = -0.35 + i * 0.16;
-    b.box(x - 0.05, x + 0.05, 0.74, 0.84, s * hz - 0.01, s * hz + 0.012, i < 4 ? led : dark);
+
+  // Bays between the columns, rear to front. Each fitted part takes one bay.
+  const bays = xs.slice(1).map((x, i) => [xs[i], x] as const);
+  const deck = y + 0.08;
+  const avBay = bays[bays.length - 1];
+  const tall = look.chassis === 'lab' ? 0.56 : 0;
+  if (tall) {
+    // Lab: a second frame tier over the front bay, on uprights.
+    for (const x of avBay) for (const z of [-zr, zr]) girder([x, y, z], [x, y + tall, z]);
+    girder([avBay[0], y, -zr], [avBay[1], y + tall, -zr]);
+    girder([avBay[0], y, zr], [avBay[1], y + tall, zr]);
+    frame(y + tall, [...avBay]);
   }
-  // Aft tank, ribbed, blue-grey (left rear).
-  b.disc(-hx + 0.42, top - 0.04, -0.42, 0.26, 0.42, tank, 14, shadeRGB(tank, 1.25));
-  for (let i = 1; i < 4; i++) b.disc(-hx + 0.42, top - 0.04 + i * 0.1, -0.42, 0.272, 0.025, tankRib, 14);
-  if (look.rtg) {
-    // RTG: a dark finned stack off the back.
-    b.disc(-hx - 0.18, 0.7, 0, 0.22, 0.62, rtgC, 12, hex('#767c86'));
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      b.box(-hx - 0.18 + Math.cos(a) * 0.22 - 0.03, -hx - 0.18 + Math.cos(a) * 0.32 + 0.03, 0.72, 1.28, Math.sin(a) * 0.22 - 0.03, Math.sin(a) * 0.32 + 0.03, hex('#767c86'));
+  // Avionics box in the build's colour, the rover's one coloured block.
+  const ax0 = avBay[0] + 0.14, ax1 = avBay[1] - 0.22, ay0 = deck + tall, ay1 = ay0 + 0.34;
+  b.bevelBox(ax0, ax1, ay0, ay1, -0.32, 0.32, 0.07, body, roof);
+  for (let i = 0; i < 5; i++) {
+    const x = ax0 + 0.1 + i * 0.1;
+    b.box(x - 0.03, x + 0.03, ay0 + 0.14, ay0 + 0.22, 0.32, 0.335, i < 4 ? led : dark);
+  }
+  b.disc(ax1 - 0.12, ay1, -0.2, 0.06, 0.06, amber, 10);
+  // High-gain dish on the box.
+  b.disc(ax0 + 0.18, ay1, 0.14, 0.03, 0.12, steel, 8);
+  b.disc(ax0 + 0.18, ay1 + 0.11, 0.14, 0.2, 0.04, whiteLo, 14, white);
+
+  const panel = (x0: number, x1: number, py: number) => {
+    for (const x of [x0 + 0.12, x1 - 0.12]) b.disc(x, py - 0.18, 0, 0.03, 0.18, steel, 6);
+    b.bevelBox(x0 + 0.06, x1 - 0.06, py, py + 0.04, -zr + 0.02, zr - 0.02, 0.015, cell, cellTop);
+    for (let k = 1; k < 3; k++) {
+      const x = x0 + ((x1 - x0) * k) / 3;
+      b.box(x - 0.008, x + 0.008, py + 0.04, py + 0.046, -zr + 0.04, zr - 0.04, cellLine);
     }
-  }
+    b.box(x0 + 0.08, x1 - 0.08, py + 0.04, py + 0.046, -0.008, 0.008, cellLine);
+  };
+  const rearBay = bays[0];
+  const freeBays = bays.slice(0, -1);
   if (look.cargo) {
-    // Open cargo bed at the back of the deck.
-    b.bevelBox(-hx + 0.15, -0.1, top - 0.02, top + 0.22, -0.05, hz - 0.12, 0.04, hex('#6a7180'), hex('#4a505c'));
+    // Open cargo bay: a floor and low rails, crates appear as the hold fills.
+    const [c0, c1] = rearBay;
+    b.box(c0 + 0.12, c1 - 0.12, deck - 0.02, deck + 0.02, -zr + 0.06, zr - 0.06, hex('#4a505c'));
+    for (const z of [-zr + 0.06, zr - 0.06]) b.box(c0 + 0.12, c1 - 0.12, deck, deck + 0.14, z - 0.025, z + 0.025, hex('#8a909c'));
     for (let i = 0; i < 4; i++) {
+      const cx = c0 + 0.32 + (i >> 1) * 0.36, cz = (i % 2 ? 0.18 : -0.18);
       const c = new MeshBuilder();
-      c.bevelBox(-hx + 0.3 + i * 0.3, -hx + 0.52 + i * 0.3, top + 0.1, top + 0.3, 0.1 + (i % 2) * 0.25, 0.32 + (i % 2) * 0.25, 0.03, hex('#b08968'), hex('#c9a27e'));
+      c.bevelBox(cx - 0.15, cx + 0.15, deck + 0.02, deck + 0.26, cz - 0.15, cz + 0.15, 0.03, crate, crateTop);
       crates.push(c.build());
     }
   }
   if (look.solar) {
-    // Solar wings out to the sides on struts, like the iso painter.
-    for (const s of [-1, 1]) {
-      const y = top - 0.06, zi = s * (hz + 0.06), zo = s * (hz + 0.84), x0 = -0.55, x1 = 0.55;
-      b.bevelBox(-0.06, 0.06, y - 0.05, y + 0.01, s * (hz - 0.2), s * (hz + 0.1), 0.01, strut);
-      b.quad([x0, y, zi], [x1, y, zi], [x1, y + 0.04, zo], [x0, y + 0.04, zo], s > 0 ? cellTop : cell);
-      b.quad([x0, y, zi], [x0, y + 0.04, zo], [x1, y + 0.04, zo], [x1, y, zi], s > 0 ? cell : cellTop);
-      // Cell grid lines.
-      for (let k = 1; k < 4; k++) {
-        const x = x0 + ((x1 - x0) * k) / 4;
-        b.quad([x - 0.01, y + 0.012, zi], [x + 0.01, y + 0.012, zi], [x + 0.01, y + 0.052, zo], [x - 0.01, y + 0.052, zo], hex('#6f8fd0'));
-      }
-      b.quad([x0, y + 0.032, (zi + zo) / 2 - 0.01], [x1, y + 0.032, (zi + zo) / 2 - 0.01], [x1, y + 0.032, (zi + zo) / 2 + 0.01], [x0, y + 0.032, (zi + zo) / 2 + 0.01], hex('#6f8fd0'));
-    }
+    // A flat panel over a free bay; if the cargo bay took it, the panel rides on the avionics box.
+    const bay = freeBays.find(bb => !(look.cargo && bb === rearBay));
+    if (bay) panel(bay[0], bay[1], deck + 0.3);
+    else panel(avBay[0], avBay[1], ay1 + 0.24);
   }
-  // High-gain dish: white bowl on a short post (right rear).
-  b.disc(-0.45 * L, top, 0.42, 0.04, 0.18, steel, 8);
-  b.disc(-0.45 * L, top + 0.16, 0.42, 0.3, 0.05, whiteLo, 16, white);
-  b.disc(-0.45 * L, top + 0.2, 0.42, 0.05, 0.08, steel, 8);
-  // Amber beacon on the deck.
-  b.disc(0.05, top, -0.1, 0.07, 0.07, amber, 10);
-  let muzzle: [number, number, number] = [hx, top, 0];
-  if (look.camera) {
-    // Camera mast with a white head, two dark stereo eyes, a blue lens and a red laser dot.
-    const mx = hx - 0.45;
-    b.bevelBox(mx - 0.05, mx + 0.05, top, top + 0.82, 0.05, 0.15, 0.02, steel);
-    b.bevelBox(mx - 0.2, mx + 0.16, top + 0.78, top + 1.02, -0.16, 0.36, 0.06, whiteLo, white);
-    for (const [zz, r] of [[0.22, 0.075], [0.02, 0.06]] as const) {
-      b.box(mx + 0.16, mx + 0.19, top + 0.9 - r, top + 0.9 + r, zz - r, zz + r, eye);
-      b.box(mx + 0.19, mx + 0.2, top + 0.88, top + 0.92, zz - 0.025, zz + 0.025, lens);
+  // Tank on a rear corner node.
+  b.disc(rear, y + 0.08, -zr, 0.16, 0.3, tank, 12, shadeRGB(tank, 1.25));
+  for (let i = 1; i < 3; i++) b.disc(rear, y + 0.08 + i * 0.1, -zr, 0.168, 0.02, tankRib, 12);
+  if (look.rtg) {
+    // RTG: a dark finned stack off the rear cross girder.
+    b.disc(rear - 0.28, y - 0.2, 0, 0.16, 0.5, hex('#5a5f69'), 12, hex('#767c86'));
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      b.box(rear - 0.28 + Math.cos(a) * 0.16 - 0.025, rear - 0.28 + Math.cos(a) * 0.25 + 0.025, y - 0.16, y + 0.26, Math.sin(a) * 0.16 - 0.025, Math.sin(a) * 0.25 + 0.025, hex('#767c86'));
     }
-    b.box(mx + 0.16, mx + 0.2, top + 0.95, top + 0.98, -0.12, -0.09, red);
-    muzzle = [mx + 0.2, top + 0.96, -0.1];
+    girder([rear, y, 0], [rear - 0.28, y, 0]);
+  }
+  // The Navcam mast: blue, on the front cross girder; every rover carries one.
+  const mx = front - 0.02, top = deck + tall;
+  b.bevelBox(mx - 0.05, mx + 0.05, y, top + 0.86, -0.05, 0.05, 0.02, mastBlue, mastLt);
+  b.bevelBox(mx - 0.16, mx + 0.14, top + 0.82, top + 1.02, -0.2, 0.2, 0.05, look.camera ? whiteLo : mastBlue, look.camera ? white : mastLt);
+  let muzzle: [number, number, number] = [mx + 0.16, top + 0.92, 0];
+  if (look.camera) {
+    for (const zz of [0.1, -0.1]) {
+      b.box(mx + 0.14, mx + 0.17, top + 0.86, top + 0.98, zz - 0.06, zz + 0.06, eye);
+      b.box(mx + 0.17, mx + 0.18, top + 0.9, top + 0.94, zz - 0.02, zz + 0.02, lens);
+    }
+    b.box(mx + 0.14, mx + 0.18, top + 0.99, top + 1.01, -0.02, 0.02, red);
+    muzzle = [mx + 0.18, top + 1.0, 0];
   }
   if (look.scanner) {
-    // Scanner whip with a cyan tip.
-    b.box(-0.2, -0.17, top, top + 1.05, -hz + 0.18, -hz + 0.21, steel);
-    b.bevelBox(-0.24, -0.13, top + 1.02, top + 1.12, -hz + 0.14, -hz + 0.25, 0.03, cyan);
+    // Scanner whip with a cyan tip, on a rear node.
+    b.box(rear + 0.02, rear + 0.05, y, y + 1.1, zr - 0.015, zr + 0.015, steel);
+    b.bevelBox(rear - 0.03, rear + 0.1, y + 1.06, y + 1.16, zr - 0.06, zr + 0.06, 0.03, cyan);
   }
   if (look.tool) {
-    // Tool arm off the front right corner: shoulder, elbow, head.
-    const sh = [hx - 0.05, 0.86, hz - 0.1], el = [hx + 0.42, 1.12, hz + 0.02], hd = [hx + 0.68, 0.5, hz + 0.02];
-    b.beam(sh, el, 0.055, steel);
-    b.beam(el, hd, 0.05, steel);
-    b.disc(el[0], el[1] - 0.06, el[2], 0.09, 0.12, joint, 10);
-    b.disc(hd[0], hd[1] - 0.16, hd[2], 0.11, 0.18, hex('#767d87'), 10, hex('#9fd4e6'));
-    muzzle = [hd[0], hd[1] - 0.18, hd[2]];
+    // Tool arm off the front right node: shoulder, elbow, head.
+    const sh = [front, y + 0.04, zr], el = [front + 0.42, y + 0.36, zr + 0.06], hd = [front + 0.66, 0.34, zr + 0.06];
+    b.beam(sh, el, 0.045, steel);
+    b.beam(el, hd, 0.04, steel);
+    b.disc(el[0], el[1] - 0.05, el[2], 0.08, 0.1, iron, 6, steel);
+    b.disc(hd[0], hd[1] - 0.14, hd[2], 0.09, 0.16, hex('#767d87'), 10, hex('#9fd4e6'));
+    muzzle = [hd[0], hd[1] - 0.16, hd[2]];
   }
-  b.weather(0.3, 1.5, 0.55, 0.06, 7);
+  b.weather(0.2, 1.6, 0.6, 0.06, 7);
+
+  // The wheel: a knobbly tyre on a spoked rim, as in Haphazard Martians.
+  const wr = look.tracks ? 0.3 : R;
   const w = new MeshBuilder();
-  w.wheel(0, 0, 0, look.tracks ? 0.36 : R, look.tracks ? 0.08 : 0.34, tyre, hub, 18);
-  // Spokes on the outer face, so the spin reads like the iso wheels.
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2, r = (look.tracks ? 0.36 : R) * 0.6;
-    const z = (look.tracks ? 0.04 : 0.17) + 0.012;
-    w.quad([Math.cos(a - 0.18) * 0.06, Math.sin(a - 0.18) * 0.06, z], [Math.cos(a - 0.08) * r, Math.sin(a - 0.08) * r, z], [Math.cos(a + 0.08) * r, Math.sin(a + 0.08) * r, z], [Math.cos(a + 0.18) * 0.06, Math.sin(a + 0.18) * 0.06, z], hex('#9aa0ab'));
+  w.wheel(0, 0, 0, wr, look.tracks ? 0.08 : 0.24, tyre, hub, 16);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2, r = wr * 0.58;
+    const z = (look.tracks ? 0.04 : 0.12) + 0.012;
+    w.quad([Math.cos(a - 0.2) * 0.05, Math.sin(a - 0.2) * 0.05, z], [Math.cos(a - 0.07) * r, Math.sin(a - 0.07) * r, z], [Math.cos(a + 0.07) * r, Math.sin(a + 0.07) * r, z], [Math.cos(a + 0.2) * 0.05, Math.sin(a + 0.2) * 0.05, z], hex('#b4bac4'));
   }
-  w.weather(-R, R, 0.85, 0.04, 3);
-  return { body: b.build(), wheel: w.build(), wheels, wheelRadius: look.tracks ? 0.36 : R, muzzle, crates };
+  w.weather(-wr, wr, 0.85, 0.04, 3);
+  return { body: b.build(), wheel: w.build(), wheels, wheelRadius: wr, muzzle, crates };
 }
 
+/** Landnam's rocket types, as `ROCKET_MODELS` names them. */
+export type FieldShipKind = 'explorer' | 'prospector' | 'surveyor';
+export const FIELD_SHIP_KINDS: readonly FieldShipKind[] = ['explorer', 'prospector', 'surveyor'];
+
 /**
- * The Landnam mining ship from above (KES-543), after `laser/ship.png` and the
- * minimal mine pass: a long cream hull with a pointed nose, a blue stripe down
- * each side and the spine, a blue-framed cockpit near the nose, a small blue
- * dorsal fin, a grey engine nozzle, two landing legs and a ventral laser.
- * About 9 m long.
+ * The player's rocket from above (KES-543), one model per Landnam rocket type,
+ * after its art (`ships/ship_sr1.png`, `ship_sr2.png`, `parts/hull_mk3_heavy_t3.png`):
+ *
+ * - **Explorer:** a pale-blue capsule with a rounded nose cap, two light bands,
+ *   a green stripe with three portholes, one long side pod a side, yellow
+ *   hazard chevrons by the nose, swept fins and a blue nozzle.
+ * - **Prospector:** the same hull with a cyan stripe, four portholes and two
+ *   shorter pods a side.
+ * - **Surveyor:** the heavy hull, a long dark-grey block with black bumpers at
+ *   the corners, two steel bands, a cyan light line and amber running lights,
+ *   pushed by two nozzles.
+ *
+ * Every one carries the mining fit: landing legs folded under and a ventral
+ * laser. About 9 m long, nose along +X.
  */
-export function buildShip(): { mesh: Float32Array; muzzle: [number, number, number]; engines: [number, number, number][] } {
-  const cream = hex('#efe6d2'), creamLo = hex('#d8cdb5'), blue = hex('#2f6fd6'), blueLo = hex('#2052a8');
-  const glass = hex('#8fd3f5'), nozzle = hex('#4f5560'), dark = hex('#1d1e24'), grey = hex('#8a8d94');
+export function buildShip(kind: FieldShipKind = 'explorer'): { mesh: Float32Array; muzzle: [number, number, number]; engines: [number, number, number][] } {
   const b = new MeshBuilder();
-  // Hull: a lofted capsule along +X with a pointed nose.
-  const prof: [number, number][] = [[-4.0, 0.62], [-3.7, 0.95], [-2.8, 1.05], [1.6, 1.05], [2.8, 0.9], [3.7, 0.55], [4.5, 0.12]];
-  const sides = 12;
-  for (let i = 0; i < prof.length - 1; i++) {
-    const [x0, r0] = prof[i], [x1, r1] = prof[i + 1];
-    for (let k = 0; k < sides; k++) {
-      const a0 = (k / sides) * Math.PI * 2, a1 = ((k + 1) / sides) * Math.PI * 2;
-      const am = (a0 + a1) / 2;
-      // Side stripe where the face looks sideways at mid height; spine stripe on top.
-      const sy = Math.sin(am), sz = Math.cos(am);
-      const stripe = Math.abs(sy) < 0.3 && Math.abs(sz) > 0.9 && x0 < 2.9;
-      const col = stripe ? blue : sy < -0.4 ? creamLo : cream;
-      const p = (x: number, r: number, a: number) => [x, Math.sin(a) * r * 0.9, Math.cos(a) * r];
-      b.triOut(p(x0, r0, a0), p(x1, r1, a0), p(x1, r1, a1), col, [(x0 + x1) / 2, 0, 0]);
-      b.triOut(p(x0, r0, a0), p(x1, r1, a1), p(x0, r0, a1), col, [(x0 + x1) / 2, 0, 0]);
+  const dark = hex('#1d1e24'), grey = hex('#8a8d94');
+  let engines: [number, number, number][];
+  const nozzle = (x: number, z: number, r: number, col: RGB, rim: RGB) => {
+    for (let k = 0; k < 12; k++) {
+      const a0 = (k / 12) * Math.PI * 2, a1 = ((k + 1) / 12) * Math.PI * 2;
+      const p = (xx: number, rr: number, a: number) => [xx, Math.sin(a) * rr, z + Math.cos(a) * rr];
+      b.triOut(p(x, r * 0.75, a0), p(x - 0.8, r, a0), p(x - 0.8, r, a1), col, [x - 0.4, 0, z]);
+      b.triOut(p(x, r * 0.75, a0), p(x - 0.8, r, a1), p(x, r * 0.75, a1), col, [x - 0.4, 0, z]);
     }
+    for (let k = 0; k < 12; k++) {
+      const a0 = (k / 12) * Math.PI * 2, a1 = ((k + 1) / 12) * Math.PI * 2;
+      b.tri([x - 0.8, 0, z], [x - 0.8, Math.sin(a1) * r * 0.9, z + Math.cos(a1) * r * 0.9], [x - 0.8, Math.sin(a0) * r * 0.9, z + Math.cos(a0) * r * 0.9], rim);
+    }
+  };
+  if (kind === 'surveyor') {
+    const hull = hex('#3e434c'), hullTop = hex('#5a606b'), band = hex('#6b7380'), bandTop = hex('#8d95a2');
+    const line = hex('#5fe0f0'), amber = hex('#ffb547'), bumper = hex('#1d1e24');
+    b.bevelBox(-4.2, 4.2, -0.8, 0.85, -1.2, 1.2, 0.3, hull, hullTop);
+    // Panel seams along the deck.
+    for (const z of [-0.6, 0.6]) b.box(-3.9, 3.9, 0.85, 0.862, z - 0.02, z + 0.02, hex('#30343b'));
+    // Two steel bands across.
+    for (const x of [-1.4, 1.4]) b.bevelBox(x - 0.28, x + 0.28, -0.88, 0.95, -1.28, 1.28, 0.08, band, bandTop);
+    // The cyan light line down the middle of each side and along the spine.
+    for (const s of [-1, 1]) b.box(-3.9, 3.9, -0.02, 0.08, s * 1.2 - 0.02, s * 1.2 + 0.02, line);
+    b.box(-3.9, 3.9, 0.862, 0.875, -0.05, 0.05, line);
+    // Amber running lights, three to a section.
+    for (const xc of [-2.8, 0, 2.8]) for (let i = -1; i <= 1; i++) b.box(xc + i * 0.3 - 0.08, xc + i * 0.3 + 0.08, 0.862, 0.9, 0.85, 1.0, amber);
+    // Black bumpers round the four corners.
+    for (const x of [-4.1, 4.1]) for (const s of [-1, 1]) b.bevelBox(x - 0.32, x + 0.32, -0.85, 0.9, s * 1.05 - 0.3, s * 1.05 + 0.3, 0.14, bumper, hex('#2c2d35'));
+    nozzle(-4.25, -0.6, 0.45, hex('#4f5560'), hex('#7edcec'));
+    nozzle(-4.25, 0.6, 0.45, hex('#4f5560'), hex('#7edcec'));
+    engines = [[-5.1, 0, -0.6], [-5.1, 0, 0.6]];
+  } else {
+    const hull = hex('#a9c9e6'), hullLo = hex('#6f9cc6'), cap = hex('#dce9f5'), band = hex('#d6e6f4');
+    const stripe = kind === 'prospector' ? hex('#2aa8c8') : hex('#1e8c78');
+    const ink = hex('#16304a'), glass = hex('#4aa6e0'), ring = hex('#f2f6fa'), hazard = hex('#f2c230');
+    // Hull: a lofted capsule along +X, blunt rounded nose cap at the front, tapering to the engine.
+    const prof: [number, number, RGB][] = [
+      [-3.6, 0.55, hull], [-2.9, 1.0, hull], [2.6, 1.05, hull], [3.3, 0.95, cap], [3.9, 0.7, cap], [4.3, 0.25, cap],
+    ];
+    const sides = 14;
+    for (let i = 0; i < prof.length - 1; i++) {
+      const [x0, r0, c0] = prof[i], [x1, r1] = prof[i + 1];
+      for (let k = 0; k < sides; k++) {
+        const a0 = (k / sides) * Math.PI * 2, a1 = ((k + 1) / sides) * Math.PI * 2, am = (a0 + a1) / 2;
+        const sy = Math.sin(am);
+        const col = c0 === hull && sy < -0.3 ? hullLo : c0;
+        const p = (x: number, r: number, a: number) => [x, Math.sin(a) * r * 0.92, Math.cos(a) * r];
+        b.triOut(p(x0, r0, a0), p(x1, r1, a0), p(x1, r1, a1), col, [(x0 + x1) / 2, 0, 0]);
+        b.triOut(p(x0, r0, a0), p(x1, r1, a1), p(x0, r0, a1), col, [(x0 + x1) / 2, 0, 0]);
+      }
+    }
+    // Two pale bands round the hull.
+    for (const x of [-0.9, 1.3]) {
+      for (let k = 0; k < sides; k++) {
+        const a0 = (k / sides) * Math.PI * 2, a1 = ((k + 1) / sides) * Math.PI * 2;
+        const p = (xx: number, a: number) => [xx, Math.sin(a) * 1.08 * 0.92, Math.cos(a) * 1.08];
+        b.triOut(p(x - 0.12, a0), p(x + 0.12, a0), p(x + 0.12, a1), band, [x, 0, 0]);
+        b.triOut(p(x - 0.12, a0), p(x + 0.12, a1), p(x - 0.12, a1), band, [x, 0, 0]);
+      }
+    }
+    // The stripe along the spine (the side the camera sees) and down both flanks.
+    b.bevelBox(-2.8, 2.7, 0.9, 1.0, -0.2, 0.2, 0.03, stripe, stripe);
+    for (const s of [-1, 1]) b.box(-2.8, 2.7, -0.12, 0.12, s * 1.04 - 0.03, s * 1.04 + 0.03, stripe);
+    // Portholes on the stripe: three on the Explorer, four on the Prospector.
+    const ports = kind === 'prospector' ? [-0.15, 0.25, 0.65, 1.05] : [0.05, 0.45, 0.85];
+    for (const x of ports) {
+      b.disc(x, 0.99, 0, 0.15, 0.04, ring, 12);
+      b.disc(x, 1.02, 0, 0.1, 0.03, glass, 12);
+    }
+    // Hazard chevrons by the nose cap.
+    for (const s of [-1, 1]) for (let i = 0; i < 3; i++) b.box(2.75 - i * 0.02, 2.95 - i * 0.02, 0.7 - i * 0.28, 0.78 - i * 0.28, s * (0.55 + i * 0.16) - 0.06, s * (0.55 + i * 0.16) + 0.06, hazard);
+    // Vents aft of the stripe.
+    for (let i = 0; i < 4; i++) b.box(-2.4 + i * 0.18, -2.34 + i * 0.18, 0.94, 0.97, -0.45, -0.1, ink);
+    // Side pods: one long pod a side on the Explorer, two short ones on the Prospector.
+    const pods: [number, number][] = kind === 'prospector' ? [[-2.6, -0.6], [-0.3, 1.7]] : [[-2.6, 0.9]];
+    for (const [x0, x1] of pods) for (const s of [-1, 1]) {
+      b.bevelBox(x0, x1, -0.42, 0.42, s * 1.0 - 0.0, s * 1.55, 0.18, hullLo, hull);
+      b.box(x0 + 0.2, x1 - 0.2, 0.42, 0.44, s * 1.22 - 0.05, s * 1.22 + 0.05, cap);
+      // A wedge intake at each pod's front.
+      b.triOut([x1, 0.25, s * 1.05], [x1 + 0.4, 0, s * 1.05], [x1, -0.25, s * 1.05], cap, [x1, 0, s * 1.3]);
+    }
+    // Swept fins at the tail, out to the sides and one up.
+    for (const s of [-1, 1]) {
+      const fin = [[-2.7, 0.05, s * 0.9], [-3.9, 0.05, s * 2.0], [-4.3, 0.05, s * 2.0], [-3.6, 0.05, s * 0.6]];
+      b.quad(fin[0], fin[1], fin[2], fin[3], s > 0 ? hull : hullLo);
+      b.quad(fin[3], fin[2], fin[1], fin[0], s > 0 ? hullLo : hull);
+    }
+    b.bevelBox(-3.6, -2.6, 0.7, 1.35, -0.06, 0.06, 0.03, hull, cap);
+    nozzle(-3.6, 0, 0.62, glass, hex('#bfe6ff'));
+    engines = [[-4.5, 0, 0]];
   }
-  // A narrow blue spine stripe down the back.
-  b.bevelBox(-3.4, 1.6, 0.9, 0.97, -0.13, 0.13, 0.03, blue, hex('#3f82e8'));
-  // Cockpit near the nose: blue frame, pale glass.
-  b.bevelBox(1.5, 2.9, 0.62, 1.08, -0.5, 0.5, 0.12, blue, blueLo);
-  b.bevelBox(1.75, 2.85, 0.8, 1.12, -0.36, 0.36, 0.1, glass, hex('#c8ecff'));
-  // Dorsal fin.
-  b.bevelBox(-2.2, -1.0, 0.85, 1.32, -0.14, 0.14, 0.08, blue, hex('#4a8cf0'));
-  // Engine nozzle at the back.
-  b.disc(-4.0, 0, 0, 0.55, 0.01, nozzle, 12);
-  for (let k = 0; k < 12; k++) {
-    const a0 = (k / 12) * Math.PI * 2, a1 = ((k + 1) / 12) * Math.PI * 2;
-    const p = (x: number, r: number, a: number) => [x, Math.sin(a) * r, Math.cos(a) * r];
-    b.triOut(p(-4.0, 0.5, a0), p(-4.7, 0.62, a0), p(-4.7, 0.62, a1), nozzle, [-4.35, 0, 0]);
-    b.triOut(p(-4.0, 0.5, a0), p(-4.7, 0.62, a1), p(-4.0, 0.5, a1), nozzle, [-4.35, 0, 0]);
-  }
-  // Landing legs, folded under.
+  // Mining fit: landing legs folded under, ventral laser.
   for (const x of [-2.4, 1.2]) for (const s of [-1, 1]) {
     b.beam([x, -0.6, s * 0.55], [x - 0.3, -1.25, s * 0.85], 0.07, dark);
     b.bevelBox(x - 0.55, x - 0.05, -1.32, -1.22, s * 0.85 - 0.16, s * 0.85 + 0.16, 0.03, grey);
   }
-  // Ventral laser.
   b.bevelBox(0.0, 1.2, -1.05, -0.75, -0.28, 0.28, 0.06, dark);
   b.bevelBox(1.2, 1.7, -1.0, -0.82, -0.1, 0.1, 0.03, grey);
   b.weather(-1.2, 1.1, 0.7, 0.05, 5);
-  return { mesh: b.build(), muzzle: [1.7, -0.91, 0], engines: [[-4.8, 0, 0]] };
+  return { mesh: b.build(), muzzle: [1.7, -0.91, 0], engines };
 }
 
 /** Ore colours, by resource. Bright and distinct from every ground colour. */
