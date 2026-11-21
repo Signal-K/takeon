@@ -224,18 +224,31 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     octx.clearRect(0, 0, cssW, cssH);
     // Pointers to scanned ore off screen, Out There green.
     const at = emitter();
+    // Keep pointers clear of the host's gauge panel (top) and thumb buttons (bottom).
+    const pad = 34, top = Math.min(160, cssH * 0.2), bottom = Math.min(210, cssH * 0.26);
+    const cx = cssW / 2, cy = (top + cssH - bottom) / 2;
+    const pointers: { d: (typeof terrain.deposits)[number]; x: number; y: number; a: number; dist: number; more: number }[] = [];
     for (const d of terrain.deposits) {
       if (!renderer.revealed.has(d.id) || (miner.left.get(d.id) ?? 0) <= 0) continue;
       const p = renderer.project(d.x, d.y);
-      // Keep pointers clear of the host's gauge panel (top) and thumb buttons (bottom).
-      const pad = 34, top = Math.min(160, cssH * 0.2), bottom = Math.min(210, cssH * 0.26);
-      if (p.front && p.x > pad && p.x < cssW - pad && p.y > top && p.y < cssH - bottom) continue;
-      const cx = cssW / 2, cy = (top + cssH - bottom) / 2;
+      // Ore in view needs no pointer, unless it sits under the gauge panel (top left) or the thumb buttons (bottom right).
+      const inView = p.front && p.x > 12 && p.x < cssW - 12 && p.y > 12 && p.y < cssH - 12;
+      const underHud = (p.y < top && p.x < cssW * 0.65) || (p.y > cssH - bottom && p.x > cssW - 190);
+      if (inView && !underHud) continue;
       let dx = p.x - cx, dy = p.y - cy;
       if (!p.front) { dx = -dx; dy = -dy; }
       const s = Math.min((cssW / 2 - pad) / Math.abs(dx || 1e-3), (dy < 0 ? cy - top : cssH - bottom - cy) / Math.abs(dy || 1e-3));
-      const x = cx + dx * s, y = cy + dy * s;
-      const a = Math.atan2(dy, dx);
+      pointers.push({ d, x: cx + dx * s, y: cy + dy * s, a: Math.atan2(dy, dx), dist: Math.round(Math.hypot(d.x - at.x, d.y - at.y)), more: 0 });
+    }
+    // Seams in the same direction share one pointer: the nearest, with a count of the rest, so labels never overlap.
+    pointers.sort((m, n) => m.dist - n.dist);
+    const shown: typeof pointers = [];
+    for (const q of pointers) {
+      const near = shown.find(s => Math.abs(s.x - q.x) < 64 && Math.abs(s.y - q.y) < 40);
+      if (near) near.more++;
+      else shown.push(q);
+    }
+    for (const { d, x, y, a, dist, more } of shown) {
       const [r, g, b] = oreColour(d.resource).map(c => Math.round(c * 255));
       octx.save();
       octx.translate(x, y);
@@ -247,15 +260,18 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
       octx.moveTo(14, 0); octx.lineTo(-6, -10); octx.lineTo(-2, 0); octx.lineTo(-6, 10); octx.closePath();
       octx.stroke(); octx.fill();
       octx.restore();
-      const dist = Math.round(Math.hypot(d.x - at.x, d.y - at.y));
+      const text = more ? `${dist} m +${more}` : `${dist} m`;
       octx.font = 'italic 700 14px "Exo 2", system-ui, sans-serif';
       octx.textAlign = 'center';
       octx.lineWidth = 3;
       octx.strokeStyle = 'rgba(0,0,0,0.8)';
-      const tx = x - Math.cos(a) * 26, ty = y - Math.sin(a) * 22 + 5;
-      octx.strokeText(`${dist} m`, tx, ty);
+      const half = octx.measureText(text).width / 2 + 4;
+      // Pull the label inward along the arrow, then keep it fully on screen.
+      const tx = Math.max(half, Math.min(cssW - half, x - Math.cos(a) * (half + 14)));
+      const ty = y - Math.sin(a) * 22 + 5;
+      octx.strokeText(text, tx, ty);
       octx.fillStyle = '#fff';
-      octx.fillText(`${dist} m`, tx, ty);
+      octx.fillText(text, tx, ty);
     }
     // The order: a dotted route from the rover and a marker at the goal.
     const now = performance.now();
