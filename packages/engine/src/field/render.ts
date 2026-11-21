@@ -588,7 +588,8 @@ export class FieldRenderer {
       fx = v?.x ?? t.landing.x; fz = v?.y ?? t.landing.y;
       fy = t.height(fx, fz) + 0.6;
       if (v) { vx = Math.cos(v.heading) * v.speed; vz = Math.sin(v.heading) * v.speed; }
-      width = 11; pitch = 56;
+      // Wide enough to see where to send the rover by tap (KES-543).
+      width = 18; pitch = 60;
     }
     // Lead the camera the way the vehicle is going, and always a little north.
     const lead = this.camera === 'orbit' ? 0.6 : 0.35;

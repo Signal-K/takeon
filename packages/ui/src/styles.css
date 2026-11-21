@@ -1221,6 +1221,17 @@ button.tk-chip:hover {
 .tk-ot-gauge-value { min-width: 26px; text-align: right; font: italic 700 14px/1 var(--tk-ot-font, system-ui); }
 @keyframes tk-ot-blink { 50% { opacity: 0.35; } }
 
+.tk-ot-credit {
+  position: absolute;
+  left: 16px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  max-width: 44%;
+  font: 600 14px/1.25 'Exo 2', system-ui, sans-serif;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 0 #000, 0 0 3px #000;
+  pointer-events: none;
+}
+
 .tk-ot-pause {
   position: absolute;
   top: max(12px, env(safe-area-inset-top));

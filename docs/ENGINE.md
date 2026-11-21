@@ -231,18 +231,36 @@ scenes.
 
 `src/field/` is a self-contained, opt-in model for mobile scenes. It sits apart from the voxel world and the isometric renderer, which are unchanged.
 
-- **`FieldTerrain`** is a continuous height function in metres, deterministic from `(style, seed)`.
-  - Its features are rolling relief, ridges, craters with raised rims and bright ejecta, boulders, and ore deposits.
+- **`FieldTerrain`** is a continuous height function in metres, deterministic from `(recipe, seed)`.
   - The five styles are `regolith`, `rust`, `carbon`, `metal` and `ice`.
-  - The landing area is always flat and clear, and the first deposits sit a short drive from it.
+  - The landing area is always flat and clear, and the first deposits sit a short drive from it. `terrain.sources` holds full attribution for any real data, and `terrain.credits` holds a short HUD credit.
+- **Field PCG** (`pcg.ts`, KES-543) builds the surface from a recipe of layers, `{ kind, ...params }`. Each registered `FieldLayer` can have up to three passes:
+  - `prepare` places features before the grid is built.
+  - `shape` adds height and tone to each sample.
+  - `place` runs on the finished surface and can read height and slope.
+
+  Hosts add kinds with `registerFieldLayer` and pass `recipe` to compose their own; `recipeForStyle` gives the defaults. The built-in kinds are:
+  - `dem`: a seeded window of a real DTM in true metres. If the field is wider than the patch, the patch is stretched and its heights are scaled by the same factor, so slopes stay true. The landing moves to the flattest open ground.
+  - `craters`: a measured size–frequency power law, N(≥D) = a·D^-b. The default is the lunar small-crater equilibrium, a = 0.0794, b = 2.
+  - `boulders`: the Golombek–Rapp rock-abundance model, F(D) = k·e^(−qD).
+  - `dunes`, `relief`, `ridges` and `grain`: procedural shape and detail.
+  - `deposits`: ore in hollows.
+
+  Which recipe each body gets by default:
+  - The Moon starts from Kaguya Taurus-Littrow.
+  - Mars starts from HiRISE Jezero or Gale.
+  - Bodies with no surface data are procedural.
+- **Real DTM patches** (`dem.ts`, `dems.generated.ts`) are windows cut from USGS analysis-ready DTMs (CC0) by `scripts/fetch-field-dems.py`. The script uses rasterio and range-reads cloud-optimised GeoTIFFs. It picks the roughest window a rover can still drive and stores heights in decimetres. Hosts add their own with `registerFieldDem`.
+- **`FieldPlanner`** (`path.ts`) does tap-to-drive routing. It runs A* on a 1 m grid. Cells steeper than the rover can climb, or under a boulder (grown by the rover's half width), are closed. Open cells cost more the steeper they are. The path is then pulled tight into a few straight legs.
 - **`FieldVehicle`** is a skid-steer rover in continuous space.
-  - Input is a screen direction. The camera is north-up, so the screen direction is also the world direction.
+  - `follow(route)` drives a planned route by itself. Manual input drops the route. If the rover is held up for more than 1.2 s it gives up and calls `onStuck`.
+  - Manual input is a screen direction. The camera is north-up, so the screen direction is also the world direction.
   - It turns toward the input and drives once it faces it.
   - Slopes push back with the body's gravity, grades over `maxGrade` stop it, and boulders block it.
   - It runs on a fixed 60 Hz step.
 - **`FieldRenderer`** (KES-543) is a WebGL2 3D view. It replaced the top-down canvas view, which read as tiny and upside-down on a phone.
-  - The camera is built for a phone held upright. It never turns, and it looks north and steeply down, about 56° on the surface and 62° in orbit, like a top-down action game. A low chase camera wasted half of a portrait screen on sky and squeezed the ground into a strip.
-  - It frames a fixed ground width across the narrow side of the screen (11 m on the surface, 26 m in orbit), so the rover is the same size on every phone. It leads the way the vehicle is moving, so the rover sits a little below centre with room ahead.
+  - The camera is built for a phone held upright. It never turns, and it looks north and steeply down, about 60° on the surface and 62° in orbit, like a top-down action game. A low chase camera wasted half of a portrait screen on sky and squeezed the ground into a strip.
+  - It frames a fixed ground width across the narrow side of the screen (18 m on the surface, wide enough to see where to send the rover, and 26 m in orbit), so the rover is the same size on every phone. It leads the way the vehicle is moving, so the rover sits a little below centre with room ahead.
   - The terrain is one mesh: 0.5 m inside the field, with a coarse apron out to the horizon.
   - Shading is per pixel: a south-west sun, baked self-shadows, a tiling grain texture, wheel tracks, the vehicle's shadow, the scan pulse, ore glow and the laser hit point.
   - Boulders, ore crystals, the rover (wheels spin with the odometer) and the ship are low-poly meshes from `meshes.ts`.
@@ -255,8 +273,10 @@ scenes.
   - Call `project()` to turn a world point into CSS pixels, and `pick()` to turn CSS pixels into a ground point.
 - **`FieldOrbiter`** is the mining ship on a low pass. It drifts north at orbital speed, the stick slides it east and west and trims the drift, and it comes round again at the south edge.
 - **`FieldMiner`** is the laser. It locks only onto scanned ore within range (rover 7 m, orbit 45 m) and cuts until the deposit is empty. `depositScale` (opt-in) makes the bigger veins that orbit fields use.
-- **`mountFieldScene(canvas, opts)`** wires these together with touch-drag and keyboard input.
+- **`mountFieldScene(canvas, opts)`** wires these together.
   - `mode` is `surface` or `orbit`.
-  - In orbit, a quick tap on scanned ore aims the laser.
+  - On the surface the rover takes commands. Tap the ground and it plans a route and drives there. Tap scanned ore and it drives into laser range and mines the ore until it is empty. Arrows and WASD steer by hand and cancel the order.
+  - Hosts can call `command(x, y)`, read `order` and listen on `onOrder`. The overlay draws the dotted route, a marker at the goal, and a red cross where a tap has no way through.
+  - In orbit, drag to steer, and a quick tap on scanned ore aims the laser.
   - The host owns the HUD and calls `scan()` and `laser(on)`.
-  - Pass an `overlay` canvas to get the drag ring and pointers to off-screen ore. The pointers stay clear of the top gauge panel and the bottom thumb buttons.
+  - Pass an `overlay` canvas to get the route, the drag ring (orbit) and pointers to off-screen ore. The pointers stay clear of the top gauge panel and the bottom thumb buttons.

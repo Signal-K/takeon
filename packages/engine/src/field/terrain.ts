@@ -1,9 +1,11 @@
-import { simplex2 } from '../util/noise/index.js';
 import { hash2, mulberry32 } from '../util/rng.js';
 import type { Vec2 } from '../types.js';
+import { getFieldLayer, recipeForStyle, type FieldGenContext, type FieldRecipe, type FieldSample } from './pcg.js';
 
 /**
  * Field terrain: a continuous surface for top-down mobile scenes (KES-541).
+ * Since KES-543 the surface is built by a recipe of PCG layers (`pcg.ts`),
+ * starting from a real DTM on the Moon and Mars.
  *
  * The voxel world is good at being dug, but drawn on a phone it is blocky and
  * its isometric projection makes direction hard to read. A field is a smooth
@@ -74,41 +76,47 @@ export interface FieldOptions {
   deposits?: number;
   /** Multiplies deposit size and spacing; orbit fields use bigger veins (default 1). */
   depositScale?: number;
-  /** A clear, flat landing area kept free of boulders and craters. */
+  /** A clear, flat landing area kept free of boulders and craters. A `dem` layer picks one if unset. */
   landing?: Vec2;
+  /** The layer stack (see `pcg.ts`). Defaults to `recipeForStyle(style)`. */
+  recipe?: FieldRecipe;
 }
 
-/** Height grid resolution: samples per metre for the macro surface. */
-const GRID = 4;
 const LANDING_CLEAR = 6;
 
 export class FieldTerrain {
   readonly size: number;
   readonly seed: number;
   readonly style: FieldStyle;
-  readonly landing: Vec2;
+  readonly recipe: FieldRecipe;
+  landing: Vec2;
   readonly craters: FieldCrater[] = [];
   readonly boulders: FieldBoulder[] = [];
   readonly deposits: FieldDeposit[] = [];
-  /** Macro heights in metres on a (size*GRID+1)² grid. */
+  /** Attribution for real data in this field (DTM products). */
+  readonly sources: string[] = [];
+  /** Short HUD credits for that data, e.g. "Jezero crater, Mars · HiRISE". */
+  readonly credits: string[] = [];
+  /** Macro heights in metres on a (size*this.res+1)² grid. */
   private readonly h: Float32Array;
   /** 0..1 albedo variation (ejecta bright, crater floors dark), same grid. */
   private readonly albedo: Float32Array;
   private readonly n: number;
+  /** Height grid samples per metre: 4 for surface fields, 2 for wide orbit fields. */
+  private readonly res: number;
   private readonly boulderCells = new Map<number, FieldBoulder[]>();
 
   constructor(opts: FieldOptions = {}) {
     this.size = opts.size ?? 128;
     this.seed = (opts.seed ?? 1) >>> 0;
     this.style = typeof opts.style === 'object' ? opts.style : FIELD_STYLES[opts.style ?? 'regolith'];
+    this.recipe = opts.recipe ?? recipeForStyle(this.style);
     this.landing = opts.landing ?? { x: this.size / 2, y: this.size / 2 };
-    this.n = this.size * GRID + 1;
+    this.res = this.size > 200 ? 2 : 4;
+    this.n = this.size * this.res + 1;
     this.h = new Float32Array(this.n * this.n);
     this.albedo = new Float32Array(this.n * this.n);
-    this.placeCraters();
-    this.buildGrid();
-    this.placeBoulders();
-    this.placeDeposits(opts.resources ?? ['iron', 'nickel', 'cobalt'], opts.deposits ?? 6, opts.depositScale ?? 1);
+    this.generate(opts);
   }
 
   // ── Sampling ──────────────────────────────────────────────────────────
@@ -130,6 +138,12 @@ export class FieldTerrain {
       (this.height(x + e, y) - this.height(x - e, y)) / (2 * e),
       (this.height(x, y + e) - this.height(x, y - e)) / (2 * e),
     ];
+  }
+
+  /** Rise per metre in the steepest direction. */
+  slope(x: number, y: number): number {
+    const [gx, gy] = this.gradient(x, y);
+    return Math.hypot(gx, gy);
   }
 
   /** Unit surface normal (x east, y south, z up). */
@@ -160,8 +174,8 @@ export class FieldTerrain {
 
   private bilinear(grid: Float32Array, x: number, y: number): number {
     const max = this.n - 1;
-    const gx = Math.max(0, Math.min(max - 1e-4, x * GRID));
-    const gy = Math.max(0, Math.min(max - 1e-4, y * GRID));
+    const gx = Math.max(0, Math.min(max - 1e-4, x * this.res));
+    const gy = Math.max(0, Math.min(max - 1e-4, y * this.res));
     const ix = Math.floor(gx), iy = Math.floor(gy);
     const fx = gx - ix, fy = gy - iy;
     const i = iy * this.n + ix;
@@ -171,128 +185,77 @@ export class FieldTerrain {
 
   // ── Generation ────────────────────────────────────────────────────────
 
-  private placeCraters(): void {
-    const rnd = mulberry32(this.seed ^ 0xc4a7e5);
-    const count = Math.round((this.size * this.size / 1000) * this.style.craters);
-    for (let i = 0; i < count * 3; i++) {
-      // Many small craters, few big ones (power law).
-      const r = 0.8 + Math.pow(rnd(), 3.4) * (this.style.maxCrater - 0.8);
-      const x = rnd() * this.size, y = rnd() * this.size;
-      if (Math.hypot(x - this.landing.x, y - this.landing.y) < LANDING_CLEAR + r) continue;
-      this.craters.push({ x, y, r, depth: r * (0.2 + rnd() * 0.1), fresh: rnd() });
-    }
-  }
-
-  private buildGrid(): void {
-    const s = this.style;
-    const seed = this.seed;
-    const cellSize = 16;
-    const cells = new Map<number, FieldCrater[]>();
-    for (const c of this.craters) {
-      const reach = c.r * 2.2;
-      for (let cy = Math.floor((c.y - reach) / cellSize); cy <= Math.floor((c.y + reach) / cellSize); cy++)
-        for (let cx = Math.floor((c.x - reach) / cellSize); cx <= Math.floor((c.x + reach) / cellSize); cx++) {
-          const k = cy * 4096 + cx;
-          (cells.get(k) ?? cells.set(k, []).get(k)!).push(c);
-        }
-    }
+  /** Run the recipe: prepare every layer, build the grid from their shapes, then place. */
+  private generate(opts: FieldOptions): void {
+    const layers = this.recipe.layers.map((spec, i) => {
+      const layer = getFieldLayer(spec.kind);
+      if (!layer) throw new Error(`Unknown field layer '${spec.kind}'`);
+      return { spec, layer, rnd: mulberry32((this.seed ^ Math.imul(i + 1, 0x9e3779b1) ^ hashKind(spec.kind)) >>> 0) };
+    });
+    let current = layers[0]?.rnd ?? Math.random;
+    const self = this;
+    const ctx: FieldGenContext = {
+      size: this.size, seed: this.seed, style: this.style, clear: LANDING_CLEAR,
+      get landing() { return self.landing; },
+      set landing(v: Vec2) { if (!opts.landing) self.landing = v; },
+      craters: this.craters, boulders: this.boulders, deposits: this.deposits, sources: this.sources, credits: this.credits,
+      resources: opts.resources ?? ['iron', 'nickel', 'cobalt'], depositCount: opts.deposits ?? 6, depositScale: opts.depositScale ?? 1,
+      rnd: () => current(),
+      height: (x, y) => this.height(x, y),
+      slope: (x, y) => this.slope(x, y),
+      tone: (x, y) => this.tone(x, y),
+      addBoulder: b => this.addBoulder(b),
+      bouldersNear: (x, y, r) => this.bouldersNear(x, y, r),
+    };
+    for (const l of layers) { current = l.rnd; l.layer.prepare?.(ctx, l.spec); }
+    const shapes: ((x: number, y: number, s: FieldSample) => void)[] = [];
+    for (const l of layers) { current = l.rnd; const f = l.layer.shape?.(ctx, l.spec); if (f) shapes.push(f); }
+    const s: FieldSample = { h: 0, tone: 0.5 };
     for (let j = 0; j < this.n; j++) {
       for (let i = 0; i < this.n; i++) {
-        const x = i / GRID, y = j / GRID;
-        // Rolling relief: two octaves of simplex, broad and gentle.
-        let h = (simplex2(x * 0.018, y * 0.018, seed) - 0.5) * s.relief * 2
-          + (simplex2(x * 0.05, y * 0.05, seed + 7) - 0.5) * s.relief * 0.6;
-        // Ridges: folded noise, sharp crests.
-        if (s.ridges > 0) {
-          const r = 1 - Math.abs(simplex2(x * 0.03, y * 0.03, seed + 13) * 2 - 1);
-          h += Math.pow(r, 3) * s.ridges * s.relief * 1.4;
-        }
-        // Fine undulation so slopes are never perfectly planar.
-        h += (simplex2(x * 0.22, y * 0.22, seed + 29) - 0.5) * 0.35;
-        let tone = 0.5 + (simplex2(x * 0.04, y * 0.04, seed + 41) - 0.5) * 0.8 + (simplex2(x * 0.13, y * 0.13, seed + 43) - 0.5) * 0.25;
-        const list = cells.get(Math.floor(y / cellSize) * 4096 + Math.floor(x / cellSize));
-        if (list) {
-          for (const c of list) {
-            const d = Math.hypot(x - c.x, y - c.y) / c.r;
-            if (d > 2.2) continue;
-            if (d < 1) {
-              // Bowl: parabolic floor rising to the rim.
-              h += c.depth * (d * d - 1) + c.depth * 0.35;
-              tone -= (1 - d) * 0.18;
-            } else {
-              // Raised rim that falls off into ejecta.
-              const t = (d - 1) / 1.2;
-              h += c.depth * 0.35 * Math.exp(-t * t * 6);
-              tone += c.fresh * 0.35 * Math.exp(-(d - 1) * 2.2) * (0.6 + 0.4 * simplex2(x * 0.6, y * 0.6, seed + 3));
-            }
-          }
-        }
-        // Flatten the landing area smoothly.
-        const ld = Math.hypot(x - this.landing.x, y - this.landing.y);
-        if (ld < LANDING_CLEAR) {
-          const k = smooth(1 - ld / LANDING_CLEAR);
-          const flat = this.flatHeight();
-          h = h * (1 - k) + flat * k;
-        }
-        this.h[j * this.n + i] = h;
-        this.albedo[j * this.n + i] = Math.max(0, Math.min(1, tone));
+        s.h = 0; s.tone = 0.5;
+        const x = i / this.res, y = j / this.res;
+        for (const f of shapes) f(x, y, s);
+        this.h[j * this.n + i] = s.h;
+        this.albedo[j * this.n + i] = Math.max(0, Math.min(1, s.tone));
       }
     }
+    this.flattenLanding();
+    for (const l of layers) { current = l.rnd; l.layer.place?.(ctx, l.spec); }
   }
 
-  private flatCache: number | null = null;
-  private flatHeight(): number {
-    if (this.flatCache !== null) return this.flatCache;
-    const { x, y } = this.landing;
-    const s = this.style;
-    this.flatCache = (simplex2(x * 0.018, y * 0.018, this.seed) - 0.5) * s.relief * 2;
-    return this.flatCache;
-  }
-
-  private placeBoulders(): void {
-    const rnd = mulberry32(this.seed ^ 0xb0d1e5);
-    const count = Math.round((this.size * this.size / 1000) * this.style.boulders);
-    for (let i = 0; i < count; i++) {
-      let x = rnd() * this.size, y = rnd() * this.size;
-      // Boulders cluster round crater rims (ejecta blocks).
-      if (this.craters.length && rnd() < 0.55) {
-        const c = this.craters[Math.floor(rnd() * this.craters.length)];
-        const a = rnd() * Math.PI * 2, d = c.r * (1.05 + rnd() * 0.8);
-        x = c.x + Math.cos(a) * d; y = c.y + Math.sin(a) * d;
+  /** Blend the landing area smoothly to its mean height. */
+  private flattenLanding(): void {
+    const { x: lx, y: ly } = this.landing;
+    let sum = 0, cnt = 0;
+    for (let a = 0; a < 12; a++)
+      for (const r of [0, LANDING_CLEAR * 0.5, LANDING_CLEAR]) {
+        sum += this.height(lx + Math.cos(a) * r, ly + Math.sin(a) * r); cnt++;
       }
-      if (x < 1 || y < 1 || x > this.size - 1 || y > this.size - 1) continue;
-      if (Math.hypot(x - this.landing.x, y - this.landing.y) < LANDING_CLEAR) continue;
-      const r = 0.25 + Math.pow(rnd(), 3) * 1.6;
-      const b: FieldBoulder = { x, y, r, h: r * (0.7 + rnd() * 0.5), tone: rnd() };
-      this.boulders.push(b);
-      const k = Math.floor(y / 4) * 4096 + Math.floor(x / 4);
-      (this.boulderCells.get(k) ?? this.boulderCells.set(k, []).get(k)!).push(b);
-    }
+    const flat = sum / cnt;
+    const r = Math.ceil((LANDING_CLEAR + 1) * this.res);
+    const ci = Math.round(lx * this.res), cj = Math.round(ly * this.res);
+    for (let j = Math.max(0, cj - r); j <= Math.min(this.n - 1, cj + r); j++)
+      for (let i = Math.max(0, ci - r); i <= Math.min(this.n - 1, ci + r); i++) {
+        const d = Math.hypot(i / this.res - lx, j / this.res - ly);
+        if (d >= LANDING_CLEAR) continue;
+        const k = smooth((1 - d / LANDING_CLEAR) * 1.6);
+        const idx = j * this.n + i;
+        this.h[idx] = this.h[idx] * (1 - k) + flat * k;
+      }
   }
 
-  private placeDeposits(resources: readonly string[], count: number, scale: number): void {
-    const rnd = mulberry32(this.seed ^ 0xd3905);
-    let tries = 0;
-    while (this.deposits.length < count && tries++ < count * 40) {
-      // Ore sits in crater floors and low ground, a short drive from the pad.
-      let x: number, y: number;
-      if (this.deposits.length < 2) {
-        const a = rnd() * Math.PI * 2, d = (7 + rnd() * 4) * scale;
-        x = this.landing.x + Math.cos(a) * d; y = this.landing.y + Math.sin(a) * d;
-      } else if (this.craters.length && rnd() < 0.5) {
-        const c = this.craters[Math.floor(rnd() * this.craters.length)];
-        x = c.x + (rnd() - 0.5) * c.r; y = c.y + (rnd() - 0.5) * c.r;
-      } else {
-        const a = rnd() * Math.PI * 2, d = 12 + rnd() * this.size * 0.35;
-        x = this.landing.x + Math.cos(a) * d; y = this.landing.y + Math.sin(a) * d;
-      }
-      if (x < 4 || y < 4 || x > this.size - 4 || y > this.size - 4) continue;
-      if (this.deposits.some(d => Math.hypot(d.x - x, d.y - y) < 10 * scale)) continue;
-      if (this.bouldersNear(x, y, 1.5).some(b => Math.hypot(b.x - x, b.y - y) < b.r + 1.5)) continue;
-      const ri = Math.min(resources.length - 1, Math.floor(Math.pow(rnd(), 1.6) * resources.length));
-      this.deposits.push({ id: `dep-${this.deposits.length}`, x, y, r: (1.6 + rnd() * 1.4) * scale, resource: resources[ri] });
-    }
+  private addBoulder(b: FieldBoulder): void {
+    this.boulders.push(b);
+    const k = Math.floor(b.y / 4) * 4096 + Math.floor(b.x / 4);
+    (this.boulderCells.get(k) ?? this.boulderCells.set(k, []).get(k)!).push(b);
   }
+}
+
+function hashKind(kind: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < kind.length; i++) h = Math.imul(h ^ kind.charCodeAt(i), 16777619);
+  return h >>> 0;
 }
 
 function smooth(t: number): number {

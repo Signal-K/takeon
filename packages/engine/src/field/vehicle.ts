@@ -1,3 +1,4 @@
+import type { Vec2 } from '../types.js';
 import type { FieldTerrain } from './terrain.js';
 
 /**
@@ -9,6 +10,11 @@ import type { FieldTerrain } from './terrain.js';
  * can pivot in place), then drives. Slopes push back in proportion to the
  * body's gravity, grades past `maxGrade` stop it, boulders block it.
  * Fixed-step and seedless, so the same inputs always give the same path.
+ *
+ * Commands (KES-543): `follow(route)` drives a planned route by itself, leg by
+ * leg, slowing for the last waypoint; any manual input takes over and drops
+ * the route. If it is held up for more than a second it gives up and calls
+ * `onStuck`, so the host can replan.
  */
 
 export interface FieldVehicleSpec {
@@ -56,6 +62,13 @@ export class FieldVehicle {
   /** Called with each new track stamp (about every 0.25 m). */
   onTrack: ((p: FieldTrackPoint) => void) | null = null;
   private lastTrack = 0;
+  /** The waypoints still to drive, or null when idle or under manual control. */
+  route: Vec2[] | null = null;
+  /** Called when the last waypoint is reached. */
+  onArrive: (() => void) | null = null;
+  /** Called when a route is abandoned because the rover is held up. */
+  onStuck: (() => void) | null = null;
+  private heldUp = 0;
 
   constructor(readonly terrain: FieldTerrain, at = terrain.landing, heading = -Math.PI / 2, spec = DEFAULT_ROVER) {
     this.spec = spec;
@@ -66,7 +79,41 @@ export class FieldVehicle {
   }
 
   setInput(input: FieldInput): void {
+    if (input.x || input.y) this.route = null;
     this.input = input;
+  }
+
+  /** Drive a planned route (from `FieldPlanner.plan`). An empty route is a no-op arrival. */
+  follow(route: Vec2[]): void {
+    this.route = route.length ? route.map(p => ({ x: p.x, y: p.y })) : null;
+    this.heldUp = 0;
+    if (!this.route) this.onArrive?.();
+  }
+
+  /** Drop any route and roll to a stop. */
+  halt(): void {
+    this.route = null;
+  }
+
+  /** Input that steers toward the next waypoint, advancing past reached ones. */
+  private autopilot(): FieldInput {
+    const r = this.route!;
+    while (r.length) {
+      const last = r.length === 1;
+      const d = Math.hypot(r[0].x - this.x, r[0].y - this.y);
+      if (d > (last ? 0.45 : 1.1)) break;
+      r.shift();
+    }
+    if (!r.length) {
+      this.route = null;
+      this.onArrive?.();
+      return { x: 0, y: 0 };
+    }
+    let left = Math.hypot(r[0].x - this.x, r[0].y - this.y);
+    for (let i = 1; i < r.length; i++) left += Math.hypot(r[i].x - r[i - 1].x, r[i].y - r[i - 1].y);
+    const throttle = Math.max(0.3, Math.min(1, left / 3));
+    const dx = r[0].x - this.x, dy = r[0].y - this.y, d = Math.hypot(dx, dy) || 1;
+    return { x: (dx / d) * throttle, y: (dy / d) * throttle };
   }
 
   /** Advance by real time; integrates in fixed 1/60 s steps. */
@@ -81,10 +128,11 @@ export class FieldVehicle {
 
   step(dt: number): void {
     const { spec, terrain } = this;
-    const mag = Math.min(1, Math.hypot(this.input.x, this.input.y));
+    const input = this.route ? this.autopilot() : this.input;
+    const mag = Math.min(1, Math.hypot(input.x, input.y));
     let target = 0;
     if (mag > 0.08) {
-      const want = Math.atan2(this.input.y, this.input.x);
+      const want = Math.atan2(input.y, input.x);
       const diff = wrap(want - this.heading);
       const turn = Math.sign(diff) * Math.min(Math.abs(diff), spec.turnRate * dt);
       this.heading = wrap(this.heading + turn);
@@ -111,6 +159,7 @@ export class FieldVehicle {
     if (this.speed > 0 && ahead > spec.maxGrade) {
       this.speed = 0;
       this.blocked = true;
+      this.holdUp(dt);
       this.settle();
       return;
     }
@@ -128,6 +177,7 @@ export class FieldVehicle {
         this.blocked = true;
       }
     }
+    if (this.blocked) this.holdUp(dt); else this.heldUp = 0;
     const edge = 1.5;
     px = Math.max(edge, Math.min(terrain.size - edge, px));
     py = Math.max(edge, Math.min(terrain.size - edge, py));
@@ -141,6 +191,16 @@ export class FieldVehicle {
       this.onTrack?.({ x: this.x, y: this.y, heading: this.heading });
     }
     this.settle();
+  }
+
+  private holdUp(dt: number): void {
+    if (!this.route) return;
+    this.heldUp += dt;
+    if (this.heldUp > 1.2) {
+      this.route = null;
+      this.heldUp = 0;
+      this.onStuck?.();
+    }
   }
 
   /** Pitch and roll from the ground under the wheels. */

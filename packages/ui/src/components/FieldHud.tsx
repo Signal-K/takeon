@@ -105,10 +105,12 @@ export interface FieldHudProps {
   /** At most two verbs; extra ones are dropped. */
   verbs?: FieldButtonProps[];
   onPause?: () => void;
+  /** Bottom-left credit for real terrain, e.g. `FieldTerrain.credits[0]`. */
+  credit?: string;
   className?: string;
 }
 
-function DefaultFieldHud({ gauges = [], verbs = [], onPause, className }: FieldHudProps) {
+function DefaultFieldHud({ gauges = [], verbs = [], onPause, credit, className }: FieldHudProps) {
   return (
     <div className={cx('tk-ot-hud', useSlotClass('FieldHud'), className)}>
       <div className="tk-ot-gauges">{gauges.map(g => <FieldGauge key={g.label} {...g} />)}</div>
@@ -117,6 +119,7 @@ function DefaultFieldHud({ gauges = [], verbs = [], onPause, className }: FieldH
           <span /><span />
         </button>
       )}
+      {credit && <div className="tk-ot-credit">Real terrain<br />{credit}</div>}
       <div className="tk-ot-verbs">{verbs.slice(0, 2).map((v, i, all) => <FieldButton key={v.label} primary={i === all.length - 1} {...v} />)}</div>
     </div>
   );

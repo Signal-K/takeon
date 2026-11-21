@@ -8,4 +8,10 @@ export {
 } from './miner.js';
 export { FieldRenderer, type FieldRenderOptions, type FieldStick, type FieldCamera, type FieldBeam } from './render.js';
 export { ORE_COLOURS, oreColour } from './meshes.js';
-export { mountFieldScene, type FieldSceneOptions, type FieldSceneHandle } from './scene.js';
+export { mountFieldScene, type FieldSceneOptions, type FieldSceneHandle, type FieldOrder } from './scene.js';
+export {
+  registerFieldLayer, getFieldLayer, listFieldLayers, recipeForStyle,
+  type FieldLayer, type FieldLayerSpec, type FieldRecipe, type FieldGenContext, type FieldSample,
+} from './pcg.js';
+export { registerFieldDem, getFieldDem, listFieldDems, sampleFieldDem, type FieldDem, type FieldDemPatch } from './dem.js';
+export { FieldPlanner, type PlanOptions } from './path.js';

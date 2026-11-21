@@ -18,6 +18,7 @@ cd desktop && npm install && npm start   # optional Electron shell for the edito
 cd pocketbase && TAKEON_ALLOW_ANON=true go run . serve --http 127.0.0.1:8094
 node scripts/export-catalog.mjs   # regen pocketbase/seed/*.json after catalog edits
 node scripts/fetch-dem.mjs        # embed real MOLA/LOLA DEM patches (needs trek.nasa.gov)
+python3 scripts/fetch-field-dems.py  # cut real HiRISE/Kaguya DTM windows for field scenes (pip install rasterio numpy)
 ```
 
 Runtime verification recipe: `.claude/skills/verify/SKILL.md`.
