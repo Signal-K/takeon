@@ -37,6 +37,8 @@ const ALLOWED: Record<string, string[]> = {
   core: ['scene', 'sim', 'render', 'input', 'audio', 'util', 'parts'],
   // Embeddable survey scene: a host-facing facade over the running game.
   survey: ['core', 'sim', 'render', 'world', 'util'],
+  // Field: continuous top-down terrain + rover for mobile scenes (KES-541). Self-contained.
+  field: ['util'],
 };
 
 function tsFiles(dir: string): string[] {

@@ -226,3 +226,23 @@ scenes.
 - **A view** — implement `SceneView`, draw from `buildScene`.
 - **A HUD component** — add a slot key in `@takeon/ui` and register the default.
 - **A gameplay rule** — it goes in `sim/`, with a test. Nowhere else.
+
+## Field module (KES-541)
+
+`src/field/` is a self-contained, opt-in model for mobile scenes. It sits apart from the voxel world and the isometric renderer, which are unchanged.
+
+- **`FieldTerrain`** is a continuous height function in metres, deterministic from `(style, seed)`.
+  - Its features are rolling relief, ridges, craters with raised rims and bright ejecta, boulders, and ore deposits.
+  - The five styles are `regolith`, `rust`, `carbon`, `metal` and `ice`.
+  - The landing area is always flat and clear, and the first deposits sit a short drive from it.
+- **`FieldVehicle`** is a skid-steer rover in continuous space.
+  - Input is a screen direction. The camera is north-up, so the screen direction is also the world direction.
+  - It turns toward the input and drives once it faces it.
+  - Slopes push back with the body's gravity, grades over `maxGrade` stop it, and boulders block it.
+  - It runs on a fixed 60 Hz step.
+- **`FieldRenderer`** is a top-down, north-up renderer.
+  - Height comes from a low north-west sun, terrain self-shadowing, boulder shadows and a tiling micro-relief bump texture.
+  - Ground is baked in 16 m chunks at device pixel density, never upscaled, so it stays sharp on phones.
+  - The rover is drawn from above, with tracks, a cast shadow and tilt from the ground under it.
+  - Scanned deposits glow. Off-screen deposits get edge pointers with a distance.
+- **`mountFieldScene(canvas, opts)`** wires these together with touch-drag and keyboard input. The host owns the HUD and calls `scan()`.

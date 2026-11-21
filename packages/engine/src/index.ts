@@ -282,3 +282,6 @@ export {
   type MinimalSceneOptions,
   type MinimalSceneHandle,
 } from './minimal/scene.js';
+
+// Field: continuous top-down terrain and rover for mobile scenes (KES-541).
+export * from './field/index.js';
