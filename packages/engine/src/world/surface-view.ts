@@ -41,11 +41,14 @@ export function smoothedSurfaceCorners(
   height: number,
   rotation: SurfaceRotation,
   smoothStep = 1.01,
-  /** View-space height sampler; defaults to the world's columns. A renderer's display relief passes its own. */
-  heightAt: (u: number, v: number) => number = (hu, hv) => surfaceHeightAtView(world, hu, hv, rotation),
 ): [number, number, number, number] {
   const cornerRaw = (x: number, y: number): number => {
-    const heights = [heightAt(x, y), heightAt(x + 1, y), heightAt(x, y + 1), heightAt(x + 1, y + 1)];
+    const heights = [
+      surfaceHeightAtView(world, x, y, rotation),
+      surfaceHeightAtView(world, x + 1, y, rotation),
+      surfaceHeightAtView(world, x, y + 1, rotation),
+      surfaceHeightAtView(world, x + 1, y + 1, rotation),
+    ];
     const valid = heights.filter(h => h >= 0);
     if (!valid.length) return -1;
     const min = Math.min(...valid);

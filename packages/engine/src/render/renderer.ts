@@ -14,7 +14,6 @@ import { hash2, hash3 } from '../util/rng.js';
 import { fbm2 } from '../util/noise/index.js';
 import { smoothedSurfaceCorners, surfaceHeightAtView, surfaceViewToWorld, worldToSurfaceView } from '../world/surface-view.js';
 import { IsoTerrainLayer, type TerrainProjector } from './iso-terrain-layer.js';
-import { BuildSite, constructionParts, crateParts, debrisParts, dozerParts, drawDust, drawModel, drawRoad, drawWire, drumParts, getAsset, lampParts, ring, mixHex, rgbOf, paverParts, poleParts, POLE_TIP, rocketParts, STRUCTURE_END, wirePoints, type Placement, type Projector, type SiteObject } from '../kit/index.js';
 
 interface Particle {
   x: number;
@@ -163,37 +162,8 @@ export class IsoRenderer implements SceneView {
   art: 'sprite' | 'solid' = 'sprite';
   /** Outline the tile the rover faces (a driving aid). A diorama turns it off. */
   facingHint = true;
-  /**
-   * `textured`: the field look (tone blobs, grain, pebbles, scalloped biome
-   * edges, scatter). `calm`: one clean tone per tile lit only by its slope,
-   * biome colours blended across a tile and no scatter, so a small phone
-   * diorama reads as one ground instead of a quilt. Set before the first draw.
-   */
-  ground: 'textured' | 'calm' = 'textured';
-  /**
-   * Display heightfield (world coords → column height) that replaces the
-   * world's heights for drawing only: a diorama passes a smoothed, flattened
-   * copy so its ground rolls instead of stepping. Never touches the sim, its
-   * voxels or a save. Set before the first draw (chunks are cached).
-   */
-  relief: ((x: number, y: number) => number) | null = null;
-  /** Size of drawn-only props (`props`) relative to one tile. Presentation only. */
-  propScale = 1;
-  /**
-   * A build site drawn on the terrain (KES-533): ground roughened, cleared
-   * and graded, structures going up, roads being laid, machines at work.
-   * Presentation only; the renderer re-caches the ground as the site's
-   * ground work moves on.
-   */
-  site: BuildSite | null = null;
-  private siteKey = '';
-  /** A site building the host has picked out (drawn with a ring round it). */
-  siteSelected: string | null = null;
-  /** Site ground heights by world tile (terrain z units), for the site's physics. */
-  private siteGround = new Map<number, number>();
   /** Smoothed visual heading; simulation heading remains discrete/deterministic. */
   private visualFacing = 0;
-  private calmCache = new Map<number, string>();
   // ── Adaptive resolution ───────────────────────────────────────────────
   private cssW = 800;
   private cssH = 600;
@@ -258,14 +228,7 @@ export class IsoRenderer implements SceneView {
   }
 
   private heightV(u: number, v: number): number {
-    if (!this.relief && !this.site) return surfaceHeightAtView(this.sim.world, u, v, this.rotation);
-    const size = this.sim.world.size;
-    if (u < 0 || v < 0 || u >= size || v >= size) return -1;
-    const w = this.toWorld(u, v);
-    const raw = this.sim.world.height(w.x, w.y);
-    if (raw < 0) return -1;
-    const base = this.relief ? this.relief(w.x, w.y) : raw;
-    return this.site ? this.site.heightAt(w.x, w.y, base) : base;
+    return surfaceHeightAtView(this.sim.world, u, v, this.rotation);
   }
 
   setRotation(rotation: ViewRotation): void {
@@ -291,7 +254,7 @@ export class IsoRenderer implements SceneView {
    * neighbourhood clamp back to the tile's own height (cliff edge).
    */
   private tileCorners(u: number, v: number, h: number): [number, number, number, number] {
-    return smoothedSurfaceCorners(this.sim.world, u, v, h, this.rotation, SMOOTH_STEP, this.relief || this.site ? (hu, hv) => this.heightV(hu, hv) : undefined);
+    return smoothedSurfaceCorners(this.sim.world, u, v, h, this.rotation, SMOOTH_STEP);
   }
 
   /** Smoothed surface height at a tile centre (world coords), for entities. */
@@ -398,22 +361,16 @@ export class IsoRenderer implements SceneView {
     }
 
     // ── Top polygon ─────────────────────────────────────────────────────
-    const m = world.get(w.x, w.y, this.relief || this.site ? world.height(w.x, w.y) : h) || Material.Regolith;
+    const m = world.get(w.x, w.y, h) || Material.Regolith;
     const def = MATERIALS[m];
-    const calm = this.ground === 'calm';
-    let topColor = calm ? this.calmTone(w.x, w.y, m) : this.tinted(m, 0);
-    // Graded site ground reads as compacted, paler and greyer than the wild ground.
-    const graded = this.site ? this.site.flattened(w.x, w.y) : 0;
-    if (graded > 0) topColor = mixHex(topColor, '#c4bcae', 0.55 * graded);
+    const topColor = this.tinted(m, 0);
     // Lighting: sun from screen top-left; slope toward it brightens.
     // Ground tone varies in smooth organic blobs (low-frequency noise) plus
     // a whisper of per-tile grain — no checkerboard, Crashlands-style patches.
     const slope = (cs[0] - cs[2]) * 0.16 + (cs[3] - cs[1]) * 0.07;
-    const blob = calm
-      ? (fbm2(w.x * 0.045, w.y * 0.045, this.sim.seed ^ 0x600d, 2) - 0.5) * 0.12
-      : (fbm2(w.x * 0.11, w.y * 0.11, this.sim.seed ^ 0x600d, 3) - 0.5) * 0.34;
-    const grain = calm ? 0 : (hash2(w.x, w.y, 0xf00d) - 0.5) * def.jitter * 0.6;
-    const bright = Math.max(0.62, Math.min(1.36, 1 + slope * (calm ? 0.8 : 1) + blob + grain));
+    const blob = (fbm2(w.x * 0.11, w.y * 0.11, this.sim.seed ^ 0x600d, 3) - 0.5) * 0.34;
+    const grain = (hash2(w.x, w.y, 0xf00d) - 0.5) * def.jitter * 0.6;
+    const bright = Math.max(0.62, Math.min(1.36, 1 + slope + blob + grain));
 
     g.beginPath();
     g.moveTo(pT.x, pT.y);
@@ -421,65 +378,8 @@ export class IsoRenderer implements SceneView {
     g.lineTo(pB.x, pB.y);
     g.lineTo(pL.x, pL.y);
     g.closePath();
-    if (calm) {
-      // Calm ground is lit per corner, from the slope and grading shared by the
-      // four tiles round it, and blended across the tile: neighbours agree at
-      // every corner, so the ground reads as one smooth surface, not facets.
-      const base = this.calmTone(w.x, w.y, m);
-      const corner = (cu: number, cv: number): string => {
-        const hv = (a: number, b: number) => {
-          const x = this.heightV(a, b);
-          return x < 0 ? h : x;
-        };
-        const a = hv(cu, cv), b = hv(cu + 1, cv), c = hv(cu, cv + 1), d = hv(cu + 1, cv + 1);
-        const cl = (x: number) => Math.max(-2.5, Math.min(2.5, x));
-        const du = cl((b + d - a - c) / 2), dv = cl((c + d - a - b) / 2);
-        const w0 = this.toWorld(cu, cv), w1 = this.toWorld(cu + 1, cv + 1);
-        const wx = (w0.x + w1.x) / 2, wy = (w0.y + w1.y) / 2;
-        const lit = 1 + (-(du + dv) * 0.16 + (dv - du) * 0.07) * 0.8 + (fbm2(wx * 0.045, wy * 0.045, this.sim.seed ^ 0x600d, 2) - 0.5) * 0.12;
-        // The corner's colour is shared by the four tiles round it, so tints
-        // blend across tile edges instead of stepping along them.
-        let r = 0, gg2 = 0, bb2 = 0, n = 0;
-        for (const [ou, ov] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
-          const tw = this.toWorld(cu + ou, cv + ov);
-          const tm = world.inBounds(tw.x, tw.y) && world.height(tw.x, tw.y) >= 0 ? world.get(tw.x, tw.y, world.height(tw.x, tw.y)) || Material.Regolith : null;
-          const [cr, cg, cb] = rgbOf(tm == null ? base : this.calmTone(tw.x, tw.y, tm));
-          r += cr; gg2 += cg; bb2 += cb; n++;
-        }
-        const mixed = `#${((Math.round(r / n) << 16) | (Math.round(gg2 / n) << 8) | Math.round(bb2 / n)).toString(16).padStart(6, '0')}`;
-        const gr = this.site ? this.site.flattened(wx, wy) : 0;
-        const tone = gr > 0 ? mixHex(mixed, '#c4bcae', 0.55 * gr) : mixed;
-        return shade(tone, Math.max(0.62, Math.min(1.36, lit)));
-      };
-      const cT = corner(u - 1, v - 1), cR = corner(u, v - 1), cB = corner(u, v), cL = corner(u - 1, v);
-      // Fill a hair larger than the tile, so neighbours overlap instead of
-      // leaving an anti-aliased seam (a stroke drew its own line in one colour).
-      const grow = 0.75;
-      g.beginPath();
-      g.moveTo(pT.x, pT.y - grow);
-      g.lineTo(pR.x + grow, pR.y);
-      g.lineTo(pB.x, pB.y + grow);
-      g.lineTo(pL.x - grow, pL.y);
-      g.closePath();
-      const ramp = g.createLinearGradient(pT.x, pT.y, pB.x, pB.y);
-      ramp.addColorStop(0, cT);
-      ramp.addColorStop(1, cB);
-      g.fillStyle = ramp;
-      g.fill();
-      // The side corners blend in from their ends toward the tile's middle.
-      const midX = (pL.x + pR.x) / 2, midY = (pL.y + pR.y) / 2;
-      for (const [pt, col] of [[pL, cL], [pR, cR]] as const) {
-        const [r, gg, bb] = rgbOf(col);
-        const side = g.createLinearGradient(pt.x, pt.y, midX, midY);
-        side.addColorStop(0, `rgba(${r},${gg},${bb},1)`);
-        side.addColorStop(1, `rgba(${r},${gg},${bb},0)`);
-        g.fillStyle = side;
-        g.fill();
-      }
-    } else {
-      g.fillStyle = shade(topColor, bright);
-      g.fill();
-    }
+    g.fillStyle = shade(topColor, bright);
+    g.fill();
     // Faint field grid, re-projected with the tile so the higher camera
     // still reads as a surveyed surface rather than a painted blob.
     if (this.fieldGrid) {
@@ -500,7 +400,7 @@ export class IsoRenderer implements SceneView {
     // reaches into this tile, paint soft intrusions of its colour. Interior
     // tiles (all samples agree) get none and stay clean, so only boundaries
     // pick up the organic, interlocking patch look.
-    if (!calm && (m === Material.Regolith || m === Material.Dust || m === Material.Silica)) {
+    if (m === Material.Regolith || m === Material.Dust || m === Material.Silica) {
       const cz = (cs[0] + cs[1] + cs[2] + cs[3]) / 4;
       for (const [du, dv] of BIOME_SAMPLES) {
         const ws = this.toWorld(u + du, v + dv);
@@ -523,7 +423,7 @@ export class IsoRenderer implements SceneView {
       const y2 = pL.y + (pB.y - pL.y) * a;
       return { x: x1 + (x2 - x1) * b, y: y1 + (y2 - y1) * b };
     };
-    const n = calm ? 0 : 9;
+    const n = 9;
     for (let i = 0; i < n; i++) {
       const r1 = hash3(w.x, w.y, i, 0xcafe);
       const r2 = hash3(w.x, w.y, i, 0xdead);
@@ -576,46 +476,13 @@ export class IsoRenderer implements SceneView {
     // Decorative scatter: tufts, rock clusters and shards on ~1 in 14 open
     // tiles. Part of the cached chunk, so it costs nothing per frame.
     const doodadRoll = hash2(w.x, w.y, 0xd00d);
-    const swept = this.site ? this.site.cleared(w.x, w.y) > 0.5 || graded > 0.3 : false;
-    if (!swept && doodadRoll < (calm ? 0.035 : 0.07) && m !== Material.Basalt && m !== Material.Rock) {
+    if (doodadRoll < 0.07 && m !== Material.Basalt && m !== Material.Rock) {
       const cz = (cs[0] + cs[1] + cs[2] + cs[3]) / 4;
       const c = proj(u, v, cz);
       const ox = (hash2(w.x, w.y, 0xa11) - 0.5) * 10 * scale;
       const oy = (hash2(w.x, w.y, 0xb22) - 0.5) * 5 * scale;
       this.drawDoodad(g, c.x + ox, c.y + oy, scale, w.x, w.y, m, bright);
     }
-  }
-
-  /**
-   * Calm ground's tile colour: the surface biome colours of the 3x3
-   * neighbourhood averaged, so a biome edge fades over a tile or two
-   * instead of meeting in a hard, scalloped line.
-   */
-  private calmTone(x: number, y: number, m: Material): string {
-    const key = (x << 16) ^ y;
-    const hit = this.calmCache.get(key);
-    if (hit) return hit;
-    const world = this.sim.world;
-    let r = 0, gg = 0, b = 0, n = 0;
-    for (let dy = -1; dy <= 1; dy++)
-      for (let dx = -1; dx <= 1; dx++) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (!world.inBounds(nx, ny) || world.height(nx, ny) < 0) continue;
-        const nm = world.get(nx, ny, world.height(nx, ny)) || Material.Regolith;
-        // The tile's own colour weighs double, so ore and ice still read as themselves.
-        const c = parseInt(this.tinted(dx === 0 && dy === 0 ? m : nm, 0).slice(1), 16);
-        const wgt = dx === 0 && dy === 0 ? 2 : 1;
-        r += ((c >> 16) & 255) * wgt;
-        gg += ((c >> 8) & 255) * wgt;
-        b += (c & 255) * wgt;
-        n += wgt;
-      }
-    const hex = n
-      ? `#${((Math.round(r / n) << 16) | (Math.round(gg / n) << 8) | Math.round(b / n)).toString(16).padStart(6, '0')}`
-      : this.tinted(m, 0);
-    this.calmCache.set(key, hex);
-    return hex;
   }
 
   /** Small hand-placed-looking props with chunky outlines. */
@@ -792,19 +659,6 @@ export class IsoRenderer implements SceneView {
       camera.cy += (p.sy - camera.cy) * 0.15;
     }
 
-    // A build site moves its ground work on with the drawn clock.
-    if (this.site) {
-      // Its bodies stand on the ground as drawn (in tiles of height).
-      this.site.physics.ground = (x, y) => this.siteGroundAt(x, y);
-      this.site.setTime(this.renderTime);
-      const key = this.site.terrainKey();
-      if (key !== this.siteKey) {
-        this.siteKey = key;
-        this.siteGround.clear();
-        this.terrainLayer.invalidateAll();
-      }
-    }
-
     // Terrain chunks in painter order.
     this.terrainLayer.draw(ctx, camera);
 
@@ -825,7 +679,6 @@ export class IsoRenderer implements SceneView {
     }
     this.drawRoute(rover.renderPos);
     this.drawFormationRing();
-    this.drawSiteRoads(daylight);
 
     // Entities in view-space diagonal order.
     type Ent = { s: number; draw: () => void };
@@ -852,12 +705,11 @@ export class IsoRenderer implements SceneView {
           const flying = this.propLaunches.some((l) => l.pos.x === st.pos.x && l.pos.y === st.pos.y);
           const ready = st.cooldownUntil == null || sim.time >= st.cooldownUntil;
           const model = this.art === 'solid' ? structureModel(st.type, st.progress ?? 1, ready && !flying) : null;
-          if (model) drawSolid(ctx, (px, py) => camera.toScreen(px, py), { x: sv.x, y: sv.y, z: sz + 0.5, heading: 0, scale: this.props.includes(st) ? this.propScale : 1, zPerUnit: Math.SQRT2 }, model);
+          if (model) drawSolid(ctx, (px, py) => camera.toScreen(px, py), { x: sv.x, y: sv.y, z: sz + 0.5, heading: 0, scale: 1, zPerUnit: Math.SQRT2 }, model);
           else drawStructure(ctx, p.x, p.y, camera.zoom, st, sim.time, daylight, powered);
         },
       });
     }
-    this.pushSiteEntities(ents, daylight);
     if (this.showRover) {
       const p = camera.toScreen(...projXY(rv.x, rv.y, rz + 0.55));
       const screenFacing = (((rover.facing - this.rotation) % 4) + 4) % 4;
@@ -950,8 +802,7 @@ export class IsoRenderer implements SceneView {
       if (alpha <= 0) continue;
       drawLaunch(ctx, p.x, p.y, camera.zoom, age, true);
       ctx.globalAlpha = alpha;
-      if (this.siteAt(l.pos)) drawModel(ctx, this.projector(), { x: lv.x, y: lv.y, z: lz + 0.5 + 0.14 * Math.SQRT2 + rise / TILE_Z, heading: 0, scale: 1, zPerUnit: Math.SQRT2 }, rocketParts(0), { shadow: false, time: this.renderTime });
-      else drawSolid(ctx, (px, py) => camera.toScreen(px, py), { x: lv.x, y: lv.y, z: lz + 0.5 + 0.1 * Math.SQRT2 + rise / TILE_Z, heading: 0, scale: 1, zPerUnit: Math.SQRT2, shadow: false }, rocketModel(0));
+      drawSolid(ctx, (px, py) => camera.toScreen(px, py), { x: lv.x, y: lv.y, z: lz + 0.5 + 0.1 * Math.SQRT2 + rise / TILE_Z, heading: 0, scale: 1, zPerUnit: Math.SQRT2, shadow: false }, rocketModel(0));
       ctx.globalAlpha = 1;
     }
   }
@@ -1535,166 +1386,6 @@ export class IsoRenderer implements SceneView {
     }
   }
 
-  /** View-space point (x, y, terrain z) to canvas pixels, for kit models. */
-  private projector(): Projector {
-    const camera = this.camera;
-    return (x, y, z) => {
-      const q = project(x, y, z);
-      return camera.toScreen(q.sx, q.sy);
-    };
-  }
-
-  /** A site building standing on this tile, if any. */
-  private siteAt(pos: Vec2) {
-    return this.site?.buildings.find((b) => b.at.x === pos.x && b.at.y === pos.y) ?? null;
-  }
-
-  /** The site's roads, laid on the ground before anything stands on it. */
-  private drawSiteRoads(daylight: number): void {
-    const site = this.site;
-    if (!site) return;
-    const proj = this.projector();
-    const zoom = this.camera.zoom;
-    // A road half a tile wide: the screen width of half a tile across a tile edge.
-    const width = Math.hypot(TILE_W / 4, TILE_H / 4) * zoom * 0.9;
-    for (const road of site.roads) {
-      const t = site.roadProgress(road);
-      if (t <= 0) continue;
-      const pts = road.path.map((p) => {
-        const v = this.toView(p.x, p.y);
-        return proj(v.x, v.y, this.surfaceZ(p.x, p.y) + 0.5);
-      });
-      drawRoad(this.ctx, pts, t, width, 1 - daylight);
-    }
-  }
-
-  /** The site's ground at a world point, in tiles of height (bilinear over tile centres). */
-  private siteGroundAt(x: number, y: number): number {
-    const size = this.sim.world.size;
-    const at = (i: number, j: number) => {
-      const ci = Math.max(0, Math.min(size - 1, i)), cj = Math.max(0, Math.min(size - 1, j));
-      const key = cj * size + ci;
-      let h = this.siteGround.get(key);
-      if (h === undefined) {
-        const v = this.toView(ci, cj);
-        h = Math.max(0, this.heightV(v.x, v.y));
-        this.siteGround.set(key, h);
-      }
-      return h;
-    };
-    const x0 = Math.floor(x), y0 = Math.floor(y);
-    const fx = x - x0, fy = y - y0;
-    const top = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * fx;
-    const bottom = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * fx;
-    return (top + (bottom - top) * fy) / Math.SQRT2;
-  }
-
-  /**
-   * Every site game object (buildings, debris, crates, drums, lamps, poles,
-   * machines) where its body is, depth-sorted with the other entities, and
-   * the cables between poles.
-   */
-  private pushSiteEntities(ents: { s: number; draw: () => void }[], daylight: number): void {
-    const site = this.site;
-    if (!site) return;
-    const ctx = this.ctx;
-    const proj = this.projector();
-    const time = this.renderTime;
-    const night = Math.max(0, Math.min(1, (1 - daylight) * 1.3));
-    const place = (o: SiteObject) => {
-      const b = o.body;
-      const v = this.toView(b.x, b.y);
-      const pl: Placement = { x: v.x, y: v.y, z: b.z * Math.SQRT2 + 0.5, heading: b.heading, scale: 1, zPerUnit: Math.SQRT2 };
-      return { v, pl };
-    };
-    for (const o of site.objects()) {
-      const { v, pl } = place(o);
-      const b = o.body;
-      switch (o.kind) {
-        case 'building': {
-          const sb = o.building!;
-          const def = getAsset(sb.asset);
-          if (!def) break;
-          // The model stands on its anchor tile; the body is its footprint.
-          const av = this.toView(sb.at.x, sb.at.y);
-          const bpl = { ...pl, x: av.x, y: av.y };
-          const flying = this.propLaunches.some((l) => l.pos.x === sb.at.x && l.pos.y === sb.at.y);
-          // Big footprints sort by their front edge, so the ground around them is not drawn over them.
-          ents.push({
-            s: av.x + av.y + (def.footprint - 1) * 0.5,
-            draw: () => {
-              const progress = site.buildProgress(sb);
-              const model = def.model({ time, rocket: !flying });
-              if (this.siteSelected === sb.id) {
-                // A picked building stands in a pulsing ring.
-                const r = def.footprint * 0.62 + Math.sin(time * 4) * 0.03;
-                drawModel(ctx, proj, bpl, [ring(0, 0, r, 0.06, '#7fe7ff', 0.01)], { shadow: false });
-              }
-              if (progress < STRUCTURE_END) drawModel(ctx, proj, bpl, model, { ghost: true });
-              drawModel(ctx, proj, bpl, constructionParts(model, progress, time + sb.start), { time, night });
-            },
-          });
-          break;
-        }
-        case 'debris': {
-          const d = o.debris!;
-          const tx = Math.round(b.x), ty = Math.round(b.y);
-          const g = this.calmTone(tx, ty, this.sim.world.get(tx, ty, Math.max(0, this.sim.world.height(tx, ty))) || Material.Regolith);
-          pl.scale = d.size;
-          // A shoved boulder turns as it rolls.
-          if (d.kind === 'boulder') {
-            pl.heading += b.rolled * 1.6;
-            // It tumbles too: rocking over its edges while it moves, settling flat as it slows.
-            const speed = Math.hypot(b.vx, b.vy);
-            const tilt = Math.sin(b.rolled * 5.5) * 0.45 * Math.min(1, speed / 0.6);
-            pl.tilt = tilt;
-            pl.z += Math.abs(Math.sin(tilt)) * 0.2 * d.size * Math.SQRT2;
-          }
-          ents.push({ s: v.x + v.y - 0.02, draw: () => drawModel(ctx, proj, pl, debrisParts(d.kind, d.seed, g), { time }) });
-          break;
-        }
-        case 'crate':
-        case 'drum':
-          ents.push({ s: v.x + v.y, draw: () => drawModel(ctx, proj, pl, o.kind === 'crate' ? crateParts(o.seed) : drumParts(o.seed), { time, night }) });
-          break;
-        case 'lamp':
-          ents.push({ s: v.x + v.y, draw: () => drawModel(ctx, proj, pl, lampParts(), { time, night, shadow: false }) });
-          break;
-        case 'pole':
-          ents.push({ s: v.x + v.y, draw: () => drawModel(ctx, proj, pl, poleParts(), { time, night }) });
-          break;
-        case 'vehicle':
-          ents.push({
-            s: v.x + v.y + 0.01,
-            draw: () => {
-              const c = proj(pl.x, pl.y, pl.z);
-              drawModel(ctx, proj, pl, o.vehicle === 'dozer' ? dozerParts(time) : paverParts(time), { time, night });
-              drawDust(ctx, c, 7 * this.camera.zoom, time, b.x * 7 + b.y);
-            },
-          });
-          break;
-      }
-    }
-    // Cables hang between pole tops, two per span, drawn with the nearer pole.
-    const width = Math.max(0.7, this.camera.zoom * 0.45);
-    for (const w of site.wires()) {
-      const av = this.toView(w.a.x, w.a.y), bv = this.toView(w.b.x, w.b.y);
-      const len = Math.hypot(bv.x - av.x, bv.y - av.y) || 1;
-      // Across the span, for the two insulators.
-      const nx = -(bv.y - av.y) / len, ny = (bv.x - av.x) / len;
-      const za = w.a.z * Math.SQRT2 + 0.5 + POLE_TIP.z * Math.SQRT2, zb = w.b.z * Math.SQRT2 + 0.5 + POLE_TIP.z * Math.SQRT2;
-      ents.push({
-        s: Math.max(av.x + av.y, bv.x + bv.y) + 0.02,
-        draw: () => {
-          for (const side of [-1, 1]) {
-            const o = POLE_TIP.s * side;
-            drawWire(ctx, wirePoints({ x: av.x + nx * o, y: av.y + ny * o, z: za }, { x: bv.x + nx * o, y: bv.y + ny * o, z: zb }, 0.12, proj), width, night);
-          }
-        },
-      });
-    }
-  }
-
   /** Dashed route and waypoint markers, projected onto the current surface. */
   private drawRoute(from: Vec2): void {
     if (this.route.length === 0) return;
@@ -1760,30 +1451,6 @@ export class IsoRenderer implements SceneView {
     for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.closePath();
     ctx.stroke();
-  }
-
-  /**
-   * The site building drawn under a canvas-space point (CSS pixels), front-most
-   * first: its footprint box from ground to roof, as projected.
-   */
-  pickSite(canvasX: number, canvasY: number): string | null {
-    const site = this.site;
-    if (!site) return null;
-    const proj = this.projector();
-    const hits = site.objects().filter((o) => o.kind === 'building').map((o) => {
-      const b = o.body;
-      const [hx, hy] = b.shape.kind === 'box' ? [b.shape.hx, b.shape.hy] : [0.5, 0.5];
-      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-      for (const dx of [-hx, hx]) for (const dy of [-hy, hy]) for (const z of [b.z, b.z + b.h]) {
-        const v = this.toView(b.x + dx, b.y + dy);
-        const p = proj(v.x, v.y, z * Math.SQRT2 + 0.5);
-        x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
-      }
-      const v = this.toView(b.x, b.y);
-      return { id: o.id, depth: v.x + v.y, hit: canvasX >= x0 && canvasX <= x1 && canvasY >= y0 && canvasY <= y1 };
-    }).filter((h) => h.hit);
-    hits.sort((a, b) => b.depth - a.depth);
-    return hits[0]?.id ?? null;
   }
 
   /** World tile under a canvas-space point (front-most surface wins). */

@@ -21,8 +21,6 @@ const SRC = join(__dirname, '..', 'src');
 /** folder -> folders it may import from (types.ts and same-folder are free). */
 const ALLOWED: Record<string, string[]> = {
   util: [],
-  // The asset and build-site kit: pure drawing over a host projector.
-  kit: [],
   audio: [],
   module: ['go'],
   go: [],
@@ -34,7 +32,7 @@ const ALLOWED: Record<string, string[]> = {
   // The scene model flattens a running sim into renderer-agnostic entities,
   // so it sits above sim and below every renderer.
   scene: ['sim', 'world', 'util'],
-  render: ['scene', 'sim', 'world', 'util', 'kit'],
+  render: ['scene', 'sim', 'world', 'util'],
   input: ['render'],
   core: ['scene', 'sim', 'render', 'input', 'audio', 'util', 'parts'],
   // Embeddable survey scene: a host-facing facade over the running game.
