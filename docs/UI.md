@@ -87,7 +87,7 @@ Keys (exported as `SLOT_KEYS`):
 | `TileMenu` | Tap-a-tile context menu |
 | `BuildPanel`, `CraftPanel`, `CargoPanel`, `EndMissionDialog` | Modal panels |
 | `ToastStack` | Event feedback |
-| `FieldHud`, `FieldButton`, `FieldGauge` | Field HUD (KES-543), in the Out There palette. Round, chunky thumb buttons that press down: the primary verb is large in the bottom-right thumb spot and the secondary sits up and to its left. Buttons take `tone`, and `charge` (0..1) fills a ring round the face. Gauges sit in one framed panel at the top left, with segmented bars that blink red when low. A round pause button sits at the top right. `credit` shows a bottom-left credit for real terrain. Plain `tk-ot-*` markup, so non-React hosts can use the CSS alone |
+| `FieldHud`, `FieldButton`, `FieldGauge` | Field HUD (KES-543), in the Out There palette. Light and flat over the terrain. Flat round thumb buttons with one soft shadow (no bevel or lip): the primary verb is large in the bottom-right thumb spot and the secondary sits up and to its left. Buttons take `tone`, and `charge` (0..1) fills a thin ring round the face. Gauges sit in one frosted, see-through strip at the top left, with slim bars that blink red when low. A frosted round pause button sits at the top right. `credit` shows a bottom-left credit for real terrain. Plain `tk-ot-*` markup, so non-React hosts can use the CSS alone |
 | `Meter`, `Modal`, `Chip` | Shared primitives — override these to restyle everything at once |
 
 An override receives the same props as the default and can render the default

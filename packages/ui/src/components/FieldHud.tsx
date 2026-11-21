@@ -2,11 +2,13 @@ import type { ReactNode } from 'react';
 import { createSlot, cx, useSlotClass } from '../registry.js';
 
 /**
- * Field HUD kit (KES-543): round, chunky game buttons with a lip that press
- * down, the primary verb big in the bottom-right thumb spot and the secondary
- * up and to its left, a ring for charge or cooldown, one framed gauge panel at
- * the top left with segmented bars, and a round pause button top right. Plain markup with `tk-ot-*` classes from `styles.css`, so a host that
- * is not React (or the field demo) can use the same look.
+ * Field HUD kit (KES-543): light and flat over the terrain. Flat round
+ * verbs, the primary bigger in the bottom-right thumb spot and the secondary
+ * up and to its left, with a thin ring for charge or cooldown; a frosted gauge
+ * strip top left with slim bars; a frosted round pause button top right. No
+ * black plates, bevels or lips. Plain markup with `tk-ot-*` classes from
+ * `styles.css`, so a host that is not React (or the field demo) can use the
+ * same look.
  */
 
 const svg = (body: ReactNode) => (
@@ -15,7 +17,7 @@ const svg = (body: ReactNode) => (
   </svg>
 );
 
-/** Original line icons, white on the black tile. */
+/** Original line icons: white on a button face, tone-coloured beside a gauge. */
 export const FIELD_ICONS: Record<string, ReactNode> = {
   scan: svg(<><circle cx="12" cy="12" r="2.5" /><path d="M7.5 7.5a6.4 6.4 0 0 0 0 9M16.5 7.5a6.4 6.4 0 0 1 0 9M4.6 4.6a10.5 10.5 0 0 0 0 14.8M19.4 4.6a10.5 10.5 0 0 1 0 14.8" /></>),
   laser: svg(<><path d="M4 20 14 10" /><path d="M14 10l2-6 4 4-6 2z" /><path d="M3 15l2 1M8 21l-1-2M2 19h2" /></>),
