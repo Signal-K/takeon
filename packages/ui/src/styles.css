@@ -1134,3 +1134,125 @@ button.tk-chip:hover {
     height: 42px;
   }
 }
+
+/* ── Field HUD, Out There: Omega manner (KES-543) ─────────────────────────
+   White command bars with a black icon tile and notched black end cap, small
+   icon gauges top left, a pause square top right, two verbs bottom right. */
+.tk-ot-hud {
+  --tk-ot-font: 'Exo 2', 'Oxanium', system-ui, sans-serif;
+  --tk-ot-ink: #000;
+  --tk-ot-paper: #fff;
+  --tk-ot-ok: #56e79f;
+  --tk-ot-danger: #f21846;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--tk-ot-font);
+  font-style: italic;
+}
+.tk-ot-hud > * { pointer-events: auto; }
+.tk-ot-gauges {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+  display: flex;
+  gap: 10px;
+  pointer-events: none;
+}
+.tk-ot-gauge { display: flex; align-items: flex-end; gap: 4px; color: var(--tk-ot-paper, #fff); }
+.tk-ot-gauge-icon { width: 24px; height: 24px; margin-bottom: 2px; filter: drop-shadow(0 1px 0 #000) drop-shadow(0 0 2px rgba(0, 0, 0, 0.7)); }
+.tk-ot-gauge-icon svg { width: 100%; height: 100%; }
+.tk-ot-gauge-body { display: flex; flex-direction: column; gap: 1px; }
+.tk-ot-gauge-label {
+  font: italic 700 14px/1 var(--tk-ot-font, system-ui);
+  text-shadow: 0 1px 0 #000, 0 0 3px rgba(0, 0, 0, 0.8);
+}
+.tk-ot-gauge-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 66px;
+  height: 18px;
+  padding: 2px 5px 2px 2px;
+  background: #fff;
+  border-radius: 5px;
+  box-shadow: 0 2px 0 #000;
+}
+.tk-ot-gauge-track { flex: 1; height: 100%; background: #000; border-radius: 3px; overflow: hidden; }
+.tk-ot-gauge-fill { display: block; height: 100%; background: var(--tk-ot-ok, #56e79f); }
+.tk-ot-gauge[data-low] .tk-ot-gauge-fill { background: var(--tk-ot-danger, #f21846); }
+.tk-ot-gauge-value { min-width: 22px; text-align: right; color: #000; font: italic 700 14px/1 var(--tk-ot-font, system-ui); }
+.tk-ot-pause {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 2px solid #fff;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.tk-ot-pause span { width: 5px; height: 16px; background: #fff; border-radius: 1px; }
+.tk-ot-verbs {
+  position: absolute;
+  right: 12px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  gap: 10px;
+}
+.tk-ot-btn {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  width: 160px;
+  height: 48px;
+  padding: 0;
+  background: var(--tk-ot-paper, #fff);
+  color: #000;
+  border: 2.5px solid #000;
+  border-radius: 6px;
+  box-shadow: 0 4px 0 #000;
+  font: italic 700 18px/1 var(--tk-ot-font, system-ui);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: transform 60ms, box-shadow 60ms;
+}
+.tk-ot-btn:active, .tk-ot-btn[data-on] { transform: translateY(3px); box-shadow: 0 1px 0 #000; }
+.tk-ot-btn[data-on] { background: var(--tk-ot-ok, #56e79f); }
+.tk-ot-btn:disabled { opacity: 0.55; cursor: default; }
+.tk-ot-btn:focus-visible { outline: 3px solid var(--tk-ot-ok, #56e79f); outline-offset: 3px; }
+.tk-ot-btn-icon {
+  flex: 0 0 auto;
+  width: 40px;
+  margin: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  color: #fff;
+  border-radius: 3px;
+}
+.tk-ot-btn-icon svg { width: 26px; height: 26px; }
+.tk-ot-btn-label { flex: 1; display: flex; align-items: center; justify-content: center; padding-right: 4px; }
+/* Black end cap with a white notch bitten out of its inner edge. */
+.tk-ot-btn-cap {
+  flex: 0 0 11px;
+  background:
+    radial-gradient(circle at 0 50%, var(--tk-ot-paper, #fff) 0 5px, transparent 5.5px),
+    #000;
+}
+.tk-ot-btn[data-on] .tk-ot-btn-cap {
+  background: radial-gradient(circle at 0 50%, var(--tk-ot-ok, #56e79f) 0 5px, transparent 5.5px), #000;
+}
+@media (max-width: 380px) {
+  .tk-ot-btn { width: 140px; }
+  .tk-ot-gauges { gap: 6px; }
+  .tk-ot-gauge-bar { width: 56px; }
+}

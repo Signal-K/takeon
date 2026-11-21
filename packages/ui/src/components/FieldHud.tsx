@@ -1,0 +1,114 @@
+import type { ReactNode } from 'react';
+import { createSlot, cx, useSlotClass } from '../registry.js';
+
+/**
+ * Field HUD kit in the Out There: Omega manner (KES-543): white command bars
+ * with a black icon tile and a notched black end cap, small icon gauges at the
+ * top left, a pause square at the top right, at most two verbs at the bottom
+ * right. Plain markup with `tk-ot-*` classes from `styles.css`, so a host that
+ * is not React (or the field demo) can use the same look.
+ */
+
+const svg = (body: ReactNode) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {body}
+  </svg>
+);
+
+/** Original line icons, white on the black tile. */
+export const FIELD_ICONS: Record<string, ReactNode> = {
+  scan: svg(<><circle cx="12" cy="12" r="2.5" /><path d="M7.5 7.5a6.4 6.4 0 0 0 0 9M16.5 7.5a6.4 6.4 0 0 1 0 9M4.6 4.6a10.5 10.5 0 0 0 0 14.8M19.4 4.6a10.5 10.5 0 0 1 0 14.8" /></>),
+  laser: svg(<><path d="M4 20 14 10" /><path d="M14 10l2-6 4 4-6 2z" /><path d="M3 15l2 1M8 21l-1-2M2 19h2" /></>),
+  fuel: svg(<><path d="M12 3c3 4 6 7.2 6 10.5A6 6 0 0 1 6 13.5C6 10.2 9 7 12 3z" /><path d="M10 15a2 2 0 0 0 2 2" /></>),
+  hull: svg(<><path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z" /><path d="M12 8v8M8.5 10l7 4M15.5 10l-7 4" /></>),
+  cargo: svg(<><path d="M3.5 8 12 3.5 20.5 8v8L12 20.5 3.5 16z" /><path d="M3.5 8 12 12.5 20.5 8M12 12.5v8" /></>),
+  takeoff: svg(<><path d="M12 2.5c3 2.4 4.2 6 4.2 9.5l-1.7 4h-5L7.8 12c0-3.5 1.2-7.1 4.2-9.5z" /><path d="M9.5 16 8 20.5M14.5 16l1.5 4.5M12 7.5v2" /></>),
+  site: svg(<><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.3" /></>),
+};
+
+export interface FieldButtonProps {
+  label: string;
+  icon?: keyof typeof FIELD_ICONS | ReactNode;
+  /** Held or engaged: the bar lights up. */
+  on?: boolean;
+  disabled?: boolean;
+  onPress?: () => void;
+  /** Hold-to-fire: called with true on press and false on release. */
+  onHold?: (down: boolean) => void;
+  className?: string;
+}
+
+function DefaultFieldButton({ label, icon, on, disabled, onPress, onHold, className }: FieldButtonProps) {
+  const glyph = typeof icon === 'string' ? FIELD_ICONS[icon] : icon;
+  return (
+    <button
+      type="button"
+      className={cx('tk-ot-btn', useSlotClass('FieldButton'), className)}
+      data-on={on ? '' : undefined}
+      disabled={disabled}
+      onClick={onPress}
+      onPointerDown={onHold ? e => { e.currentTarget.setPointerCapture?.(e.pointerId); onHold(true); } : undefined}
+      onPointerUp={onHold ? () => onHold(false) : undefined}
+      onPointerCancel={onHold ? () => onHold(false) : undefined}
+    >
+      <span className="tk-ot-btn-icon">{glyph}</span>
+      <span className="tk-ot-btn-label">{label}</span>
+      <span className="tk-ot-btn-cap" />
+    </button>
+  );
+}
+
+export const FieldButton = createSlot('FieldButton', DefaultFieldButton);
+
+export interface FieldGaugeProps {
+  label: string;
+  icon?: keyof typeof FIELD_ICONS | ReactNode;
+  value: number;
+  max?: number;
+  /** Bar turns red below this fraction. */
+  lowBelow?: number;
+  className?: string;
+}
+
+function DefaultFieldGauge({ label, icon, value, max = 100, lowBelow = 0.25, className }: FieldGaugeProps) {
+  const ratio = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
+  const glyph = typeof icon === 'string' ? FIELD_ICONS[icon] : icon;
+  return (
+    <div className={cx('tk-ot-gauge', useSlotClass('FieldGauge'), className)} data-low={ratio < lowBelow ? '' : undefined}>
+      <span className="tk-ot-gauge-icon">{glyph}</span>
+      <span className="tk-ot-gauge-body">
+        <span className="tk-ot-gauge-label">{label}</span>
+        <span className="tk-ot-gauge-bar">
+          <span className="tk-ot-gauge-track"><span className="tk-ot-gauge-fill" style={{ width: `${ratio * 100}%` }} /></span>
+          <span className="tk-ot-gauge-value">{Math.round(value)}</span>
+        </span>
+      </span>
+    </div>
+  );
+}
+
+export const FieldGauge = createSlot('FieldGauge', DefaultFieldGauge);
+
+export interface FieldHudProps {
+  gauges?: FieldGaugeProps[];
+  /** At most two verbs; extra ones are dropped. */
+  verbs?: FieldButtonProps[];
+  onPause?: () => void;
+  className?: string;
+}
+
+function DefaultFieldHud({ gauges = [], verbs = [], onPause, className }: FieldHudProps) {
+  return (
+    <div className={cx('tk-ot-hud', useSlotClass('FieldHud'), className)}>
+      <div className="tk-ot-gauges">{gauges.map(g => <FieldGauge key={g.label} {...g} />)}</div>
+      {onPause && (
+        <button type="button" className="tk-ot-pause" aria-label="Pause" onClick={onPause}>
+          <span /><span />
+        </button>
+      )}
+      <div className="tk-ot-verbs">{verbs.slice(0, 2).map(v => <FieldButton key={v.label} {...v} />)}</div>
+    </div>
+  );
+}
+
+export const FieldHud = createSlot('FieldHud', DefaultFieldHud);

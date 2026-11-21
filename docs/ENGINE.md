@@ -247,7 +247,9 @@ scenes.
   - Shading is per pixel: a south-west sun, baked self-shadows, a tiling grain texture, wheel tracks, the vehicle's shadow, the scan pulse, ore glow and the laser hit point.
   - Boulders, ore crystals, the rover (wheels spin with the odometer) and the ship are low-poly meshes from `meshes.ts`.
   - The laser beam, sparks and engine flares are additive billboards.
-  - Sky colour is per style: a black starfield with a planet for airless bodies, butterscotch for rust.
+  - The look is painted and inked, in the Out There: Omega manner. Lighting falls in cel bands, shadows lean plum and distance fades into a coloured haze. The scene renders off-screen into colour, normal and depth targets. A comic pass then draws navy ink lines where depth creases or normals break, adds hatching to the deepest shade, and applies a warm/plum grade, paper grain and a vignette. Lines fade with distance so the horizon stays painted.
+  - The sky is painted per style: saturated nebulae, stars and a banded, inked planet for airless bodies, and a lilac sky with warm cloud banks for rust.
+  - The chase camera rises over any ridge between it and the rover, and looks further down as it climbs.
   - Call `project()` to turn a world point into CSS pixels, and `pick()` to turn CSS pixels into a ground point.
 - **`FieldOrbiter`** is the mining ship on a low pass. It drifts north at orbital speed, the stick slides it east and west and trims the drift, and it comes round again at the south edge.
 - **`FieldMiner`** is the laser. It locks only onto scanned ore within range (rover 7 m, orbit 45 m) and cuts until the deposit is empty. `depositScale` (opt-in) makes the bigger veins that orbit fields use.

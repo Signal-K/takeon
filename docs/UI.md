@@ -87,6 +87,7 @@ Keys (exported as `SLOT_KEYS`):
 | `TileMenu` | Tap-a-tile context menu |
 | `BuildPanel`, `CraftPanel`, `CargoPanel`, `EndMissionDialog` | Modal panels |
 | `ToastStack` | Event feedback |
+| `FieldHud`, `FieldButton`, `FieldGauge` | Field HUD in the Out There: Omega manner (KES-543): icon gauges top left, pause square top right, at most two white command bars with a black icon tile and notched end cap. Plain `tk-ot-*` markup, so non-React hosts can use the CSS alone |
 | `Meter`, `Modal`, `Chip` | Shared primitives — override these to restyle everything at once |
 
 An override receives the same props as the default and can render the default

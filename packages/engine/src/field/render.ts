@@ -37,18 +37,32 @@ export interface FieldStick { ox: number; oy: number; x: number; y: number }
 
 export interface FieldBeam { from: V3; to: V3; colour: RGB }
 
+const NEAR = 0.3;
+const FAR = 900;
+/** Navy-plum ink for outlines. */
+const INK: V3 = [0.09, 0.05, 0.14];
+
 /** Toward the sun: from the south-west, 35° up, so the camera (looking north) sees lit faces and shadows falling away. */
 const SUN_EL = (35 * Math.PI) / 180;
 const SUN_GROUND: [number, number] = [-0.8, 0.6];
 const SUN: V3 = [SUN_GROUND[0] * Math.cos(SUN_EL), Math.sin(SUN_EL), SUN_GROUND[1] * Math.cos(SUN_EL)];
 
-interface Sky { zenith: string; horizon: string; fog: string; stars: number; planet: number }
+/**
+ * Painted skies, Out There style: saturated nebulae over airless bodies, a
+ * lilac sky with warm cloud banks where there is air. `haze` is what distance
+ * fades to, `amb` the colour shadows lean towards.
+ */
+interface Sky {
+  zenith: string; horizon: string; haze: string; amb: string;
+  nebA: string; nebB: string; planetA: string; planetB: string;
+  stars: number; planet: number; atmo: number;
+}
 const SKIES: Record<FieldStyleId, Sky> = {
-  regolith: { zenith: '#010208', horizon: '#252a3a', fog: '#2a2f3e', stars: 1, planet: 1 },
-  rust: { zenith: '#5a3c33', horizon: '#d2a27a', fog: '#c19272', stars: 0, planet: 0 },
-  carbon: { zenith: '#010104', horizon: '#1d1b24', fog: '#22202a', stars: 1, planet: 1 },
-  metal: { zenith: '#020206', horizon: '#2e2822', fog: '#332c26', stars: 1, planet: 1 },
-  ice: { zenith: '#01030a', horizon: '#20324c', fog: '#243650', stars: 1, planet: 1 },
+  regolith: { zenith: '#0b0616', horizon: '#3a2050', haze: '#4a2c5e', amb: '#46307a', nebA: '#c2306e', nebB: '#2a8c9a', planetA: '#3a7fd0', planetB: '#e8f0ff', stars: 1, planet: 1, atmo: 0 },
+  rust: { zenith: '#4c66a6', horizon: '#e9b6a4', haze: '#d9a08e', amb: '#6a3a6e', nebA: '#e08a5c', nebB: '#5b3a5a', planetA: '#b8b0c8', planetB: '#ece4f2', stars: 0, planet: 0.7, atmo: 1 },
+  carbon: { zenith: '#0a0410', horizon: '#3e1d40', haze: '#4a2648', amb: '#4a2a6a', nebA: '#8a2fa0', nebB: '#d0546a', planetA: '#e07a3a', planetB: '#ffd08a', stars: 1, planet: 1, atmo: 0 },
+  metal: { zenith: '#0c0612', horizon: '#4a2a30', haze: '#5a3438', amb: '#4a2a5a', nebA: '#c0663a', nebB: '#6a3a9a', planetA: '#5a9ad0', planetB: '#f0e8d8', stars: 1, planet: 1, atmo: 0 },
+  ice: { zenith: '#050c1e', horizon: '#26476e', haze: '#2e5480', amb: '#34408a', nebA: '#3fb7c9', nebB: '#8a4fd0', planetA: '#d07a4a', planetB: '#f4d0a0', stars: 1, planet: 1, atmo: 0 },
 };
 
 const TERRAIN_VS = `#version 300 es
@@ -60,55 +74,55 @@ void main(){ vPos=aPos; vNrm=aNrm; vCol=aCol; vSh=aSh; gl_Position=uVP*vec4(aPos
 const TERRAIN_FS = `#version 300 es
 precision highp float;
 in vec3 vPos; in vec3 vNrm; in vec3 vCol; in float vSh;
-uniform vec3 uSun; uniform vec3 uShade; uniform vec3 uFog; uniform vec3 uEye; uniform vec2 uFogRange;
+uniform vec3 uSun; uniform vec3 uShade; uniform vec3 uAmb; uniform vec3 uFog; uniform vec3 uEye; uniform vec2 uFogRange;
 uniform sampler2D uDetail; uniform sampler2D uTracks; uniform float uSize; uniform float uTime;
 uniform vec4 uScan; uniform vec4 uHit;
 uniform vec4 uDep[16]; uniform vec3 uDepCol[16]; uniform int uDepN;
 uniform vec4 uBlob; uniform vec2 uBlobSize;
-out vec4 o;
+layout(location=0) out vec4 o; layout(location=1) out vec4 oN;
 void main(){
   vec2 w = vPos.xz;
   vec4 d1 = texture(uDetail, w / 5.5);
   vec4 d2 = texture(uDetail, w.yx / 19.0 + 0.37);
   vec2 b = (d1.rg - 0.5) * 2.2 + (d2.rg - 0.5) * 1.4;
-  vec3 n = normalize(normalize(vNrm) + vec3(-b.x, 0.0, -b.y) * 0.55);
-  float diff = max(dot(n, uSun), 0.0);
+  vec3 n = normalize(normalize(vNrm) + vec3(-b.x, 0.0, -b.y) * 0.32);
   float sh = vSh;
-  // Vehicle shadow: an ellipse in the vehicle's frame, pushed away from the sun.
   if (uBlob.w > 0.0) {
     vec2 q = w - uBlob.xy; float c = cos(uBlob.z), s = sin(uBlob.z);
     vec2 l = vec2(c*q.x + s*q.y, -s*q.x + c*q.y) / uBlobSize;
-    sh *= mix(1.0 - 0.75*uBlob.w, 1.0, smoothstep(0.55, 1.05, length(l)));
+    sh *= mix(1.0 - 0.8*uBlob.w, 1.0, smoothstep(0.85, 1.0, length(l)));
   }
-  float light = 0.2 + 1.18 * diff * sh;
+  // Cel bands with a dry-brush edge from the grain, plus a little of the smooth light.
+  float dl = max(dot(n, uSun), 0.0) * sh;
+  float band = 0.2 + 0.42 * smoothstep(0.1, 0.15, dl) + 0.42 * smoothstep(0.55, 0.6, dl);
+  float light = mix(band, 0.2 + 1.05 * dl, 0.25);
   vec3 col = vCol * (0.9 + d1.b * 0.22) * (0.94 + d2.b * 0.12);
   vec2 tuv = w / uSize;
-  if (tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) col *= 1.0 - texture(uTracks, tuv).r * 0.42;
-  vec3 c = col * light + uShade * max(0.0, 1.0 - light) * 0.35;
-  // Scan pulse: a bright ring sweeping out, a faint wash inside it.
+  if (tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) col *= 1.0 - texture(uTracks, tuv).r * 0.45;
+  vec3 amb = mix(uShade, uAmb, 0.7);
+  vec3 c = col * light + amb * max(0.0, 1.0 - light) * 0.55;
   if (uScan.w > 0.0) {
     float d = distance(w, uScan.xy);
     float ring = exp(-pow((d - uScan.z) / 0.7, 2.0));
     float wash = step(d, uScan.z) * 0.08;
     c += vec3(0.34, 0.91, 0.62) * (ring * 0.9 + wash) * uScan.w;
   }
-  // Scanned ore: glow on the ground and a pulsing ring.
   for (int i = 0; i < 16; i++) {
     if (i >= uDepN) break;
     vec4 dp = uDep[i];
     float d = distance(w, dp.xy);
     float glow = smoothstep(dp.z * 1.9, 0.0, d) * 0.55;
     float pulse = 0.65 + 0.35 * sin(uTime * 3.0 + float(i));
-    float ring = exp(-pow((d - dp.z * 1.35) / 0.1, 2.0)) * pulse;
+    float ring = exp(-pow((d - dp.z * 1.35) / 0.12, 2.0)) * pulse;
     c += uDepCol[i] * (glow + ring) * dp.w;
   }
-  // Laser hit: hot spot.
   if (uHit.w > 0.0) {
     float d = distance(w, uHit.xy);
     c += vec3(1.0, 0.55, 0.25) * exp(-d * d / (uHit.z * uHit.z)) * uHit.w;
   }
-  float f = smoothstep(uFogRange.x, uFogRange.y, distance(vPos, uEye));
+  float f = pow(smoothstep(uFogRange.x, uFogRange.y, distance(vPos, uEye)), 0.8);
   o = vec4(mix(c, uFog, f), 1.0);
+  oN = vec4(normalize(vNrm) * 0.5 + 0.5, 0.5);
 }`;
 
 const MESH_VS = `#version 300 es
@@ -120,19 +134,21 @@ void main(){ vec4 p = uModel*vec4(aPos,1.0); vPos=p.xyz; vNrm=mat3(uModel)*aNrm;
 const MESH_FS = `#version 300 es
 precision highp float;
 in vec3 vPos; in vec3 vNrm; in vec3 vCol;
-uniform vec3 uSun; uniform vec3 uShade; uniform vec3 uFog; uniform vec3 uEye; uniform vec2 uFogRange; uniform float uEmit; uniform float uShadow;
-out vec4 o;
+uniform vec3 uSun; uniform vec3 uShade; uniform vec3 uAmb; uniform vec3 uFog; uniform vec3 uEye; uniform vec2 uFogRange; uniform float uEmit; uniform float uShadow;
+layout(location=0) out vec4 o; layout(location=1) out vec4 oN;
 void main(){
   vec3 n = normalize(vNrm);
+  if (!gl_FrontFacing) n = -n;
   vec3 v = normalize(uEye - vPos);
-  float diff = max(dot(n, uSun), 0.0) * uShadow;
-  float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.25;
-  float spec = pow(max(dot(reflect(-uSun, n), v), 0.0), 24.0) * 0.35 * uShadow;
-  float sky = 0.5 + 0.5 * n.y;
-  vec3 c = vCol * (0.24 + 0.12 * sky + 1.05 * diff) + uShade * (1.0 - diff) * 0.25 + vec3(spec + rim);
-  c = mix(c, vCol * 1.35, uEmit);
-  float f = smoothstep(uFogRange.x, uFogRange.y, distance(vPos, uEye));
+  float dl = max(dot(n, uSun), 0.0) * uShadow;
+  float band = 0.32 + 0.4 * smoothstep(0.06, 0.12, dl) + 0.36 * smoothstep(0.55, 0.6, dl);
+  float rim = smoothstep(0.62, 0.72, 1.0 - max(dot(n, v), 0.0)) * 0.22;
+  float spec = step(0.55, pow(max(dot(reflect(-uSun, n), v), 0.0), 18.0)) * 0.4 * uShadow;
+  vec3 c = vCol * band + uAmb * (1.0 - band) * 0.45 + vec3(spec + rim);
+  c = mix(c, vCol * 1.4, uEmit);
+  float f = pow(smoothstep(uFogRange.x, uFogRange.y, distance(vPos, uEye)), 0.8);
   o = vec4(mix(c, uFog, f), 1.0);
+  oN = vec4(n * 0.5 + 0.5, 1.0);
 }`;
 
 const GLOW_VS = `#version 300 es
@@ -141,45 +157,126 @@ uniform mat4 uVP; out vec4 vCol;
 void main(){ vCol=aCol; gl_Position=uVP*vec4(aPos,1.0); }`;
 
 const GLOW_FS = `#version 300 es
-precision mediump float; in vec4 vCol; out vec4 o; void main(){ o = vec4(vCol.rgb * vCol.a, vCol.a); }`;
+precision mediump float; in vec4 vCol; layout(location=0) out vec4 o; void main(){ o = vec4(vCol.rgb * vCol.a, vCol.a); }`;
 
-const SKY_VS = `#version 300 es
+const FULL_VS = `#version 300 es
 out vec2 vNdc;
 void main(){ vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2) * 2.0 - 1.0; vNdc = p; gl_Position = vec4(p, 0.9999, 1.0); }`;
 
+const NOISE = `
+float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+  return mix(mix(h21(i), h21(i+vec2(1,0)), f.x), mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y); }
+float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += vn(p) * a; p = p * 2.03 + 17.1; a *= 0.5; } return s; }`;
+
 const SKY_FS = `#version 300 es
 precision highp float;
-in vec2 vNdc; uniform mat4 uInvVP; uniform vec3 uEye; uniform vec3 uZenith; uniform vec3 uHorizon; uniform float uStars; uniform float uPlanet; uniform vec3 uSun;
-out vec4 o;
-float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+in vec2 vNdc; uniform mat4 uInvVP; uniform vec3 uEye; uniform vec3 uZenith; uniform vec3 uHorizon;
+uniform vec3 uNebA; uniform vec3 uNebB; uniform vec3 uPlanetA; uniform vec3 uPlanetB; uniform vec3 uInk;
+uniform float uStars; uniform float uPlanet; uniform float uAtmo;
+layout(location=0) out vec4 o; layout(location=1) out vec4 oN;
+${NOISE}
 void main(){
   vec4 p = uInvVP * vec4(vNdc, 1.0, 1.0);
   vec3 d = normalize(p.xyz / p.w - uEye);
   float e = d.y;
-  vec3 c = mix(uHorizon, uZenith, smoothstep(-0.02, 0.35, e));
-  c += uHorizon * 0.35 * exp(-max(e, 0.0) * 40.0);
+  vec2 sp = vec2(atan(d.x, -d.z) * 1.6, e * 3.0);
+  vec3 c = mix(uHorizon, uZenith, smoothstep(-0.05, 0.6, e));
+  if (uAtmo > 0.5) {
+    // Cloud banks: long streaks, lit warm on top, plum underneath, inked edge.
+    float f = fbm(vec2(sp.x * 1.1, sp.y * 5.5) + vec2(3.0, 0.0));
+    float g = fbm(vec2(sp.x * 2.3, sp.y * 9.0) + 11.0);
+    float m = smoothstep(0.5, 0.62, f) * smoothstep(0.03, 0.14, e) * (1.0 - smoothstep(0.55, 0.95, e));
+    vec3 cloud = mix(uNebB, uNebA, smoothstep(0.35, 0.65, g + (f - 0.5)));
+    c = mix(c, cloud, m * 0.9);
+    c = mix(c, uInk, (smoothstep(0.47, 0.5, f) - smoothstep(0.5, 0.53, f)) * 0.35 * smoothstep(0.03, 0.14, e));
+  } else {
+    // Nebula: two layered fbm washes, saturated, with darker dust lanes.
+    float f = fbm(sp * 1.2 + vec2(0.0, 3.1));
+    float g = fbm(sp * 2.6 + f * 1.6);
+    float dust = smoothstep(0.55, 0.75, fbm(sp * 4.0 + 5.0));
+    vec3 neb = mix(uNebA, uNebB, smoothstep(0.35, 0.7, g));
+    c += neb * smoothstep(0.38, 0.8, f) * 0.85 * (1.0 - dust * 0.6) * smoothstep(-0.05, 0.2, e);
+  }
   if (uStars > 0.0) {
-    vec2 sp = vec2(atan(d.x, -d.z), asin(clamp(e, -1.0, 1.0))) * 160.0;
-    vec2 cell = floor(sp);
+    vec2 sg = vec2(atan(d.x, -d.z), asin(clamp(e, -1.0, 1.0))) * 150.0;
+    vec2 cell = floor(sg);
     float h = h21(cell);
-    float star = step(0.975, h) * smoothstep(0.4, 0.0, length(fract(sp) - 0.5 - (h21(cell + 7.0) - 0.5) * 0.4));
-    c += vec3(star * (0.4 + 0.6 * h21(cell + 3.0))) * smoothstep(0.0, 0.08, e) * uStars;
+    float r = length(fract(sg) - 0.5 - (h21(cell + 7.0) - 0.5) * 0.4);
+    float star = step(0.972, h) * smoothstep(0.35, 0.0, r);
+    c += vec3(star * (0.5 + 0.7 * h21(cell + 3.0))) * smoothstep(0.0, 0.08, e) * uStars;
   }
   if (uPlanet > 0.0) {
-    vec3 pd = normalize(vec3(0.32, 0.16, -1.0));
+    vec3 pd = normalize(vec3(0.42, 0.34, -1.0));
     float a = acos(clamp(dot(d, pd), -1.0, 1.0));
-    float R = 0.075;
+    float R = 0.16;
+    vec3 t = normalize(cross(pd, vec3(0.0, 1.0, 0.0))); vec3 u = cross(t, pd);
+    vec2 q = vec2(dot(d - pd, t), dot(d - pd, u)) / R;
     if (a < R) {
-      vec3 t = normalize(cross(pd, vec3(0.0, 1.0, 0.0))); vec3 u = cross(t, pd);
-      vec2 q = vec2(dot(d - pd, t), dot(d - pd, u)) / R;
       vec3 nrm = normalize(t * q.x + u * q.y + pd * -sqrt(max(0.0, 1.0 - dot(q, q))));
-      float lit = max(dot(nrm, normalize(vec3(-0.9, 0.2, 0.1))), 0.0);
-      vec3 ocean = mix(vec3(0.08, 0.25, 0.55), vec3(0.85, 0.9, 1.0), smoothstep(0.55, 0.75, h21(floor(q * 6.0 + 9.0)) * 0.6 + q.y * 0.3));
-      c = mix(c, ocean * (0.06 + lit * 1.1), smoothstep(R, R * 0.96, a));
+      float lit = smoothstep(-0.05, 0.3, dot(nrm, normalize(vec3(-0.85, 0.35, 0.25))));
+      float bands = fbm(vec2(q.y * 3.5 + fbm(q * 2.5 + 4.0) * 1.2, q.x * 0.6));
+      vec3 pc = mix(uPlanetA, uPlanetB, smoothstep(0.38, 0.68, bands));
+      pc = pc * (0.16 + 0.95 * lit) + uZenith * 0.3 * (1.0 - lit);
+      c = mix(c, pc, uPlanet);
+      c = mix(c, uInk, smoothstep(R * 0.93, R * 0.985, a) * uPlanet);
+    } else {
+      c += uPlanetA * 0.25 * smoothstep(R * 1.35, R, a) * uPlanet;
     }
-    c += vec3(0.25, 0.5, 1.0) * 0.12 * smoothstep(R * 1.25, R, a) * step(R, a);
   }
+  c += uHorizon * 0.35 * exp(-max(e, 0.0) * 14.0);
   o = vec4(c, 1.0);
+  oN = vec4(0.5, 0.5, 0.5, 0.0);
+}`;
+
+/**
+ * Comic pass: navy ink lines where depth creases or normals break, violet
+ * shadows and warm lights, hatching in the darkest shade, a paper grain and a
+ * vignette. Lines fade with distance so the horizon stays painted.
+ */
+const POST_FS = `#version 300 es
+precision highp float;
+in vec2 vNdc;
+uniform sampler2D uCol; uniform sampler2D uNrm; uniform sampler2D uDep;
+uniform vec2 uPx; uniform vec2 uNF; uniform vec3 uInk; uniform float uW; uniform vec2 uInkFade;
+out vec4 o;
+${NOISE}
+float lin(float d){ float z = d * 2.0 - 1.0; return 2.0 * uNF.x * uNF.y / (uNF.y + uNF.x - z * (uNF.y - uNF.x)); }
+void main(){
+  vec2 uv = vNdc * 0.5 + 0.5;
+  vec3 c = texture(uCol, uv).rgb;
+  vec4 nc = texture(uNrm, uv);
+  vec2 ox = vec2(uPx.x * uW, 0.0), oy = vec2(0.0, uPx.y * uW);
+  float zc = lin(texture(uDep, uv).r);
+  float zl = lin(texture(uDep, uv - ox).r), zr = lin(texture(uDep, uv + ox).r);
+  float zd = lin(texture(uDep, uv - oy).r), zu = lin(texture(uDep, uv + oy).r);
+  float lap = (abs(1.0/zl + 1.0/zr - 2.0/zc) + abs(1.0/zd + 1.0/zu - 2.0/zc)) * zc;
+  float edgeD = smoothstep(0.03, 0.09, lap);
+  vec4 nl = texture(uNrm, uv - ox), nr = texture(uNrm, uv + ox), nd = texture(uNrm, uv - oy), nu = texture(uNrm, uv + oy);
+  vec3 n0 = nc.xyz * 2.0 - 1.0;
+  float bend = 0.0;
+  bend = max(bend, (1.0 - dot(n0, nl.xyz * 2.0 - 1.0)) * min(nc.a, nl.a));
+  bend = max(bend, (1.0 - dot(n0, nr.xyz * 2.0 - 1.0)) * min(nc.a, nr.a));
+  bend = max(bend, (1.0 - dot(n0, nd.xyz * 2.0 - 1.0)) * min(nc.a, nd.a));
+  bend = max(bend, (1.0 - dot(n0, nu.xyz * 2.0 - 1.0)) * min(nc.a, nu.a));
+  float edgeN = smoothstep(0.35, 0.6, bend);
+  float solid = max(max(nc.a, nl.a), max(max(nr.a, nd.a), nu.a));
+  float near = 1.0 - smoothstep(uInkFade.x, uInkFade.y, min(min(zc, zl), min(zr, min(zd, zu))));
+  float ink = max(edgeD, edgeN) * near * step(0.01, solid);
+  // Grade: plum shadows, warm lights, a touch more saturation.
+  float lum = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(c, c * vec3(0.82, 0.62, 1.18) + vec3(0.03, 0.0, 0.05), 1.0 - smoothstep(0.08, 0.5, lum));
+  c = mix(c, c * vec3(1.1, 1.0, 0.84), smoothstep(0.45, 0.95, lum));
+  float l2 = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l2), c, 1.25);
+  // Hatching in the deepest shade of solid things.
+  float hatch = step(0.62, fract((gl_FragCoord.x - gl_FragCoord.y) / (uW * 4.5)));
+  c *= 1.0 - hatch * 0.22 * (1.0 - smoothstep(0.06, 0.2, l2)) * step(0.01, nc.a) * near;
+  c = mix(c, uInk, ink * 0.9);
+  c *= 0.97 + 0.06 * h21(floor(gl_FragCoord.xy / uW));
+  vec2 v = uv - 0.5;
+  c *= 1.0 - dot(v, v) * 0.55;
+  o = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 
 function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
@@ -220,7 +317,9 @@ export class FieldRenderer {
   private dpr = 1;
   private cssW = 390;
   private cssH = 844;
-  private progs: Record<'terrain' | 'mesh' | 'glow' | 'sky', Prog>;
+  private progs: Record<'terrain' | 'mesh' | 'glow' | 'sky' | 'post', Prog>;
+  private fbo: WebGLFramebuffer | null = null;
+  private fboTex: WebGLTexture[] = [];
   private terrainMesh!: Mesh & { ibo: WebGLBuffer; type: number };
   private boulderMesh!: Mesh;
   private rover: { body: Mesh; wheel: Mesh; model: RoverModel } | null = null;
@@ -245,6 +344,7 @@ export class FieldRenderer {
   private camX: number;
   private camZ: number;
   private camY: number;
+  private camLift = 0;
   private sky: Sky;
 
   constructor(
@@ -253,7 +353,7 @@ export class FieldRenderer {
     readonly vehicle: FieldVehicle | null,
     opts: FieldRenderOptions = {},
   ) {
-    const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, powerPreference: 'high-performance' });
+    const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('takeon field: WebGL2 is not available');
     this.gl = gl;
     this.camera = opts.camera ?? 'surface';
@@ -264,10 +364,11 @@ export class FieldRenderer {
     this.camZ = at.y;
     this.camY = terrain.height(at.x, at.y);
     this.progs = {
-      terrain: this.prog(TERRAIN_VS, TERRAIN_FS, ['uVP', 'uSun', 'uShade', 'uFog', 'uEye', 'uFogRange', 'uDetail', 'uTracks', 'uSize', 'uTime', 'uScan', 'uHit', 'uDep', 'uDepCol', 'uDepN', 'uBlob', 'uBlobSize']),
-      mesh: this.prog(MESH_VS, MESH_FS, ['uVP', 'uModel', 'uSun', 'uShade', 'uFog', 'uEye', 'uFogRange', 'uEmit', 'uShadow']),
+      terrain: this.prog(TERRAIN_VS, TERRAIN_FS, ['uVP', 'uSun', 'uShade', 'uAmb', 'uFog', 'uEye', 'uFogRange', 'uDetail', 'uTracks', 'uSize', 'uTime', 'uScan', 'uHit', 'uDep', 'uDepCol', 'uDepN', 'uBlob', 'uBlobSize']),
+      mesh: this.prog(MESH_VS, MESH_FS, ['uVP', 'uModel', 'uSun', 'uShade', 'uAmb', 'uFog', 'uEye', 'uFogRange', 'uEmit', 'uShadow']),
       glow: this.prog(GLOW_VS, GLOW_FS, ['uVP']),
-      sky: this.prog(SKY_VS, SKY_FS, ['uInvVP', 'uEye', 'uZenith', 'uHorizon', 'uStars', 'uPlanet', 'uSun']),
+      sky: this.prog(FULL_VS, SKY_FS, ['uInvVP', 'uEye', 'uZenith', 'uHorizon', 'uNebA', 'uNebB', 'uPlanetA', 'uPlanetB', 'uInk', 'uStars', 'uPlanet', 'uAtmo']),
+      post: this.prog(FULL_VS, POST_FS, ['uCol', 'uNrm', 'uDep', 'uPx', 'uNF', 'uInk', 'uW', 'uInkFade']),
     };
     this.trackN = Math.min(1024, Math.ceil(terrain.size * 4));
     this.track = new Uint8Array(this.trackN * this.trackN);
@@ -307,6 +408,35 @@ export class FieldRenderer {
     this.dpr = Math.max(1, Math.min(2, dpr));
     this.canvas.width = Math.round(this.cssW * this.dpr);
     this.canvas.height = Math.round(this.cssH * this.dpr);
+    this.buildTarget();
+  }
+
+  /** Off-screen colour, normal and depth targets for the comic pass. */
+  private buildTarget(): void {
+    const gl = this.gl;
+    const w = this.canvas.width, h = this.canvas.height;
+    for (const t of this.fboTex) gl.deleteTexture(t);
+    if (this.fbo) gl.deleteFramebuffer(this.fbo);
+    const tex = (internal: number, format: number, type: number, filter: number) => {
+      const t = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return t;
+    };
+    const col = tex(gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+    const nrm = tex(gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);
+    const dep = tex(gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, gl.NEAREST);
+    this.fbo = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, col, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, nrm, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, dep, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.fboTex = [col, nrm, dep];
   }
 
   /** Reveal deposits within `radius` metres of a point, each as the pulse reaches it. */
@@ -360,10 +490,14 @@ export class FieldRenderer {
     const gl = this.gl;
     this.time += dt;
     this.updateCamera(dt);
+    if (!this.fbo) this.buildTarget();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    const fog = hex(this.sky.fog);
-    gl.clearColor(fog[0], fog[1], fog[2], 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    const haze = hex(this.sky.haze);
+    gl.clearBufferfv(gl.COLOR, 0, [haze[0], haze[1], haze[2], 1]);
+    gl.clearBufferfv(gl.COLOR, 1, [0.5, 0.5, 0.5, 0]);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.CULL_FACE);
 
     // Sky.
@@ -372,11 +506,12 @@ export class FieldRenderer {
     gl.useProgram(sky.p);
     gl.uniformMatrix4fv(sky.u.uInvVP, false, this.invVp);
     gl.uniform3fv(sky.u.uEye, this.eye);
-    gl.uniform3fv(sky.u.uZenith, hex(this.sky.zenith));
-    gl.uniform3fv(sky.u.uHorizon, hex(this.sky.horizon));
+    for (const k of ['zenith', 'horizon', 'nebA', 'nebB', 'planetA', 'planetB'] as const)
+      gl.uniform3fv(sky.u['u' + k[0].toUpperCase() + k.slice(1)], hex(this.sky[k]));
+    gl.uniform3fv(sky.u.uInk, INK);
     gl.uniform1f(sky.u.uStars, this.sky.stars);
     gl.uniform1f(sky.u.uPlanet, this.sky.planet);
-    gl.uniform3fv(sky.u.uSun, SUN);
+    gl.uniform1f(sky.u.uAtmo, this.sky.atmo);
     gl.bindVertexArray(this.skyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.DEPTH_TEST);
@@ -384,7 +519,30 @@ export class FieldRenderer {
 
     this.drawTerrain();
     this.drawMeshes();
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.NONE]);
     this.drawGlow(dt);
+
+    // Comic pass to the screen.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.disable(gl.DEPTH_TEST);
+    const post = this.progs.post;
+    gl.useProgram(post.p);
+    this.fboTex.forEach((t, i) => {
+      gl.activeTexture(gl.TEXTURE0 + i);
+      gl.bindTexture(gl.TEXTURE_2D, t);
+    });
+    gl.uniform1i(post.u.uCol, 0);
+    gl.uniform1i(post.u.uNrm, 1);
+    gl.uniform1i(post.u.uDep, 2);
+    gl.uniform2f(post.u.uPx, 1 / this.canvas.width, 1 / this.canvas.height);
+    gl.uniform2f(post.u.uNF, NEAR, FAR);
+    gl.uniform3fv(post.u.uInk, INK);
+    gl.uniform1f(post.u.uW, this.dpr);
+    gl.uniform2fv(post.u.uInkFade, this.camera === 'orbit' ? [140, 420] : [45, 140]);
+    gl.bindVertexArray(this.skyVao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.enable(gl.DEPTH_TEST);
     gl.bindVertexArray(null);
   }
 
@@ -411,15 +569,27 @@ export class FieldRenderer {
       this.camZ = lerp(this.camZ, py, k);
       this.camY = lerp(this.camY, t.height(px, py), k);
       const z = this.zoom;
-      eye = [this.camX, this.camY + 7.2 / z, this.camZ + 12.5 / z];
-      target = [this.camX, this.camY + 0.4, this.camZ - 4];
-      // Never let the camera sink into a rise behind the rover.
-      const under = t.height(eye[0], eye[2]) + 1.5;
-      if (eye[1] < under) eye[1] = under;
+      // Keep the rover in sight: rise over any ridge between the camera and
+      // it, and look further down as the camera climbs so it stays mid-screen.
+      const ez = this.camZ + 12 / z, base = this.camY + 6.2 / z;
+      const blocked = (lift: number) => {
+        const ey = base + lift;
+        if (t.height(this.camX, ez) + 1.2 > ey) return true;
+        for (let i = 1; i < 16; i++) {
+          const f = i / 16;
+          if (t.height(this.camX, lerp(ez, this.camZ, f)) + 0.4 > lerp(ey, this.camY + 0.8, f)) return true;
+        }
+        return false;
+      };
+      let lift = 0;
+      while (lift < 30 && blocked(lift)) lift += 0.75;
+      this.camLift = lerp(this.camLift, lift, lift > this.camLift ? Math.min(1, dt * 8) : k * 0.5);
+      eye = [this.camX, base + this.camLift, ez];
+      target = [this.camX, this.camY + 0.9, this.camZ - 10 + Math.min(9, this.camLift * 1.1)];
       fov = aspect < 1 ? 56 : 44;
     }
     this.eye = eye;
-    const proj = perspective((fov * Math.PI) / 180, aspect, 0.3, 900);
+    const proj = perspective((fov * Math.PI) / 180, aspect, NEAR, FAR);
     this.vp = multiply(proj, lookAt(eye, target));
     this.invVp = invert(this.vp);
   }
@@ -434,7 +604,7 @@ export class FieldRenderer {
   }
 
   private fogRange(): [number, number] {
-    return this.camera === 'orbit' ? [120, 420] : [30, 120];
+    return this.camera === 'orbit' ? [90, 400] : [24, 115];
   }
 
   // ── Terrain ───────────────────────────────────────────────────────────
@@ -507,7 +677,8 @@ export class FieldRenderer {
     gl.uniform3fv(pr.u.uSun, SUN);
     const sh = this.terrain.style.shade;
     gl.uniform3f(pr.u.uShade, sh[0] / 255, sh[1] / 255, sh[2] / 255);
-    gl.uniform3fv(pr.u.uFog, hex(this.sky.fog));
+    gl.uniform3fv(pr.u.uAmb, hex(this.sky.amb));
+    gl.uniform3fv(pr.u.uFog, hex(this.sky.haze));
     gl.uniform3fv(pr.u.uEye, this.eye);
     gl.uniform2fv(pr.u.uFogRange, this.fogRange());
   }

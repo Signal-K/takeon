@@ -61,6 +61,7 @@ export { CraftPanel, type CraftPanelProps } from './components/CraftPanel.js';
 export { CargoPanel } from './components/CargoPanel.js';
 export { ToastStack, type ToastStackProps } from './components/ToastStack.js';
 export { EndMissionDialog, type EndMissionDialogProps } from './components/EndMissionDialog.js';
+export { FieldHud, FieldButton, FieldGauge, FIELD_ICONS, type FieldHudProps, type FieldButtonProps, type FieldGaugeProps } from './components/FieldHud.js';
 export { Meter, Modal, Chip, type MeterProps, type ModalProps, type ChipProps } from './components/primitives.js';
 
 /**
@@ -85,6 +86,9 @@ export const SLOT_KEYS = [
   'Meter',
   'Modal',
   'Chip',
+  'FieldHud',
+  'FieldButton',
+  'FieldGauge',
 ] as const;
 
 /** Anchor points that accept host-supplied content. */
