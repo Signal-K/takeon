@@ -142,9 +142,12 @@ void main(){
   vec3 v = normalize(uEye - vPos);
   float dl = max(dot(n, uSun), 0.0) * uShadow;
   float band = 0.32 + 0.4 * smoothstep(0.06, 0.12, dl) + 0.36 * smoothstep(0.55, 0.6, dl);
-  float rim = smoothstep(0.62, 0.72, 1.0 - max(dot(n, v), 0.0)) * 0.22;
-  float spec = step(0.55, pow(max(dot(reflect(-uSun, n), v), 0.0), 18.0)) * 0.4 * uShadow;
-  vec3 c = vCol * band + uAmb * (1.0 - band) * 0.45 + vec3(spec + rim);
+  // Painted metal, not plastic: a narrow warm glint only on faces almost
+  // square to the sun, and a rim tinted by the sky rather than white.
+  float rim = smoothstep(0.66, 0.78, 1.0 - max(dot(n, v), 0.0)) * 0.18;
+  float spec = step(0.8, pow(max(dot(reflect(-uSun, n), v), 0.0), 24.0)) * 0.16 * uShadow;
+  float up = n.y * 0.5 + 0.5;
+  vec3 c = vCol * band * (0.86 + 0.14 * up) + uAmb * (1.0 - band) * 0.5 + spec * vec3(1.0, 0.92, 0.75) + rim * mix(uFog, vec3(1.0), 0.4);
   c = mix(c, vCol * 1.4, uEmit);
   float f = pow(smoothstep(uFogRange.x, uFogRange.y, distance(vPos, uEye)), 0.8);
   o = vec4(mix(c, uFog, f), 1.0);
@@ -251,7 +254,7 @@ void main(){
   float zl = lin(texture(uDep, uv - ox).r), zr = lin(texture(uDep, uv + ox).r);
   float zd = lin(texture(uDep, uv - oy).r), zu = lin(texture(uDep, uv + oy).r);
   float lap = (abs(1.0/zl + 1.0/zr - 2.0/zc) + abs(1.0/zd + 1.0/zu - 2.0/zc)) * zc;
-  float edgeD = smoothstep(0.03, 0.09, lap);
+  float edgeD = smoothstep(0.02, 0.06, lap);
   vec4 nl = texture(uNrm, uv - ox), nr = texture(uNrm, uv + ox), nd = texture(uNrm, uv - oy), nu = texture(uNrm, uv + oy);
   vec3 n0 = nc.xyz * 2.0 - 1.0;
   float bend = 0.0;
@@ -260,6 +263,10 @@ void main(){
   bend = max(bend, (1.0 - dot(n0, nd.xyz * 2.0 - 1.0)) * min(nc.a, nd.a));
   bend = max(bend, (1.0 - dot(n0, nu.xyz * 2.0 - 1.0)) * min(nc.a, nu.a));
   float edgeN = smoothstep(0.35, 0.6, bend);
+  // Silhouettes: where a model meets the ground (ink weight 1 against 0.5),
+  // ink regardless of how far the camera is.
+  float da = max(max(abs(nc.a - nl.a), abs(nc.a - nr.a)), max(abs(nc.a - nd.a), abs(nc.a - nu.a)));
+  edgeN = max(edgeN, step(0.3, da) * step(0.75, max(nc.a, max(max(nl.a, nr.a), max(nd.a, nu.a)))));
   float solid = max(max(nc.a, nl.a), max(max(nr.a, nd.a), nu.a));
   float near = 1.0 - smoothstep(uInkFade.x, uInkFade.y, min(min(zc, zl), min(zr, min(zd, zu))));
   float ink = max(edgeD, edgeN) * near * step(0.01, solid);
@@ -345,6 +352,9 @@ export class FieldRenderer {
   private camZ: number;
   private camY: number;
   private camLift = 0;
+  private camDist = 30;
+  private leadX = 0;
+  private leadZ = 0;
   private sky: Sky;
 
   constructor(
@@ -538,7 +548,7 @@ export class FieldRenderer {
     gl.uniform2f(post.u.uNF, NEAR, FAR);
     gl.uniform3fv(post.u.uInk, INK);
     gl.uniform1f(post.u.uW, this.dpr);
-    gl.uniform2fv(post.u.uInkFade, this.camera === 'orbit' ? [140, 420] : [45, 140]);
+    { const [f0, f1] = this.fogRange(); gl.uniform2fv(post.u.uInkFade, [f0 * 1.1, f1 * 1.1]); }
     gl.bindVertexArray(this.skyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.activeTexture(gl.TEXTURE0);
@@ -548,48 +558,66 @@ export class FieldRenderer {
 
   // ── Camera ────────────────────────────────────────────────────────────
 
+  /**
+   * Portrait-first camera (KES-543): high and steep, looking down at about 56°
+   * like a top-down action game, never a chase camera on the horizon. On a
+   * phone held upright the screen is tall and narrow, so a low camera spends
+   * half the screen on sky and squeezes the ground into a strip; a steep one
+   * fills the whole screen with ground. The camera frames a fixed ground width
+   * (the narrow side of the screen) so the rover is the same size on every
+   * phone, sits a little below centre, and the ground it is driving towards
+   * gets the extra room.
+   */
   private updateCamera(dt: number): void {
     const k = Math.min(1, dt * 5);
     const aspect = this.cssW / this.cssH;
     const t = this.terrain;
-    let eye: V3, target: V3, fov: number;
+    const z = this.zoom;
+    const portrait = aspect < 1;
+    const vfov = (portrait ? 44 : 34) * Math.PI / 180;
+    // Half-angle of the narrow side of the screen.
+    const narrow = portrait ? Math.atan(Math.tan(vfov / 2) * aspect) : vfov / 2;
+    let fx: number, fy: number, fz: number, width: number, pitch: number, vx = 0, vz = 0;
     if (this.camera === 'orbit' && this.orbiter) {
       const o = this.orbiter;
-      this.camX = lerp(this.camX, o.x, k);
-      this.camZ = lerp(this.camZ, o.y, Math.min(1, dt * 8));
-      const y = o.altitude;
-      const z = this.zoom;
-      eye = [this.camX, y + 22 / z, this.camZ + 26 / z];
-      target = [this.camX, y - 50, this.camZ - 60];
-      fov = aspect < 1 ? 58 : 46;
+      fx = o.x; fy = o.altitude; fz = o.y;
+      vx = o.vx; vz = o.vy;
+      width = 26; pitch = 62;
     } else {
       const v = this.vehicle;
-      const px = v?.x ?? t.landing.x, py = v?.y ?? t.landing.y;
-      this.camX = lerp(this.camX, px, k);
-      this.camZ = lerp(this.camZ, py, k);
-      this.camY = lerp(this.camY, t.height(px, py), k);
-      const z = this.zoom;
-      // Keep the rover in sight: rise over any ridge between the camera and
-      // it, and look further down as the camera climbs so it stays mid-screen.
-      const ez = this.camZ + 12 / z, base = this.camY + 6.2 / z;
-      const blocked = (lift: number) => {
-        const ey = base + lift;
-        if (t.height(this.camX, ez) + 1.2 > ey) return true;
-        for (let i = 1; i < 16; i++) {
-          const f = i / 16;
-          if (t.height(this.camX, lerp(ez, this.camZ, f)) + 0.4 > lerp(ey, this.camY + 0.8, f)) return true;
+      fx = v?.x ?? t.landing.x; fz = v?.y ?? t.landing.y;
+      fy = t.height(fx, fz) + 0.6;
+      if (v) { vx = Math.cos(v.heading) * v.speed; vz = Math.sin(v.heading) * v.speed; }
+      width = 11; pitch = 56;
+    }
+    // Lead the camera the way the vehicle is going, and always a little north.
+    const lead = this.camera === 'orbit' ? 0.6 : 0.35;
+    this.leadX = lerp(this.leadX, vx * lead, Math.min(1, dt * 1.5));
+    this.leadZ = lerp(this.leadZ, vz * lead - width * 0.12, Math.min(1, dt * 1.5));
+    this.camX = lerp(this.camX, fx + this.leadX, k);
+    this.camZ = lerp(this.camZ, fz + this.leadZ, k);
+    this.camY = lerp(this.camY, fy, k);
+    const dist = (width / 2) / Math.tan(narrow) / z;
+    // Over a crater rim, tilt steeper rather than lose the rover behind it.
+    let p = pitch * Math.PI / 180;
+    if (this.camera === 'surface') {
+      const blocked = (pp: number) => {
+        for (let i = 2; i < 14; i++) {
+          const f = i / 14 * dist;
+          if (t.height(this.camX, this.camZ + Math.cos(pp) * f) + 0.3 > this.camY + Math.sin(pp) * f) return true;
         }
         return false;
       };
-      let lift = 0;
-      while (lift < 30 && blocked(lift)) lift += 0.75;
-      this.camLift = lerp(this.camLift, lift, lift > this.camLift ? Math.min(1, dt * 8) : k * 0.5);
-      eye = [this.camX, base + this.camLift, ez];
-      target = [this.camX, this.camY + 0.9, this.camZ - 10 + Math.min(9, this.camLift * 1.1)];
-      fov = aspect < 1 ? 56 : 44;
+      let extra = 0;
+      while (extra < 28 && blocked(p + extra * Math.PI / 180)) extra += 2;
+      this.camLift = lerp(this.camLift, extra, extra > this.camLift ? Math.min(1, dt * 6) : k * 0.4);
+      p += this.camLift * Math.PI / 180;
     }
+    this.camDist = dist;
+    const target: V3 = [this.camX, this.camY, this.camZ];
+    const eye: V3 = [this.camX, this.camY + Math.sin(p) * dist, this.camZ + Math.cos(p) * dist];
     this.eye = eye;
-    const proj = perspective((fov * Math.PI) / 180, aspect, NEAR, FAR);
+    const proj = perspective(vfov, aspect, NEAR, FAR);
     this.vp = multiply(proj, lookAt(eye, target));
     this.invVp = invert(this.vp);
   }
@@ -604,7 +632,9 @@ export class FieldRenderer {
   }
 
   private fogRange(): [number, number] {
-    return this.camera === 'orbit' ? [90, 400] : [24, 115];
+    // Relative to the camera distance, so the ground round the rover is clear.
+    const d = this.camDist + (this.camera === 'orbit' && this.orbiter ? this.orbiter.altitude - this.camY + 60 : 0);
+    return [d * 1.25, d * 3.2];
   }
 
   // ── Terrain ───────────────────────────────────────────────────────────

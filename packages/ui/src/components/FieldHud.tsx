@@ -2,10 +2,10 @@ import type { ReactNode } from 'react';
 import { createSlot, cx, useSlotClass } from '../registry.js';
 
 /**
- * Field HUD kit in the Out There: Omega manner (KES-543): white command bars
- * with a black icon tile and a notched black end cap, small icon gauges at the
- * top left, a pause square at the top right, at most two verbs at the bottom
- * right. Plain markup with `tk-ot-*` classes from `styles.css`, so a host that
+ * Field HUD kit (KES-543): round, chunky game buttons with a lip that press
+ * down, the primary verb big in the bottom-right thumb spot and the secondary
+ * up and to its left, a ring for charge or cooldown, one framed gauge panel at
+ * the top left with segmented bars, and a round pause button top right. Plain markup with `tk-ot-*` classes from `styles.css`, so a host that
  * is not React (or the field demo) can use the same look.
  */
 
@@ -35,25 +35,34 @@ export interface FieldButtonProps {
   onPress?: () => void;
   /** Hold-to-fire: called with true on press and false on release. */
   onHold?: (down: boolean) => void;
+  /** The big button in the thumb spot. FieldHud makes its last verb primary. */
+  primary?: boolean;
+  /** Face colour: 'laser', 'scan', 'go', or a host's own tone in CSS. */
+  tone?: string;
+  /** 0..1 fills the ring round the face (charge, heat or cooldown). */
+  charge?: number;
   className?: string;
 }
 
-function DefaultFieldButton({ label, icon, on, disabled, onPress, onHold, className }: FieldButtonProps) {
+function DefaultFieldButton({ label, icon, on, disabled, onPress, onHold, primary, tone, charge = 0, className }: FieldButtonProps) {
   const glyph = typeof icon === 'string' ? FIELD_ICONS[icon] : icon;
   return (
     <button
       type="button"
       className={cx('tk-ot-btn', useSlotClass('FieldButton'), className)}
       data-on={on ? '' : undefined}
+      data-primary={primary ? '' : undefined}
+      data-tone={tone ?? (typeof icon === 'string' ? icon : undefined)}
+      style={{ ['--charge' as string]: Math.max(0, Math.min(1, charge)) }}
+      aria-label={label}
       disabled={disabled}
       onClick={onPress}
       onPointerDown={onHold ? e => { e.currentTarget.setPointerCapture?.(e.pointerId); onHold(true); } : undefined}
       onPointerUp={onHold ? () => onHold(false) : undefined}
       onPointerCancel={onHold ? () => onHold(false) : undefined}
     >
-      <span className="tk-ot-btn-icon">{glyph}</span>
-      <span className="tk-ot-btn-label">{label}</span>
-      <span className="tk-ot-btn-cap" />
+      <span className="tk-ot-btn-ring"><span className="tk-ot-btn-face">{glyph}</span></span>
+      <span className="tk-ot-btn-label" aria-hidden="true">{label}</span>
     </button>
   );
 }
@@ -67,14 +76,16 @@ export interface FieldGaugeProps {
   max?: number;
   /** Bar turns red below this fraction. */
   lowBelow?: number;
+  /** Icon and bar colour: 'fuel', 'hull', 'cargo'; defaults to the icon key. */
+  tone?: string;
   className?: string;
 }
 
-function DefaultFieldGauge({ label, icon, value, max = 100, lowBelow = 0.25, className }: FieldGaugeProps) {
+function DefaultFieldGauge({ label, icon, value, max = 100, lowBelow = 0.25, tone, className }: FieldGaugeProps) {
   const ratio = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
   const glyph = typeof icon === 'string' ? FIELD_ICONS[icon] : icon;
   return (
-    <div className={cx('tk-ot-gauge', useSlotClass('FieldGauge'), className)} data-low={ratio < lowBelow ? '' : undefined}>
+    <div className={cx('tk-ot-gauge', useSlotClass('FieldGauge'), className)} data-low={ratio < lowBelow ? '' : undefined} data-tone={tone ?? (typeof icon === 'string' ? icon : undefined)}>
       <span className="tk-ot-gauge-icon">{glyph}</span>
       <span className="tk-ot-gauge-body">
         <span className="tk-ot-gauge-label">{label}</span>
@@ -106,7 +117,7 @@ function DefaultFieldHud({ gauges = [], verbs = [], onPause, className }: FieldH
           <span /><span />
         </button>
       )}
-      <div className="tk-ot-verbs">{verbs.slice(0, 2).map(v => <FieldButton key={v.label} {...v} />)}</div>
+      <div className="tk-ot-verbs">{verbs.slice(0, 2).map((v, i, all) => <FieldButton key={v.label} primary={i === all.length - 1} {...v} />)}</div>
     </div>
   );
 }

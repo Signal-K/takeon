@@ -35,6 +35,57 @@ export class MeshBuilder {
     for (const p of [a, b, c]) this.data.push(p[0], p[1], p[2], nx, ny, nz, col[0], col[1], col[2]);
   }
 
+  /** A triangle wound so its normal faces away from `centre` (for convex solids). */
+  triOut(a: number[], b: number[], c: number[], col: RGB, centre: number[]): void {
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const dot = nx * (a[0] - centre[0]) + ny * (a[1] - centre[1]) + nz * (a[2] - centre[2]);
+    if (dot >= 0) this.tri(a, b, c, col); else this.tri(a, c, b, col);
+  }
+
+  /**
+   * A box with chamfered vertical corners and a chamfered top edge, so it
+   * catches a highlight along every edge instead of reading as a flat block.
+   */
+  bevelBox(x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, bev: number, col: RGB, top: RGB = col): void {
+    const c = Math.min(bev, (x1 - x0) / 3, (z1 - z0) / 3, (y1 - y0) / 2);
+    const centre = [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2];
+    const ring = (y: number, i: number) => [
+      [x0 + i + c, y, z0 + i], [x1 - i - c, y, z0 + i], [x1 - i, y, z0 + i + c], [x1 - i, y, z1 - i - c],
+      [x1 - i - c, y, z1 - i], [x0 + i + c, y, z1 - i], [x0 + i, y, z1 - i - c], [x0 + i, y, z0 + i + c],
+    ];
+    const lo = ring(y0, 0), mid = ring(y1 - c, 0), hi = ring(y1, c);
+    const edge: RGB = [Math.min(1, top[0] * 1.12), Math.min(1, top[1] * 1.12), Math.min(1, top[2] * 1.12)];
+    for (let k = 0; k < 8; k++) {
+      const j = (k + 1) % 8;
+      this.triOut(lo[k], lo[j], mid[j], col, centre); this.triOut(lo[k], mid[j], mid[k], col, centre);
+      this.triOut(mid[k], mid[j], hi[j], edge, centre); this.triOut(mid[k], hi[j], hi[k], edge, centre);
+      this.triOut([centre[0], y1, centre[2]], hi[k], hi[j], top, centre);
+      this.triOut([centre[0], y0, centre[2]], lo[k], lo[j], col, centre);
+    }
+  }
+
+  /**
+   * Bake volume into the vertex colours: darker low down (ambient occlusion
+   * under the body and in the wheel wells) and a small per-face jitter, so
+   * large faces read as worn painted metal, not moulded plastic.
+   */
+  weather(y0: number, y1: number, low = 0.55, jitter = 0.08, seed = 1): this {
+    const rnd = mulberry32(seed);
+    const d = this.data;
+    for (let i = 0; i < d.length; i += 27) {
+      const j = 1 + (rnd() - 0.5) * 2 * jitter;
+      for (let v = 0; v < 3; v++) {
+        const o = i + v * 9;
+        const t = Math.max(0, Math.min(1, (d[o + 1] - y0) / (y1 - y0)));
+        const k = (low + (1 - low) * t * t * (3 - 2 * t)) * j;
+        d[o + 6] *= k; d[o + 7] *= k; d[o + 8] *= k;
+      }
+    }
+    return this;
+  }
+
   quad(a: number[], b: number[], c: number[], d: number[], col: RGB): void {
     this.tri(a, b, c, col);
     this.tri(a, c, d, col);
@@ -58,7 +109,7 @@ export class MeshBuilder {
     for (let i = 0; i < segs; i++) {
       const a0 = (i / segs) * Math.PI * 2, a1 = ((i + 1) / segs) * Math.PI * 2;
       // Alternate tread blocks so the spin reads.
-      const rr = i % 2 ? r : r * 0.93;
+      const rr = i % 2 ? r : r * 0.86;
       const x0 = cx + Math.cos(a0) * rr, y0 = cy + Math.sin(a0) * rr;
       const x1 = cx + Math.cos(a1) * rr, y1 = cy + Math.sin(a1) * rr;
       this.quad([x0, y0, z0], [x1, y1, z0], [x1, y1, z1], [x0, y0, z1], tyre);
@@ -166,40 +217,72 @@ export interface RoverModel {
   muzzle: [number, number, number];
 }
 
-/** A six-wheeled prospecting rover about 2.8 m long, white with an orange nose so its heading reads at a glance. */
+/**
+ * A six-wheeled prospecting rover about 3 m long (KES-543). Built to be read
+ * from above and behind on a phone: oversized lugged wheels, a bevelled
+ * off-white hull over a gold-foil belly, orange roll bars and nose, a solar
+ * deck in two angled wings, an open ore hopper and a mast with a camera head.
+ * Colours are weathered at build time so it reads as painted metal.
+ */
 export function buildRover(): RoverModel {
-  const white = hex('#ecebe6'), grey = hex('#8a8d94'), dark = hex('#2a2c33'), orange = hex('#ff8a1f');
-  const panel = hex('#1f3a7a'), panelTop = hex('#2f5bc4'), glass = hex('#9fe8ff');
+  const hullC = hex('#e4dccb'), hullTop = hex('#f1ebde'), graphite = hex('#3b3e47'), steel = hex('#7d828c');
+  const orange = hex('#ef6a1f'), orangeTop = hex('#ff8a3a'), foil = hex('#d6a23c'), dark = hex('#1d1e24');
+  const cell = hex('#1c2340'), cellTop = hex('#2c3f7a'), glass = hex('#8fe3ff'), lamp = hex('#fff2b8');
   const b = new MeshBuilder();
-  const R = 0.38;
+  const R = 0.5;
   const wheels: [number, number, number][] = [];
-  for (const x of [-1.05, 0, 1.05]) for (const z of [-0.98, 0.98]) wheels.push([x, R, z]);
-  // Rocker arms from body to each wheel.
-  for (const [x, , z] of wheels) b.box(x - 0.08, x + 0.08, R - 0.05, 0.62, z * 0.62 - 0.06, z * 0.62 + 0.06, grey);
-  b.box(-1.15, 1.15, 0.55, 0.62, -0.95, 0.95, grey);
-  // Chassis tub.
-  b.box(-1.15, 1.1, 0.6, 1.0, -0.7, 0.7, white);
-  // Orange nose and bumper: the front is unmistakable from any angle.
-  b.box(1.1, 1.42, 0.55, 0.92, -0.72, 0.72, orange);
-  b.box(1.2, 1.44, 0.62, 0.74, -0.5, -0.3, hex('#fff6c8'));
-  b.box(1.2, 1.44, 0.62, 0.74, 0.3, 0.5, hex('#fff6c8'));
-  // Solar deck.
-  b.box(-1.35, 0.85, 1.0, 1.06, -1.0, 1.0, panel, panelTop);
-  for (let i = -1; i <= 1; i++) b.box(-1.36, 0.86, 1.061, 1.07, i * 0.5 - 0.012, i * 0.5 + 0.012, white);
-  // Mast and camera head.
-  b.box(0.62, 0.74, 1.0, 1.95, 0.4, 0.52, grey);
-  b.box(0.5, 0.9, 1.95, 2.2, 0.26, 0.66, white);
-  b.box(0.9, 0.93, 2.0, 2.15, 0.32, 0.6, dark);
-  b.box(0.92, 0.95, 2.04, 2.11, 0.38, 0.46, glass);
-  // Laser on the mast's side.
-  b.box(0.55, 1.1, 1.55, 1.72, 0.52, 0.68, dark);
-  // High-gain dish at the back.
-  b.box(-0.82, -0.72, 1.06, 1.5, -0.45, -0.35, grey);
-  b.disc(-0.77, 1.5, -0.4, 0.42, 0.07, white, 18, hex('#d8d6cf'));
-  b.disc(-0.77, 1.57, -0.4, 0.06, 0.18, grey);
+  for (const x of [-1.15, 0, 1.15]) for (const z of [-1.08, 1.08]) wheels.push([x, R, z]);
+  // Suspension: a rocker beam each side and a strut down to every hub.
+  for (const s of [-1, 1]) {
+    b.bevelBox(-1.3, 1.3, 0.78, 0.9, s * 0.78 - 0.07, s * 0.78 + 0.07, 0.03, steel);
+    for (const x of [-1.15, 0, 1.15]) b.bevelBox(x - 0.07, x + 0.07, R, 0.86, s * 0.86 - 0.06, s * 0.86 + 0.06, 0.02, graphite);
+  }
+  // Gold-foil belly and the bevelled hull over it.
+  b.bevelBox(-1.2, 1.15, 0.62, 0.86, -0.66, 0.66, 0.08, foil);
+  b.bevelBox(-1.25, 1.1, 0.84, 1.28, -0.72, 0.72, 0.14, hullC, hullTop);
+  // Panel seams on the hull sides.
+  for (const s of [-1, 1]) for (const x of [-0.45, 0.35]) b.box(x - 0.015, x + 0.015, 0.88, 1.16, s * 0.725 - 0.01, s * 0.725 + 0.01, graphite);
+  // Nose: orange wedge with two lamps.
+  b.bevelBox(1.05, 1.5, 0.66, 1.12, -0.7, 0.7, 0.12, orange, orangeTop);
+  for (const zz of [-0.42, 0.42]) b.bevelBox(1.44, 1.56, 0.84, 1.0, zz - 0.13, zz + 0.13, 0.04, lamp);
+  // Roll bars: two orange hoops over the deck.
+  for (const x of [-0.95, 0.55]) {
+    for (const s of [-1, 1]) b.bevelBox(x - 0.06, x + 0.06, 1.24, 1.62, s * 0.66 - 0.06, s * 0.66 + 0.06, 0.03, orange, orangeTop);
+    b.bevelBox(x - 0.06, x + 0.06, 1.56, 1.68, -0.72, 0.72, 0.03, orange, orangeTop);
+  }
+  // Ore hopper at the back: open graphite bin with ore in it.
+  b.bevelBox(-1.2, -0.25, 1.26, 1.5, -0.5, 0.5, 0.05, graphite, dark);
+  for (let i = 0; i < 5; i++) b.rock(-0.95 + i * 0.16, 1.5, (i % 2 ? 0.18 : -0.15), 0.13, 0.08, 0.13, hex('#8a7a6a'), 11 + i, 0);
+  // Solar wings, tipped a little towards the camera so the cells read.
+  for (const s of [-1, 1]) {
+    const y = 1.32, zi = s * 0.12, zo = s * 0.86, lift = 0.08;
+    const c0 = [-0.15, y, zi], c1 = [1.0, y, zi], c2 = [1.0, y + lift, zo], c3 = [-0.15, y + lift, zo];
+    b.quad(c0, c1, c2, c3, cellTop); b.quad(c0, c3, c2, c1, cell);
+    for (let k = 1; k < 4; k++) {
+      const x = -0.15 + k * 0.2875;
+      b.quad([x - 0.012, y + 0.012, zi], [x + 0.012, y + 0.012, zi], [x + 0.012, y + lift + 0.012, zo], [x - 0.012, y + lift + 0.012, zo], hullTop);
+    }
+    b.quad([-0.15, y + lift * 0.5 + 0.012, (zi + zo) / 2], [1.0, y + lift * 0.5 + 0.012, (zi + zo) / 2], [1.0, y + lift * 0.5 + 0.022, (zi + zo) / 2 + s * 0.02], [-0.15, y + lift * 0.5 + 0.022, (zi + zo) / 2 + s * 0.02], hullTop);
+    b.bevelBox(-0.2, 1.05, y - 0.04, y + 0.01, zi - 0.03, zi + 0.03, 0.01, steel);
+  }
+  // Mast and camera head with two lenses.
+  b.bevelBox(0.72, 0.86, 1.28, 2.1, -0.07, 0.07, 0.03, steel);
+  b.bevelBox(0.55, 1.02, 2.06, 2.36, -0.3, 0.3, 0.07, hullC, hullTop);
+  b.box(1.0, 1.04, 2.12, 2.3, -0.24, 0.24, dark);
+  for (const zz of [-0.13, 0.13]) b.disc(1.04, 2.21, zz, 0.06, 0.0, glass, 10);
+  for (const zz of [-0.13, 0.13]) b.bevelBox(1.02, 1.08, 2.15, 2.27, zz - 0.06, zz + 0.06, 0.02, glass);
+  // Laser emitter under the head, orange-tipped.
+  b.bevelBox(0.7, 1.3, 1.78, 1.94, -0.32, -0.16, 0.04, graphite);
+  b.bevelBox(1.3, 1.38, 1.8, 1.92, -0.3, -0.18, 0.02, orange);
+  // Whip antenna with a tip.
+  b.box(-1.08, -1.04, 1.5, 2.6, 0.58, 0.62, steel);
+  b.bevelBox(-1.11, -1.01, 2.6, 2.7, 0.55, 0.65, 0.03, orange);
+  b.weather(0.4, 1.6, 0.5, 0.07, 7);
   const w = new MeshBuilder();
-  w.wheel(0, 0, 0, R, 0.32, dark, hex('#b9bcc4'));
-  return { body: b.build(), wheel: w.build(), wheels, wheelRadius: R, muzzle: [1.12, 1.63, 0.6] };
+  w.wheel(0, 0, 0, R, 0.42, dark, hex('#c9c3b6'), 18);
+  // Hub cap and lug bolts on the outer face.
+  w.weather(-R, R, 0.8, 0.05, 3);
+  return { body: b.build(), wheel: w.build(), wheels, wheelRadius: R, muzzle: [1.38, 1.86, -0.24] };
 }
 
 /** The mining ship seen from above in orbit: hull, solar wings, engine bells and a ventral laser. About 9 m long. */

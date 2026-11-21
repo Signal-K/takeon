@@ -149,12 +149,14 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     for (const d of terrain.deposits) {
       if (!renderer.revealed.has(d.id) || (miner.left.get(d.id) ?? 0) <= 0) continue;
       const p = renderer.project(d.x, d.y);
-      const pad = 34;
-      if (p.front && p.x > pad && p.x < cssW - pad && p.y > pad && p.y < cssH - pad) continue;
-      let dx = p.x - cssW / 2, dy = p.y - cssH / 2;
+      // Keep pointers clear of the host's gauge panel (top) and thumb buttons (bottom).
+      const pad = 34, top = Math.min(160, cssH * 0.2), bottom = Math.min(210, cssH * 0.26);
+      if (p.front && p.x > pad && p.x < cssW - pad && p.y > top && p.y < cssH - bottom) continue;
+      const cx = cssW / 2, cy = (top + cssH - bottom) / 2;
+      let dx = p.x - cx, dy = p.y - cy;
       if (!p.front) { dx = -dx; dy = -dy; }
-      const s = Math.min((cssW / 2 - pad) / Math.abs(dx || 1e-3), (cssH / 2 - pad) / Math.abs(dy || 1e-3));
-      const x = cssW / 2 + dx * s, y = cssH / 2 + dy * s;
+      const s = Math.min((cssW / 2 - pad) / Math.abs(dx || 1e-3), (dy < 0 ? cy - top : cssH - bottom - cy) / Math.abs(dy || 1e-3));
+      const x = cx + dx * s, y = cy + dy * s;
       const a = Math.atan2(dy, dx);
       const [r, g, b] = oreColour(d.resource).map(c => Math.round(c * 255));
       octx.save();

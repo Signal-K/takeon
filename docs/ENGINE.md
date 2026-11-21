@@ -241,15 +241,17 @@ scenes.
   - Slopes push back with the body's gravity, grades over `maxGrade` stop it, and boulders block it.
   - It runs on a fixed 60 Hz step.
 - **`FieldRenderer`** (KES-543) is a WebGL2 3D view. It replaced the top-down canvas view, which read as tiny and upside-down on a phone.
-  - The camera never turns: it sits behind and above the vehicle looking north, so up on the stick is still north and away from the camera.
-  - `surface` chases the rover from about 14 m. `orbit` rides above the mining ship with the ground scrolling below.
+  - The camera is built for a phone held upright. It never turns, and it looks north and steeply down, about 56° on the surface and 62° in orbit, like a top-down action game. A low chase camera wasted half of a portrait screen on sky and squeezed the ground into a strip.
+  - It frames a fixed ground width across the narrow side of the screen (11 m on the surface, 26 m in orbit), so the rover is the same size on every phone. It leads the way the vehicle is moving, so the rover sits a little below centre with room ahead.
   - The terrain is one mesh: 0.5 m inside the field, with a coarse apron out to the horizon.
   - Shading is per pixel: a south-west sun, baked self-shadows, a tiling grain texture, wheel tracks, the vehicle's shadow, the scan pulse, ore glow and the laser hit point.
   - Boulders, ore crystals, the rover (wheels spin with the odometer) and the ship are low-poly meshes from `meshes.ts`.
   - The laser beam, sparks and engine flares are additive billboards.
   - The look is painted and inked, in the Out There: Omega manner. Lighting falls in cel bands, shadows lean plum and distance fades into a coloured haze. The scene renders off-screen into colour, normal and depth targets. A comic pass then draws navy ink lines where depth creases or normals break, adds hatching to the deepest shade, and applies a warm/plum grade, paper grain and a vignette. Lines fade with distance so the horizon stays painted.
-  - The sky is painted per style: saturated nebulae, stars and a banded, inked planet for airless bodies, and a lilac sky with warm cloud banks for rust.
-  - The chase camera rises over any ridge between it and the rover, and looks further down as it climbs.
+  - The sky is painted per style: saturated nebulae, stars and a banded, inked planet for airless bodies, and a lilac sky with warm cloud banks for rust. The steep camera rarely shows it.
+  - Models are outlined wherever they meet the ground, however far away the camera is. Fog and line fade scale with the camera distance.
+  - Over a crater rim, the camera tilts steeper rather than lose the rover behind it.
+  - The rover is built to be read from above: oversized lugged wheels, a bevelled hull over a gold-foil belly, orange roll bars, solar wings, an ore hopper and a camera mast. Vertex colours are weathered at build time (`MeshBuilder.weather`) so it reads as painted metal, not plastic.
   - Call `project()` to turn a world point into CSS pixels, and `pick()` to turn CSS pixels into a ground point.
 - **`FieldOrbiter`** is the mining ship on a low pass. It drifts north at orbital speed, the stick slides it east and west and trims the drift, and it comes round again at the south edge.
 - **`FieldMiner`** is the laser. It locks only onto scanned ore within range (rover 7 m, orbit 45 m) and cuts until the deposit is empty. `depositScale` (opt-in) makes the bigger veins that orbit fields use.
@@ -257,4 +259,4 @@ scenes.
   - `mode` is `surface` or `orbit`.
   - In orbit, a quick tap on scanned ore aims the laser.
   - The host owns the HUD and calls `scan()` and `laser(on)`.
-  - Pass an `overlay` canvas to get the drag ring and pointers to off-screen ore.
+  - Pass an `overlay` canvas to get the drag ring and pointers to off-screen ore. The pointers stay clear of the top gauge panel and the bottom thumb buttons.
