@@ -72,6 +72,8 @@ export interface FieldOptions {
   resources?: readonly string[];
   /** How many deposits to place. */
   deposits?: number;
+  /** Multiplies deposit size and spacing; orbit fields use bigger veins (default 1). */
+  depositScale?: number;
   /** A clear, flat landing area kept free of boulders and craters. */
   landing?: Vec2;
 }
@@ -106,7 +108,7 @@ export class FieldTerrain {
     this.placeCraters();
     this.buildGrid();
     this.placeBoulders();
-    this.placeDeposits(opts.resources ?? ['iron', 'nickel', 'cobalt'], opts.deposits ?? 6);
+    this.placeDeposits(opts.resources ?? ['iron', 'nickel', 'cobalt'], opts.deposits ?? 6, opts.depositScale ?? 1);
   }
 
   // ── Sampling ──────────────────────────────────────────────────────────
@@ -268,14 +270,14 @@ export class FieldTerrain {
     }
   }
 
-  private placeDeposits(resources: readonly string[], count: number): void {
+  private placeDeposits(resources: readonly string[], count: number, scale: number): void {
     const rnd = mulberry32(this.seed ^ 0xd3905);
     let tries = 0;
     while (this.deposits.length < count && tries++ < count * 40) {
       // Ore sits in crater floors and low ground, a short drive from the pad.
       let x: number, y: number;
       if (this.deposits.length < 2) {
-        const a = rnd() * Math.PI * 2, d = 7 + rnd() * 4;
+        const a = rnd() * Math.PI * 2, d = (7 + rnd() * 4) * scale;
         x = this.landing.x + Math.cos(a) * d; y = this.landing.y + Math.sin(a) * d;
       } else if (this.craters.length && rnd() < 0.5) {
         const c = this.craters[Math.floor(rnd() * this.craters.length)];
@@ -285,10 +287,10 @@ export class FieldTerrain {
         x = this.landing.x + Math.cos(a) * d; y = this.landing.y + Math.sin(a) * d;
       }
       if (x < 4 || y < 4 || x > this.size - 4 || y > this.size - 4) continue;
-      if (this.deposits.some(d => Math.hypot(d.x - x, d.y - y) < 10)) continue;
+      if (this.deposits.some(d => Math.hypot(d.x - x, d.y - y) < 10 * scale)) continue;
       if (this.bouldersNear(x, y, 1.5).some(b => Math.hypot(b.x - x, b.y - y) < b.r + 1.5)) continue;
       const ri = Math.min(resources.length - 1, Math.floor(Math.pow(rnd(), 1.6) * resources.length));
-      this.deposits.push({ id: `dep-${this.deposits.length}`, x, y, r: 1.6 + rnd() * 1.4, resource: resources[ri] });
+      this.deposits.push({ id: `dep-${this.deposits.length}`, x, y, r: (1.6 + rnd() * 1.4) * scale, resource: resources[ri] });
     }
   }
 }

@@ -240,9 +240,19 @@ scenes.
   - It turns toward the input and drives once it faces it.
   - Slopes push back with the body's gravity, grades over `maxGrade` stop it, and boulders block it.
   - It runs on a fixed 60 Hz step.
-- **`FieldRenderer`** is a top-down, north-up renderer.
-  - Height comes from a low north-west sun, terrain self-shadowing, boulder shadows and a tiling micro-relief bump texture.
-  - Ground is baked in 16 m chunks at device pixel density, never upscaled, so it stays sharp on phones.
-  - The rover is drawn from above, with tracks, a cast shadow and tilt from the ground under it.
-  - Scanned deposits glow. Off-screen deposits get edge pointers with a distance.
-- **`mountFieldScene(canvas, opts)`** wires these together with touch-drag and keyboard input. The host owns the HUD and calls `scan()`.
+- **`FieldRenderer`** (KES-543) is a WebGL2 3D view. It replaced the top-down canvas view, which read as tiny and upside-down on a phone.
+  - The camera never turns: it sits behind and above the vehicle looking north, so up on the stick is still north and away from the camera.
+  - `surface` chases the rover from about 14 m. `orbit` rides above the mining ship with the ground scrolling below.
+  - The terrain is one mesh: 0.5 m inside the field, with a coarse apron out to the horizon.
+  - Shading is per pixel: a south-west sun, baked self-shadows, a tiling grain texture, wheel tracks, the vehicle's shadow, the scan pulse, ore glow and the laser hit point.
+  - Boulders, ore crystals, the rover (wheels spin with the odometer) and the ship are low-poly meshes from `meshes.ts`.
+  - The laser beam, sparks and engine flares are additive billboards.
+  - Sky colour is per style: a black starfield with a planet for airless bodies, butterscotch for rust.
+  - Call `project()` to turn a world point into CSS pixels, and `pick()` to turn CSS pixels into a ground point.
+- **`FieldOrbiter`** is the mining ship on a low pass. It drifts north at orbital speed, the stick slides it east and west and trims the drift, and it comes round again at the south edge.
+- **`FieldMiner`** is the laser. It locks only onto scanned ore within range (rover 7 m, orbit 45 m) and cuts until the deposit is empty. `depositScale` (opt-in) makes the bigger veins that orbit fields use.
+- **`mountFieldScene(canvas, opts)`** wires these together with touch-drag and keyboard input.
+  - `mode` is `surface` or `orbit`.
+  - In orbit, a quick tap on scanned ore aims the laser.
+  - The host owns the HUD and calls `scan()` and `laser(on)`.
+  - Pass an `overlay` canvas to get the drag ring and pointers to off-screen ore.

@@ -1,29 +1,42 @@
 import { FieldTerrain, type FieldDeposit, type FieldOptions } from './terrain.js';
 import { FieldVehicle, type FieldInput } from './vehicle.js';
-import { FieldRenderer, type FieldRenderOptions } from './render.js';
+import { FieldRenderer, type FieldCamera, type FieldRenderOptions } from './render.js';
+import { FieldMiner, FieldOrbiter, ORBIT_LASER, ROVER_LASER } from './miner.js';
+import { oreColour } from './meshes.js';
 
 /**
- * Mount a drivable field on a canvas (KES-541).
+ * Mount a playable field on a canvas (KES-541, KES-543).
  *
- * Touch: put a thumb down anywhere and drag; the rover drives the way you
- * drag. Keys: arrows or WASD. The host draws its own HUD over the canvas and
- * calls `scan()` from its own button; this owns only the world.
+ * `mode: 'surface'` drives a rover; `mode: 'orbit'` flies the mining ship on a
+ * low pass. Either way: put a thumb down anywhere and drag to steer (up is
+ * north, away from the camera), or use arrows/WASD. In orbit a quick tap on
+ * scanned ore aims the laser there. The host draws its own HUD and calls
+ * `scan()` and `laser()` from its own buttons; pass `overlay` (a transparent
+ * canvas over this one) to get the drag ring and pointers to off-screen ore.
  */
 
 export interface FieldSceneOptions extends FieldOptions, FieldRenderOptions {
-  /** Draw and drive a rover. Off gives a still site picture. */
+  mode?: FieldCamera;
+  /** Draw and drive a rover in surface mode. Off gives a still site picture. */
   rover?: boolean;
   /** Stick radius in CSS px: a drag this far is full throttle. */
   stickRadius?: number;
+  /** A transparent 2D canvas laid over the field for the stick ring and ore pointers. */
+  overlay?: HTMLCanvasElement;
 }
 
 export interface FieldSceneHandle {
+  mode: FieldCamera;
   terrain: FieldTerrain;
   vehicle: FieldVehicle | null;
+  orbiter: FieldOrbiter | null;
+  miner: FieldMiner;
   renderer: FieldRenderer;
-  /** Pulse a scan from the rover (or the camera centre) and reveal deposits in range. */
+  /** Pulse a scan from the rover or ship and reveal deposits in range. */
   scan(radius?: number): FieldDeposit[];
-  /** The revealed deposit under the rover, if any. */
+  /** Hold the laser on (true) or off. It locks onto the nearest scanned ore in range. */
+  laser(on: boolean): void;
+  /** The scanned deposit the rover is at or the laser is on, if any. */
   depositUnderRover(): FieldDeposit | null;
   /** Drive from code (tests, demos, a host's own stick). */
   setInput(input: FieldInput): void;
@@ -33,17 +46,36 @@ export interface FieldSceneHandle {
 }
 
 export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptions = {}): FieldSceneHandle {
+  const mode = opts.mode ?? 'surface';
   const terrain = new FieldTerrain(opts);
-  const vehicle = opts.rover === false ? null : new FieldVehicle(terrain);
-  const renderer = new FieldRenderer(canvas, terrain, vehicle, opts);
+  const vehicle = mode === 'surface' && opts.rover !== false ? new FieldVehicle(terrain) : null;
+  const orbiter = mode === 'orbit' ? new FieldOrbiter(terrain) : null;
+  const renderer = new FieldRenderer(canvas, terrain, vehicle, { ...opts, camera: mode });
+  if (orbiter) renderer.attachOrbiter(orbiter);
+  const miner = new FieldMiner(terrain, renderer.revealed, mode === 'orbit' ? ORBIT_LASER : ROVER_LASER);
+  const full = new Map(terrain.deposits.map(d => [d.id, miner.left.get(d.id) ?? 1]));
+  renderer.oreLeft = id => (miner.left.get(id) ?? 0) / (full.get(id) || 1);
   const stickR = opts.stickRadius ?? 52;
   const keys = new Set<string>();
   let codeInput: FieldInput | null = null;
-  let pointer: { id: number; ox: number; oy: number; x: number; y: number } | null = null;
+  let laserOn = false;
+  let aim: { x: number; y: number } | null = null;
+  let aimUntil = 0;
+  let pointer: { id: number; ox: number; oy: number; x: number; y: number; t: number; moved: number } | null = null;
+  const overlay = opts.overlay ?? null;
+  const octx = overlay?.getContext('2d') ?? null;
+  let cssW = 390, cssH = 844, dpr = 1;
 
   const fit = () => {
     const r = canvas.getBoundingClientRect();
-    renderer.resize(r.width || canvas.clientWidth || 390, r.height || canvas.clientHeight || 844, window.devicePixelRatio || 1);
+    cssW = r.width || canvas.clientWidth || 390;
+    cssH = r.height || canvas.clientHeight || 844;
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    renderer.resize(cssW, cssH, dpr);
+    if (overlay) {
+      overlay.width = Math.round(cssW * dpr);
+      overlay.height = Math.round(cssH * dpr);
+    }
   };
   fit();
   const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null;
@@ -54,9 +86,9 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
   const down = (e: PointerEvent) => {
-    if (pointer || !vehicle) return;
+    if (pointer) return;
     const p = local(e);
-    pointer = { id: e.pointerId, ox: p.x, oy: p.y, x: p.x, y: p.y };
+    pointer = { id: e.pointerId, ox: p.x, oy: p.y, x: p.x, y: p.y, t: performance.now(), moved: 0 };
     canvas.setPointerCapture?.(e.pointerId);
   };
   const move = (e: PointerEvent) => {
@@ -64,9 +96,19 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     const p = local(e);
     pointer.x = p.x;
     pointer.y = p.y;
+    pointer.moved = Math.max(pointer.moved, Math.hypot(p.x - pointer.ox, p.y - pointer.oy));
   };
   const up = (e: PointerEvent) => {
-    if (pointer && e.pointerId === pointer.id) pointer = null;
+    if (!pointer || e.pointerId !== pointer.id) return;
+    // A quick tap in orbit aims the laser at the ore under the finger.
+    if (mode === 'orbit' && pointer.moved < 10 && performance.now() - pointer.t < 300) {
+      const g = renderer.pick(pointer.x, pointer.y);
+      if (g) {
+        aim = g;
+        aimUntil = performance.now() + 2500;
+      }
+    }
+    pointer = null;
   };
   const keyDown = (e: KeyboardEvent) => keys.add(e.key.toLowerCase());
   const keyUp = (e: KeyboardEvent) => keys.delete(e.key.toLowerCase());
@@ -83,7 +125,7 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     if (pointer) {
       const dx = pointer.x - pointer.ox, dy = pointer.y - pointer.oy;
       const d = Math.hypot(dx, dy);
-      if (d < 6) return { x: 0, y: 0 };
+      if (d < 8) return { x: 0, y: 0 };
       const k = Math.min(1, d / stickR) / d;
       return { x: dx * k, y: dy * k };
     }
@@ -95,18 +137,81 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     return { x, y };
   };
 
+  /** The emitter's ground point: the rover, or the ship's footprint. */
+  const emitter = () => vehicle ?? orbiter ?? terrain.landing;
+
+  const drawOverlay = () => {
+    if (!octx || !overlay) return;
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    octx.clearRect(0, 0, cssW, cssH);
+    // Pointers to scanned ore off screen, Out There green.
+    const at = emitter();
+    for (const d of terrain.deposits) {
+      if (!renderer.revealed.has(d.id) || (miner.left.get(d.id) ?? 0) <= 0) continue;
+      const p = renderer.project(d.x, d.y);
+      const pad = 34;
+      if (p.front && p.x > pad && p.x < cssW - pad && p.y > pad && p.y < cssH - pad) continue;
+      let dx = p.x - cssW / 2, dy = p.y - cssH / 2;
+      if (!p.front) { dx = -dx; dy = -dy; }
+      const s = Math.min((cssW / 2 - pad) / Math.abs(dx || 1e-3), (cssH / 2 - pad) / Math.abs(dy || 1e-3));
+      const x = cssW / 2 + dx * s, y = cssH / 2 + dy * s;
+      const a = Math.atan2(dy, dx);
+      const [r, g, b] = oreColour(d.resource).map(c => Math.round(c * 255));
+      octx.save();
+      octx.translate(x, y);
+      octx.rotate(a);
+      octx.fillStyle = `rgb(${r},${g},${b})`;
+      octx.strokeStyle = '#000';
+      octx.lineWidth = 2;
+      octx.beginPath();
+      octx.moveTo(14, 0); octx.lineTo(-6, -10); octx.lineTo(-2, 0); octx.lineTo(-6, 10); octx.closePath();
+      octx.stroke(); octx.fill();
+      octx.restore();
+      const dist = Math.round(Math.hypot(d.x - at.x, d.y - at.y));
+      octx.font = 'italic 700 14px "Exo 2", system-ui, sans-serif';
+      octx.textAlign = 'center';
+      octx.lineWidth = 3;
+      octx.strokeStyle = 'rgba(0,0,0,0.8)';
+      const tx = x - Math.cos(a) * 26, ty = y - Math.sin(a) * 22 + 5;
+      octx.strokeText(`${dist} m`, tx, ty);
+      octx.fillStyle = '#fff';
+      octx.fillText(`${dist} m`, tx, ty);
+    }
+    // Drag ring and knob.
+    if (pointer && pointer.moved >= 8) {
+      octx.lineWidth = 2;
+      octx.strokeStyle = 'rgba(255,255,255,0.55)';
+      octx.beginPath();
+      octx.arc(pointer.ox, pointer.oy, stickR, 0, Math.PI * 2);
+      octx.stroke();
+      const dx = pointer.x - pointer.ox, dy = pointer.y - pointer.oy, d = Math.hypot(dx, dy) || 1;
+      const k = Math.min(1, stickR / d);
+      octx.fillStyle = 'rgba(255,255,255,0.9)';
+      octx.beginPath();
+      octx.arc(pointer.ox + dx * k, pointer.oy + dy * k, 18, 0, Math.PI * 2);
+      octx.fill();
+    }
+  };
+
   let raf = 0;
   let last = performance.now();
   const handle: FieldSceneHandle = {
+    mode,
     terrain,
     vehicle,
+    orbiter,
+    miner,
     renderer,
     onFrame: null,
-    scan(radius = 18) {
-      const at = vehicle ?? { x: renderer.cx, y: renderer.cy };
-      return renderer.scan(at.x, at.y, radius);
+    scan(radius) {
+      const at = emitter();
+      return renderer.scan(at.x, at.y, radius ?? (mode === 'orbit' ? 90 : 18));
+    },
+    laser(on) {
+      laserOn = on;
     },
     depositUnderRover() {
+      if (miner.target) return miner.target;
       if (!vehicle) return null;
       const d = terrain.depositAt(vehicle.x, vehicle.y);
       return d && renderer.revealed.has(d.id) ? d : null;
@@ -123,18 +228,28 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
       canvas.removeEventListener('pointercancel', up);
       window.removeEventListener('keydown', keyDown);
       window.removeEventListener('keyup', keyUp);
+      renderer.destroy();
     },
   };
 
   const frame = (now: number) => {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    if (vehicle) {
-      vehicle.setInput(readInput());
-      vehicle.update(dt);
-    }
+    const input = readInput();
+    vehicle?.setInput(input);
+    vehicle?.update(dt);
+    orbiter?.setInput(input);
+    orbiter?.update(dt);
+    const aimed = aim && now < aimUntil ? aim : null;
+    const at = emitter();
+    miner.update(dt, laserOn || !!aimed, at.x, at.y, aimed ?? undefined);
+    const t = miner.firing ? miner.target : null;
+    renderer.beam = t
+      ? { from: renderer.beam?.from ?? [at.x, terrain.height(at.x, at.y), at.y], to: [t.x, terrain.height(t.x, t.y) + 0.3, t.y], colour: oreColour(t.resource) }
+      : null;
     renderer.stick = pointer ? { ox: pointer.ox, oy: pointer.oy, x: pointer.x, y: pointer.y } : null;
     renderer.draw(dt);
+    drawOverlay();
     handle.onFrame?.(dt);
     raf = requestAnimationFrame(frame);
   };
