@@ -18,7 +18,7 @@ describe('field mining (KES-543)', () => {
     expect(o.y).toBeGreaterThan(0);
   });
 
-  it('the laser only cuts scanned ore in range, and stops when the deposit is empty', () => {
+  it('the laser only cuts surveyed ore in range, and stops when the deposit is empty', () => {
     const t = new FieldTerrain({ seed: 7 });
     const revealed = new Set<string>();
     const m = new FieldMiner(t, revealed, ROVER_LASER);
@@ -34,7 +34,7 @@ describe('field mining (KES-543)', () => {
     expect(m.total).toBeCloseTo(Math.round(d.r * 6), 5);
   });
 
-  it('a tap aims at the scanned ore nearest the finger', () => {
+  it('a tap aims at the surveyed ore nearest the finger', () => {
     const t = new FieldTerrain({ seed: 7, size: 240, deposits: 8, depositScale: 3 });
     const revealed = new Set(t.deposits.map(d => d.id));
     const m = new FieldMiner(t, revealed, ORBIT_LASER);

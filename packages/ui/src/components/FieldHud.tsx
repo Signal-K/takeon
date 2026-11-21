@@ -19,7 +19,6 @@ const svg = (body: ReactNode) => (
 
 /** Original line icons: white on a button face, tone-coloured beside a gauge. */
 export const FIELD_ICONS: Record<string, ReactNode> = {
-  scan: svg(<><circle cx="12" cy="12" r="2.5" /><path d="M7.5 7.5a6.4 6.4 0 0 0 0 9M16.5 7.5a6.4 6.4 0 0 1 0 9M4.6 4.6a10.5 10.5 0 0 0 0 14.8M19.4 4.6a10.5 10.5 0 0 1 0 14.8" /></>),
   laser: svg(<><path d="M4 20 14 10" /><path d="M14 10l2-6 4 4-6 2z" /><path d="M3 15l2 1M8 21l-1-2M2 19h2" /></>),
   fuel: svg(<><path d="M12 3c3 4 6 7.2 6 10.5A6 6 0 0 1 6 13.5C6 10.2 9 7 12 3z" /><path d="M10 15a2 2 0 0 0 2 2" /></>),
   hull: svg(<><path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z" /><path d="M12 8v8M8.5 10l7 4M15.5 10l-7 4" /></>),
@@ -39,7 +38,7 @@ export interface FieldButtonProps {
   onHold?: (down: boolean) => void;
   /** The big button in the thumb spot. FieldHud makes its last verb primary. */
   primary?: boolean;
-  /** Face colour: 'laser', 'scan', 'go', or a host's own tone in CSS. */
+  /** Face colour: 'laser', 'go', or a host's own tone in CSS. */
   tone?: string;
   /** 0..1 fills the ring round the face (charge, heat or cooldown). */
   charge?: number;

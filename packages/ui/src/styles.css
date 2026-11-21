@@ -1282,7 +1282,6 @@ button.tk-chip:hover {
 }
 .tk-ot-btn[data-primary] { --size: 76px; margin-bottom: 0; }
 .tk-ot-btn[data-tone='laser'] { --tone: #e8612c; }
-.tk-ot-btn[data-tone='scan'] { --tone: #1f97dc; }
 .tk-ot-btn[data-tone='go'] { --tone: #25a868; }
 /* The ring is a thin track that fills clockwise with charge. */
 .tk-ot-btn-ring {

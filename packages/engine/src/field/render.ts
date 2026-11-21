@@ -82,7 +82,7 @@ precision highp float;
 in vec3 vPos; in vec3 vNrm; in vec3 vCol; in float vSh;
 uniform vec3 uSun; uniform vec3 uShade; uniform vec3 uAmb; uniform vec3 uFog; uniform vec3 uEye; uniform vec2 uFogRange;
 uniform sampler2D uDetail; uniform sampler2D uTracks; uniform float uSize; uniform float uTime;
-uniform vec4 uScan; uniform vec4 uHit;
+uniform vec4 uHit;
 uniform vec4 uDep[16]; uniform vec3 uDepCol[16]; uniform int uDepN;
 uniform vec4 uBlob; uniform vec2 uBlobSize;
 layout(location=0) out vec4 o; layout(location=1) out vec4 oN;
@@ -107,12 +107,6 @@ void main(){
   if (tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) col *= 1.0 - texture(uTracks, tuv).r * 0.45;
   vec3 amb = mix(uShade, uAmb, 0.7);
   vec3 c = col * light + amb * max(0.0, 1.0 - light) * 0.55;
-  if (uScan.w > 0.0) {
-    float d = distance(w, uScan.xy);
-    float ring = exp(-pow((d - uScan.z) / 0.7, 2.0));
-    float wash = step(d, uScan.z) * 0.08;
-    c += vec3(0.34, 0.91, 0.62) * (ring * 0.9 + wash) * uScan.w;
-  }
   for (int i = 0; i < 16; i++) {
     if (i >= uDepN) break;
     vec4 dp = uDep[i];
@@ -317,7 +311,7 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 export class FieldRenderer {
   camera: FieldCamera;
   zoom: number;
-  /** Deposits the player has scanned. */
+  /** Deposits the probe survey has mapped: drawn, pointed at and mineable. Rockets and rovers never scan. */
   readonly revealed = new Set<string>();
   /** Set by the host each frame: the stick being dragged (CSS px), the laser beam, the ship. */
   stick: FieldStick | null = null;
@@ -350,7 +344,6 @@ export class FieldRenderer {
   private trackDirty = false;
   private trackAge = 0;
   private revealedAt = new Map<string, number>();
-  private scans: { x: number; y: number; r: number; t: number }[] = [];
   private sparks: { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number }[] = [];
   private time = 0;
   private vp: Mat4 = new Float32Array(16);
@@ -382,7 +375,7 @@ export class FieldRenderer {
     this.camZ = at.y;
     this.camY = terrain.height(at.x, at.y);
     this.progs = {
-      terrain: this.prog(TERRAIN_VS, TERRAIN_FS, ['uVP', 'uSun', 'uShade', 'uAmb', 'uFog', 'uEye', 'uFogRange', 'uDetail', 'uTracks', 'uSize', 'uTime', 'uScan', 'uHit', 'uDep', 'uDepCol', 'uDepN', 'uBlob', 'uBlobSize']),
+      terrain: this.prog(TERRAIN_VS, TERRAIN_FS, ['uVP', 'uSun', 'uShade', 'uAmb', 'uFog', 'uEye', 'uFogRange', 'uDetail', 'uTracks', 'uSize', 'uTime', 'uHit', 'uDep', 'uDepCol', 'uDepN', 'uBlob', 'uBlobSize']),
       mesh: this.prog(MESH_VS, MESH_FS, ['uVP', 'uModel', 'uSun', 'uShade', 'uAmb', 'uFog', 'uEye', 'uFogRange', 'uEmit', 'uShadow']),
       glow: this.prog(GLOW_VS, GLOW_FS, ['uVP']),
       sky: this.prog(FULL_VS, SKY_FS, ['uInvVP', 'uEye', 'uZenith', 'uHorizon', 'uNebA', 'uNebB', 'uPlanetA', 'uPlanetB', 'uInk', 'uStars', 'uPlanet', 'uAtmo']),
@@ -458,18 +451,13 @@ export class FieldRenderer {
     this.fboTex = [col, nrm, dep];
   }
 
-  /** Reveal deposits within `radius` metres of a point, each as the pulse reaches it. */
-  scan(x: number, y: number, radius = 18): FieldDeposit[] {
-    this.scans.push({ x, y, r: radius, t: this.time });
-    const found = this.terrain.deposits.filter(d => Math.hypot(d.x - x, d.y - y) <= radius);
-    for (const d of found) {
-      const delay = (Math.hypot(d.x - x, d.y - y) / radius) * 1.1;
-      setTimeout(() => {
-        if (!this.revealed.has(d.id)) this.revealedAt.set(d.id, this.time);
-        this.revealed.add(d.id);
-      }, delay * 1000);
+  /** Mark deposits as known from the probe survey. Each pops up once, then stays. */
+  reveal(ids: Iterable<string>): void {
+    for (const id of ids) {
+      if (this.revealed.has(id)) continue;
+      this.revealedAt.set(id, this.time);
+      this.revealed.add(id);
     }
-    return found;
   }
 
   /** World point (metres; z defaults to the ground) → CSS px, with whether it is in front of the camera. */
@@ -670,13 +658,6 @@ export class FieldRenderer {
     gl.uniform1i(u.uTracks, 1);
     gl.uniform1f(u.uSize, this.terrain.size);
     gl.uniform1f(u.uTime, this.time);
-    // Scan pulse.
-    this.scans = this.scans.filter(sc => this.time - sc.t < 1.6);
-    const s = this.scans[this.scans.length - 1];
-    if (s) {
-      const age = this.time - s.t;
-      gl.uniform4f(u.uScan, s.x, s.y, s.r * Math.min(1, age / 1.1), Math.max(0, 1 - Math.max(0, age - 1.1) / 0.5));
-    } else gl.uniform4f(u.uScan, 0, 0, 0, 0);
     // Ore.
     const deps = new Float32Array(64), cols = new Float32Array(48);
     let n = 0;
@@ -932,7 +913,7 @@ export class FieldRenderer {
     gl.uniform1f(u.uShadow, 1);
     gl.uniformMatrix4fv(u.uModel, false, ident);
     this.drawMesh(this.boulderMesh);
-    // Ore pops up when scanned and shrinks as it is cut.
+    // Surveyed ore pops up on arrival and shrinks as it is cut.
     gl.uniform1f(u.uEmit, 0.45);
     for (const d of this.terrain.deposits) {
       if (!this.revealed.has(d.id)) continue;

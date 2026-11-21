@@ -6,7 +6,7 @@ import type { FieldDeposit, FieldTerrain } from './terrain.js';
  * `FieldOrbiter` is the mining ship on a low pass: it drifts north at orbital
  * speed, the stick slides it east and west and trims the drift, and when it
  * runs off the north edge the next pass starts at the south edge.
- * `FieldMiner` is the laser: it only locks onto a deposit a scan has shown and
+ * `FieldMiner` is the laser: it only locks onto a deposit the probe survey mapped and
  * that is within range of the emitter's ground point, and it cuts at a fixed
  * rate until the deposit is empty.
  */
@@ -103,7 +103,7 @@ export class FieldMiner {
     for (const d of terrain.deposits) this.left.set(d.id, Math.round(d.r * 6));
   }
 
-  /** The nearest scanned, unemptied deposit within range of (x, y), or null. */
+  /** The nearest surveyed, unemptied deposit within range of (x, y), or null. */
   nearest(x: number, y: number, prefer?: { x: number; y: number }): FieldDeposit | null {
     let best: FieldDeposit | null = null, bd = Infinity;
     for (const d of this.terrain.deposits) {

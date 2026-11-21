@@ -262,7 +262,7 @@ scenes.
   - The camera is built for a phone held upright. It never turns, and it looks north and steeply down, about 60° on the surface and 62° in orbit, like a top-down action game. A low chase camera wasted half of a portrait screen on sky and squeezed the ground into a strip.
   - It frames a fixed ground width across the narrow side of the screen (18 m on the surface, wide enough to see where to send the rover, and 26 m in orbit), so the rover is the same size on every phone. It leads the way the vehicle is moving, so the rover sits a little below centre with room ahead.
   - The terrain is one mesh: 0.5 m inside the field, with a coarse apron out to the horizon.
-  - Shading is per pixel: a south-west sun, baked self-shadows, a tiling grain texture, wheel tracks, the vehicle's shadow, the scan pulse, ore glow and the laser hit point.
+  - Shading is per pixel: a south-west sun, baked self-shadows, a tiling grain texture, wheel tracks, the vehicle's shadow, ore glow and the laser hit point.
   - Boulders, ore crystals, the rover (wheels spin with the odometer) and the ship are low-poly meshes from `meshes.ts`.
   - The laser beam, sparks and engine flares are additive billboards.
   - The look is painted and inked, in the Out There: Omega manner. Lighting falls in cel bands, shadows lean plum and distance fades into a coloured haze. The scene renders off-screen into colour, normal and depth targets. A comic pass then draws navy ink lines where depth creases or normals break, adds hatching to the deepest shade, and applies a warm/plum grade, paper grain and a vignette. Lines fade with distance so the horizon stays painted.
@@ -282,13 +282,14 @@ scenes.
   - The mining ship is Landnam's (`laser/ship.png`, the minimal mine pass): a cream hull with a pointed nose, blue side and spine stripes, a blue-framed cockpit, a dorsal fin, a grey nozzle, landing legs and a ventral laser.
   - Call `project()` to turn a world point into CSS pixels, and `pick()` to turn CSS pixels into a ground point.
 - **`FieldOrbiter`** is the mining ship on a low pass. It drifts north at orbital speed, the stick slides it east and west and trims the drift, and it comes round again at the south edge.
-- **`FieldMiner`** is the laser. It locks only onto scanned ore within range (rover 7 m, orbit 45 m) and cuts until the deposit is empty. `depositScale` (opt-in) makes the bigger veins that orbit fields use.
+- **`FieldMiner`** is the laser. It locks only onto surveyed ore within range (rover 7 m, orbit 45 m) and cuts until the deposit is empty. `depositScale` (opt-in) makes the bigger veins that orbit fields use.
 - **`mountFieldScene(canvas, opts)`** wires these together.
   - `mode` is `surface` or `orbit`.
-  - On the surface the rover takes commands. Tap the ground and it plans a route and drives there. Tap scanned ore and it drives into laser range and mines the ore until it is empty. Arrows and WASD steer by hand and cancel the order.
+  - On the surface the rover takes commands. Tap the ground and it plans a route and drives there. Tap surveyed ore and it drives into laser range and mines the ore until it is empty. Arrows and WASD steer by hand and cancel the order.
   - Hosts can call `command(x, y)`, read `order` and listen on `onOrder`. The overlay draws the dotted route, a marker at the goal, and a red cross where a tap has no way through.
-  - In orbit, drag to steer, and a quick tap on scanned ore aims the laser.
-  - The host owns the HUD and calls `scan()` and `laser(on)`.
+  - In orbit, drag to steer, and a quick tap on surveyed ore aims the laser.
+  - Rockets and rovers never scan: a survey probe mapped the site before the ship was built. The seams it found (`surveyed`, every seam by default, or a list of ids) are on the ground from the first frame; `surveyed()` lists them and `reveal(ids)` adds a probe map that comes in mid-run.
+  - The host owns the HUD and calls `laser(on)`.
   - Pass an `overlay` canvas to get the route, the drag ring (orbit) and pointers to off-screen ore. The pointers stay clear of the top gauge panel and the bottom thumb buttons.
 
 ### Hosting the field (`@takeon/engine/field`)
@@ -301,6 +302,6 @@ The 3D field (KES-541, KES-543) is its own entry point, `import { mountFieldScen
 - The rover is built from blocks on a 1 m grid, Haphazard Martians style: hex nodes, braced girders, wheels on the end columns, a blue Navcam mast at the front, one fitted part per bay. It is 1.8 m over the wheels.
 - `ORE_COLOURS` is mutable; write the host's mineral colours into it before mounting.
 - `terrain.credits` names the real DTM under Mars and Moon fields; show it.
-- Scanned ore off screen, or hidden under the host's gauge panel (top left) or thumb buttons (bottom right), gets an edge pointer with its distance. Seams that point the same way share one pointer, labelled with the nearest distance and a count of the rest (`70 m +2`), so labels never overlap.
+- Surveyed ore off screen, or hidden under the host's gauge panel (top left) or thumb buttons (bottom right), gets an edge pointer with its distance. Seams that point the same way share one pointer, labelled with the nearest distance and a count of the rest (`70 m +2`), so labels never overlap.
 
 Landnam mounts it in `FieldMiningScreen` for mining contracts (vendored as a 0.2.5 repack).

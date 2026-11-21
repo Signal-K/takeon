@@ -8,14 +8,18 @@ import { FieldPlanner } from './path.js';
 /**
  * Mount a playable field on a canvas (KES-541, KES-543).
  *
+ * Rockets and rovers never scan. A survey probe mapped the site before the
+ * ship was built, so the seams it found (`surveyed`, every seam by default)
+ * are on the ground from the first frame.
+ *
  * `mode: 'surface'` drives a rover by command: tap the ground and it plans a
- * route round rocks and steep ground and drives there; tap scanned ore and it
+ * route round rocks and steep ground and drives there; tap surveyed ore and it
  * drives into laser range and mines it until it is empty. Arrows/WASD still
  * steer by hand and cancel the order. `mode: 'orbit'` flies the mining ship on
- * a low pass: drag to steer (up is north), and a quick tap on scanned ore aims
- * the laser there. The host draws its own HUD and calls `scan()` and `laser()`
- * from its own buttons; pass `overlay` (a transparent canvas over this one) to
- * get the route, the order marker, the drag ring and pointers to off-screen ore.
+ * a low pass: drag to steer (up is north), and a quick tap on surveyed ore aims
+ * the laser there. The host draws its own HUD and calls `laser()` from its own
+ * button; pass `overlay` (a transparent canvas over this one) to get the route,
+ * the order marker, the drag ring and pointers to off-screen ore.
  */
 
 /** What the rover has been told to do. */
@@ -42,6 +46,11 @@ export interface FieldSceneOptions extends FieldOptions, FieldRenderOptions {
   overlay?: HTMLCanvasElement;
   /** Hold size in units. The laser stops when it is full and the cargo bed fills toward it. */
   capacity?: number;
+  /**
+   * The seams the probe survey mapped, known on arrival: true (the default) for
+   * every seam, or a list of deposit ids. Unsurveyed seams are not drawn or cut.
+   */
+  surveyed?: boolean | readonly string[];
 }
 
 export interface FieldSceneHandle {
@@ -51,15 +60,17 @@ export interface FieldSceneHandle {
   orbiter: FieldOrbiter | null;
   miner: FieldMiner;
   renderer: FieldRenderer;
-  /** Pulse a scan from the rover or ship and reveal deposits in range. */
-  scan(radius?: number): FieldDeposit[];
-  /** Hold the laser on (true) or off. It locks onto the nearest scanned ore in range. */
+  /** The seams the probe survey mapped, as on the ground now (emptied ones included). */
+  surveyed(): FieldDeposit[];
+  /** Mark more seams as surveyed (a probe map that came in while the ship was on site). */
+  reveal(ids: Iterable<string>): void;
+  /** Hold the laser on (true) or off. It locks onto the nearest surveyed ore in range. */
   laser(on: boolean): void;
-  /** The scanned deposit the rover is at or the laser is on, if any. */
+  /** The surveyed deposit the rover is at or the laser is on, if any. */
   depositUnderRover(): FieldDeposit | null;
   /** Drive from code (tests, demos, a host's own stick). */
   setInput(input: FieldInput): void;
-  /** Order the rover to a ground point, or to mine the scanned ore there. Returns false if no route. */
+  /** Order the rover to a ground point, or to mine the surveyed ore there. Returns false if no route. */
   command(x: number, y: number): boolean;
   /** The rover's current order, if any. */
   readonly order: FieldOrder | null;
@@ -78,6 +89,8 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
   const renderer = new FieldRenderer(canvas, terrain, vehicle, { ...opts, camera: mode });
   if (orbiter) renderer.attachOrbiter(orbiter, opts.ship);
   const miner = new FieldMiner(terrain, renderer.revealed, mode === 'orbit' ? ORBIT_LASER : ROVER_LASER);
+  const surveyed = opts.surveyed ?? true;
+  renderer.reveal(surveyed === true ? terrain.deposits.map(d => d.id) : surveyed === false ? [] : surveyed);
   const full = new Map(terrain.deposits.map(d => [d.id, miner.left.get(d.id) ?? 1]));
   renderer.oreLeft = id => (miner.left.get(id) ?? 0) / (full.get(id) || 1);
   const stickR = opts.stickRadius ?? 52;
@@ -222,7 +235,7 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     if (!octx || !overlay) return;
     octx.setTransform(dpr, 0, 0, dpr, 0, 0);
     octx.clearRect(0, 0, cssW, cssH);
-    // Pointers to scanned ore off screen, Out There green.
+    // Pointers to surveyed ore off screen, Out There green.
     const at = emitter();
     // Keep pointers clear of the host's gauge panel (top) and thumb buttons (bottom).
     const pad = 34, top = Math.min(160, cssH * 0.2), bottom = Math.min(210, cssH * 0.26);
@@ -342,9 +355,11 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     miner,
     renderer,
     onFrame: null,
-    scan(radius) {
-      const at = emitter();
-      return renderer.scan(at.x, at.y, radius ?? (mode === 'orbit' ? 90 : 18));
+    surveyed() {
+      return terrain.deposits.filter(d => renderer.revealed.has(d.id));
+    },
+    reveal(ids) {
+      renderer.reveal(ids);
     },
     laser(on) {
       laserOn = on;
