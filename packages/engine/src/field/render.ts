@@ -4,7 +4,9 @@ import type { FieldDeposit, FieldStyleId, FieldTerrain } from './terrain.js';
 import type { FieldTrackPoint, FieldVehicle } from './vehicle.js';
 import type { FieldOrbiter } from './miner.js';
 import { invert, lookAt, multiply, perspective, pose, transformPoint, type Mat4, type V3 } from './glmath.js';
-import { buildOre, buildRover, buildShip, hex, MeshBuilder, oreColour, type RGB, type RoverModel } from './meshes.js';
+import { buildOre, buildRover, buildShip, hex, MeshBuilder, oreColour, type FieldRoverLook, type RGB, type RoverModel } from './meshes.js';
+import { roverLookFromSpec } from './look.js';
+import type { RoverSpec } from '../types.js';
 
 /**
  * Field renderer, WebGL2 (KES-543).
@@ -31,6 +33,8 @@ export interface FieldRenderOptions {
   camera?: FieldCamera;
   /** >1 moves the camera in. */
   zoom?: number;
+  /** The rover to build: a Landnam/TakeOn `RoverSpec` or a fit-out. Defaults to the stock rover. */
+  rover?: RoverSpec | FieldRoverLook | boolean;
 }
 
 export interface FieldStick { ox: number; oy: number; x: number; y: number }
@@ -386,7 +390,8 @@ export class FieldRenderer {
     this.buildBoulders();
     this.buildTextures();
     if (vehicle) {
-      const model = buildRover();
+      const r = opts.rover;
+      const model = buildRover(r && typeof r === 'object' ? ('chassis' in r && 'modules' in r ? roverLookFromSpec(r) : (r as FieldRoverLook)) : undefined);
       this.rover = { body: this.meshFrom(model.body), wheel: this.meshFrom(model.wheel), model };
       vehicle.onTrack = p => this.stampTrack(p);
     }

@@ -30,8 +30,12 @@ export interface FieldOrder {
 
 export interface FieldSceneOptions extends FieldOptions, FieldRenderOptions {
   mode?: FieldCamera;
-  /** Draw and drive a rover in surface mode. Off gives a still site picture. */
-  rover?: boolean;
+  /**
+   * The rover in surface mode: a Landnam/TakeOn `RoverSpec` (built part for
+   * part like the iso rover), a fit-out, or true for the stock rover. `false`
+   * gives a still site picture.
+   */
+  rover?: FieldRenderOptions['rover'];
   /** Stick radius in CSS px: a drag this far is full throttle. */
   stickRadius?: number;
   /** A transparent 2D canvas laid over the field for the stick ring and ore pointers. */

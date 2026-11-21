@@ -269,7 +269,17 @@ scenes.
   - The sky is painted per style: saturated nebulae, stars and a banded, inked planet for airless bodies, and a lilac sky with warm cloud banks for rust. The steep camera rarely shows it.
   - Models are outlined wherever they meet the ground, however far away the camera is. Fog and line fade scale with the camera distance.
   - Over a crater rim, the camera tilts steeper rather than lose the rover behind it.
-  - The rover is built to be read from above: oversized lugged wheels, a bevelled hull over a gold-foil belly, orange roll bars, solar wings, an ore hopper and a camera mast. Vertex colours are weathered at build time (`MeshBuilder.weather`) so it reads as painted metal, not plastic.
+  - The rover is the Landnam/TakeOn rover in 3D, part for part with the iso painter (`render/rover.ts`). Pass `rover` as a `RoverSpec` and `roverLookFromSpec` reads its fit-out:
+    - hull colour and chassis (scout, a longer hauler, a taller lab);
+    - six dark spoked wheels, or tracks;
+    - blue solar wings out to the sides, or an RTG;
+    - a camera mast with a white head and stereo eyes;
+    - a scanner whip with a cyan tip;
+    - a jointed tool arm, where the laser leaves;
+    - a cargo bed.
+
+    Every build also has the ribbed blue-grey aft tank, the white dish, the green charge strip and the amber beacon. There is no orange, as on the iso rover. Vertex colours are weathered at build time (`MeshBuilder.weather`).
+  - The mining ship is Landnam's (`laser/ship.png`, the minimal mine pass): a cream hull with a pointed nose, blue side and spine stripes, a blue-framed cockpit, a dorsal fin, a grey nozzle, landing legs and a ventral laser.
   - Call `project()` to turn a world point into CSS pixels, and `pick()` to turn CSS pixels into a ground point.
 - **`FieldOrbiter`** is the mining ship on a low pass. It drifts north at orbital speed, the stick slides it east and west and trims the drift, and it comes round again at the south edge.
 - **`FieldMiner`** is the laser. It locks only onto scanned ore within range (rover 7 m, orbit 45 m) and cuts until the deposit is empty. `depositScale` (opt-in) makes the bigger veins that orbit fields use.

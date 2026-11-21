@@ -96,3 +96,17 @@ describe('tap-to-drive (KES-543)', () => {
     expect(v.route).toBeNull();
   });
 });
+
+describe('field vehicles match Landnam (KES-543)', () => {
+  it('reads the fit-out from a Landnam/TakeOn rover spec', async () => {
+    const { roverLookFromSpec, buildRover, DEFAULT_ROVER_LOOK } = await import('../src/field/index.js');
+    const stock = roverLookFromSpec({ chassis: 'chassis-scout', wheels: 'wheels-rocker', power: 'power-solar-s', modules: ['tool-scoop', 'cam-nav'], color: '#c8d6e5' });
+    expect(stock).toEqual(DEFAULT_ROVER_LOOK);
+    const heavy = roverLookFromSpec({ chassis: 'chassis-hauler', wheels: 'wheels-tracks', power: 'power-rtg', modules: ['scan-deep', 'cargo-hold'], color: '#e8c86a' });
+    expect(heavy).toMatchObject({ chassis: 'hauler', tracks: true, rtg: true, solar: false, scanner: true, cargo: true, tool: false, camera: false });
+    // Parts change the model: the heavy build has no wings or arm but more hardware elsewhere.
+    expect(buildRover(heavy).body.length).not.toBe(buildRover(stock).body.length);
+    expect(buildRover(heavy).wheels.length).toBe(4);
+    expect(buildRover(stock).wheels.length).toBe(6);
+  });
+});
