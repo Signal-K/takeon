@@ -1333,3 +1333,8 @@ button.tk-chip:hover {
   .tk-ot-btn[data-primary] { --size: 68px; }
   .tk-ot-gauge-track { width: 84px; }
 }
+
+/* Without backdrop blur the 16% tint is too thin to read over bright ground: use a denser, still light, tint. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tk-ot-hud { --tk-ot-glass: rgba(40, 52, 70, 0.46); }
+}

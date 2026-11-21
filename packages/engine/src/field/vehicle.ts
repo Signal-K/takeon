@@ -32,7 +32,7 @@ export interface FieldVehicleSpec {
 }
 
 export const DEFAULT_ROVER: FieldVehicleSpec = {
-  length: 2.8, width: 2.0, maxSpeed: 4.2, turnRate: 3.2, accel: 5, maxGrade: 0.55,
+  length: 2.8, width: 2.3, maxSpeed: 4.2, turnRate: 3.2, accel: 5, maxGrade: 0.55,
 };
 
 export interface FieldInput {

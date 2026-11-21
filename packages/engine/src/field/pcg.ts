@@ -315,7 +315,8 @@ registerFieldLayer({
       if (ctx.slope(x, y) > 0.35) continue;
       if (ctx.deposits.some(d => Math.hypot(d.x - x, d.y - y) < 10 * scale)) continue;
       if (ctx.bouldersNear(x, y, 1.5).some(b => Math.hypot(b.x - x, b.y - y) < b.r + 1.5)) continue;
-      const ri = Math.min(resources.length - 1, Math.floor(Math.pow(ctx.rnd(), 1.6) * resources.length));
+      // The first seam, a short drive away, is always the first resource (a host lists what the order wants first).
+      const ri = ctx.deposits.length === 0 ? 0 : Math.min(resources.length - 1, Math.floor(Math.pow(ctx.rnd(), 1.6) * resources.length));
       ctx.deposits.push({ id: `dep-${ctx.deposits.length}`, x, y, r: (1.6 + ctx.rnd() * 1.4) * scale, resource: resources[ri] });
     }
   },
@@ -371,8 +372,16 @@ function flattest(ctx: FieldGenContext, h: (x: number, y: number) => number): Ve
         const a = k * Math.PI / 4;
         dev += Math.abs(h(x + Math.cos(a) * r, y + Math.sin(a) * r) - c);
       }
+      // A crater floor is flat too: penalise sitting below the ground around it, so the
+      // rover does not start in a bowl with a rim between it and the camera.
+      let ring = 0;
+      for (let k = 0; k < 8; k++) {
+        const a = k * Math.PI / 4 + Math.PI / 8;
+        ring += h(x + Math.cos(a) * r * 3, y + Math.sin(a) * r * 3);
+      }
+      const sunk = Math.max(0, ring / 8 - c);
       // Prefer the middle a little so the rover is not pinned to an edge.
-      const score = dev + Math.hypot(x - s / 2, y - s / 2) * 0.01;
+      const score = dev + sunk * 6 + Math.hypot(x - s / 2, y - s / 2) * 0.01;
       if (score < bestScore) { bestScore = score; best = { x, y }; }
     }
   return best;

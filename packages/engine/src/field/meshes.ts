@@ -238,6 +238,8 @@ export interface RoverModel {
   wheelRadius: number;
   /** Where the laser leaves the rover (the tool head, or the camera head). */
   muzzle: [number, number, number];
+  /** Ore crates in the cargo bed, drawn one by one as the hold fills (empty without a bed). */
+  crates: Float32Array[];
 }
 
 /**
@@ -288,6 +290,7 @@ export function buildRover(look: FieldRoverLook = DEFAULT_ROVER_LOOK): RoverMode
   const b = new MeshBuilder();
   const R = 0.44;
   const wheels: [number, number, number][] = [];
+  const crates: Float32Array[] = [];
   const wz = 0.98;
   if (look.tracks) {
     // Track belts: long dark pods with tread ribs, sprockets at each end spin.
@@ -329,7 +332,11 @@ export function buildRover(look: FieldRoverLook = DEFAULT_ROVER_LOOK): RoverMode
   if (look.cargo) {
     // Open cargo bed at the back of the deck.
     b.bevelBox(-hx + 0.15, -0.1, top - 0.02, top + 0.22, -0.05, hz - 0.12, 0.04, hex('#6a7180'), hex('#4a505c'));
-    for (let i = 0; i < 4; i++) b.bevelBox(-hx + 0.3 + i * 0.3, -hx + 0.52 + i * 0.3, top + 0.1, top + 0.3, 0.1 + (i % 2) * 0.25, 0.32 + (i % 2) * 0.25, 0.03, hex('#b08968'), hex('#c9a27e'));
+    for (let i = 0; i < 4; i++) {
+      const c = new MeshBuilder();
+      c.bevelBox(-hx + 0.3 + i * 0.3, -hx + 0.52 + i * 0.3, top + 0.1, top + 0.3, 0.1 + (i % 2) * 0.25, 0.32 + (i % 2) * 0.25, 0.03, hex('#b08968'), hex('#c9a27e'));
+      crates.push(c.build());
+    }
   }
   if (look.solar) {
     // Solar wings out to the sides on struts, like the iso painter.
@@ -389,7 +396,7 @@ export function buildRover(look: FieldRoverLook = DEFAULT_ROVER_LOOK): RoverMode
     w.quad([Math.cos(a - 0.18) * 0.06, Math.sin(a - 0.18) * 0.06, z], [Math.cos(a - 0.08) * r, Math.sin(a - 0.08) * r, z], [Math.cos(a + 0.08) * r, Math.sin(a + 0.08) * r, z], [Math.cos(a + 0.18) * 0.06, Math.sin(a + 0.18) * 0.06, z], hex('#9aa0ab'));
   }
   w.weather(-R, R, 0.85, 0.04, 3);
-  return { body: b.build(), wheel: w.build(), wheels, wheelRadius: look.tracks ? 0.36 : R, muzzle };
+  return { body: b.build(), wheel: w.build(), wheels, wheelRadius: look.tracks ? 0.36 : R, muzzle, crates };
 }
 
 /**

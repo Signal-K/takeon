@@ -323,6 +323,8 @@ export class FieldRenderer {
   orbiter: FieldOrbiter | null = null;
   /** Fraction of each deposit left, 0..1, so ore shrinks as it is cut. */
   oreLeft: (id: string) => number = () => 1;
+  /** How full the rover's hold is, 0..1: the cargo bed shows a crate per quarter. */
+  cargoFill = 0;
 
   private gl: WebGL2RenderingContext;
   private dpr = 1;
@@ -333,7 +335,7 @@ export class FieldRenderer {
   private fboTex: WebGLTexture[] = [];
   private terrainMesh!: Mesh & { ibo: WebGLBuffer; type: number };
   private boulderMesh!: Mesh;
-  private rover: { body: Mesh; wheel: Mesh; model: RoverModel } | null = null;
+  private rover: { body: Mesh; wheel: Mesh; crates: Mesh[]; model: RoverModel } | null = null;
   private ship: { mesh: Mesh; muzzle: V3; engines: V3[] } | null = null;
   private ore = new Map<string, Mesh>();
   private glowBuf: WebGLBuffer;
@@ -392,7 +394,7 @@ export class FieldRenderer {
     if (vehicle) {
       const r = opts.rover;
       const model = buildRover(r && typeof r === 'object' ? ('chassis' in r && 'modules' in r ? roverLookFromSpec(r) : (r as FieldRoverLook)) : undefined);
-      this.rover = { body: this.meshFrom(model.body), wheel: this.meshFrom(model.wheel), model };
+      this.rover = { body: this.meshFrom(model.body), wheel: this.meshFrom(model.wheel), crates: model.crates.map(c => this.meshFrom(c)), model };
       vehicle.onTrack = p => this.stampTrack(p);
     }
     for (const d of terrain.deposits) this.ore.set(d.id, this.meshFrom(buildOre(d.r, d.resource, hash2(d.x | 0, d.y | 0, terrain.seed) * 1e9)));
@@ -946,6 +948,8 @@ export class FieldRenderer {
       const m = pose(v.x, v.z, v.y, -v.heading, v.pitch, -v.roll);
       gl.uniformMatrix4fv(u.uModel, false, m);
       this.drawMesh(rv.body);
+      const crates = Math.min(rv.crates.length, Math.ceil(clamp(this.cargoFill, 0, 1) * rv.crates.length - 1e-6));
+      for (let i = 0; i < crates; i++) this.drawMesh(rv.crates[i]);
       const spin = -v.odometer / rv.model.wheelRadius;
       for (const [wx, wy, wz] of rv.model.wheels) {
         const local = pose(wx, wy, wz, 0, spin);

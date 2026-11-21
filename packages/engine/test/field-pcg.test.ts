@@ -110,3 +110,30 @@ describe('field vehicles match Landnam (KES-543)', () => {
     expect(buildRover(stock).wheels.length).toBe(6);
   });
 });
+
+describe('field fixes (KES-543)', () => {
+  it('fills the cargo bed a crate at a time', async () => {
+    const { buildRover, DEFAULT_ROVER_LOOK } = await import('../src/field/index.js');
+    expect(buildRover({ ...DEFAULT_ROVER_LOOK, cargo: true }).crates.length).toBe(4);
+    expect(buildRover(DEFAULT_ROVER_LOOK).crates.length).toBe(0);
+  });
+
+  it('does not land the rover at the bottom of a bowl', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const t = new FieldTerrain({ style: 'rust', seed });
+      const L = t.landing, c = t.height(L.x, L.y);
+      let ring = 0;
+      for (let k = 0; k < 16; k++) { const a = k * Math.PI / 8; ring += t.height(L.x + Math.cos(a) * 18, L.y + Math.sin(a) * 18); }
+      expect(ring / 16 - c).toBeLessThan(2.5);
+    }
+  });
+});
+
+describe('field deposits for a host order (KES-543)', () => {
+  it('puts the first resource in the seam nearest the landing', () => {
+    for (const seed of [1, 7, 19]) {
+      const t = new FieldTerrain({ style: 'rust', seed, resources: ['platinum', 'iron', 'nickel'] });
+      expect(t.deposits[0].resource).toBe('platinum');
+    }
+  });
+});

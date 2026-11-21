@@ -40,6 +40,8 @@ export interface FieldSceneOptions extends FieldOptions, FieldRenderOptions {
   stickRadius?: number;
   /** A transparent 2D canvas laid over the field for the stick ring and ore pointers. */
   overlay?: HTMLCanvasElement;
+  /** Hold size in units. The laser stops when it is full and the cargo bed fills toward it. */
+  capacity?: number;
 }
 
 export interface FieldSceneHandle {
@@ -370,8 +372,17 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     const mining = order?.kind === 'mine' && order.mining && order.deposit ? order.deposit : null;
     if (mining) aimed = { x: mining.x, y: mining.y };
     const at = emitter();
-    miner.update(dt, laserOn || !!aimed, at.x, at.y, aimed ?? undefined);
-    if (mining && ((miner.left.get(mining.id) ?? 0) <= 0 || !miner.firing)) finish(miner.firing || (miner.left.get(mining.id) ?? 0) <= 0 ? 'done' : 'blocked');
+    const cap = opts.capacity ?? Infinity;
+    const holdFull = miner.total >= cap - 1e-6;
+    const cut = miner.update(dt, !holdFull && (laserOn || !!aimed), at.x, at.y, aimed ?? undefined);
+    if (cut && miner.total > cap) {
+      // Trim the last step so the hold never reads over its size.
+      const over = miner.total - cap;
+      miner.hold.set(cut.resource, (miner.hold.get(cut.resource) ?? 0) - over);
+      miner.left.set(miner.target!.id, (miner.left.get(miner.target!.id) ?? 0) + over);
+    }
+    renderer.cargoFill = Number.isFinite(cap) && cap > 0 ? miner.total / cap : 0;
+    if (mining && ((miner.left.get(mining.id) ?? 0) <= 0 || !miner.firing)) finish(holdFull || miner.firing || (miner.left.get(mining.id) ?? 0) <= 0 ? 'done' : 'blocked');
     const t = miner.firing ? miner.target : null;
     renderer.beam = t
       ? { from: renderer.beam?.from ?? [at.x, terrain.height(at.x, at.y), at.y], to: [t.x, terrain.height(t.x, t.y) + 0.3, t.y], colour: oreColour(t.resource) }

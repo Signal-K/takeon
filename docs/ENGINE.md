@@ -290,3 +290,14 @@ scenes.
   - In orbit, drag to steer, and a quick tap on scanned ore aims the laser.
   - The host owns the HUD and calls `scan()` and `laser(on)`.
   - Pass an `overlay` canvas to get the route, the drag ring (orbit) and pointers to off-screen ore. The pointers stay clear of the top gauge panel and the bottom thumb buttons.
+
+### Hosting the field (`@takeon/engine/field`)
+
+The 3D field (KES-541, KES-543) is its own entry point, `import { mountFieldScene } from '@takeon/engine/field'`, so a host can load it on demand without the iso engine. It only depends on `util/rng`, `util/noise` and `types`. For a host running a mining order:
+
+- `resources` lists ore by likelihood; the first one is always the seam nearest the landing, so list what the order wants first.
+- `capacity` is the hold size: the laser stops at it and a rover with a cargo bed shows a crate per quarter full.
+- `ORE_COLOURS` is mutable; write the host's mineral colours into it before mounting.
+- `terrain.credits` names the real DTM under Mars and Moon fields; show it.
+
+Landnam mounts it in `FieldMiningScreen` for mining contracts (vendored as a 0.2.5 repack).
