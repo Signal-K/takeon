@@ -18,7 +18,24 @@ interface Chunk {
   canvas: HTMLCanvasElement | OffscreenCanvas;
   originX: number;
   originY: number;
+  /** Chunk size in world pixels (scale 1); the canvas is this times `bake`. */
+  w: number;
+  h: number;
+  /** Pixels per world pixel the canvas was painted at. */
+  bake: number;
   dirty: boolean;
+}
+
+/**
+ * Bake resolutions a chunk may be painted at. A chunk is painted at the first
+ * step at or above the screen's pixels per world pixel (zoom × device pixel
+ * ratio), so it is never stretched up; stepping keeps a pinch zoom from
+ * repainting every frame. Painting at 1 and stretching 3–6× was what made the
+ * ground look blurred.
+ */
+const BAKE_STEPS = [1, 1.5, 2, 3, 4, 5, 6];
+export function bakeScaleFor(pixelsPerUnit: number): number {
+  return BAKE_STEPS.find(s => s >= pixelsPerUnit - 0.01) ?? BAKE_STEPS[BAKE_STEPS.length - 1];
 }
 
 /** Cached isometric terrain surface, independent of any game simulation. */
@@ -54,14 +71,19 @@ export class IsoTerrainLayer {
   }
 
   /** Composite cached chunks in painter order, rebuilding dirty chunks lazily. */
-  draw(context: CanvasRenderingContext2D, camera: Camera): void {
+  /**
+   * Composite cached chunks in painter order. Only chunks on screen are
+   * (re)painted, at `dpr × zoom` so they land on the screen pixel for pixel.
+   */
+  draw(context: CanvasRenderingContext2D, camera: Camera, dpr = 1): void {
+    const bake = bakeScaleFor(camera.zoom * dpr);
     const sorted = [...this.chunks].sort((a, b) => a.cx + a.cy - (b.cx + b.cy));
     for (const chunk of sorted) {
-      if (chunk.dirty) this.rebuildChunk(chunk);
       const screen = camera.toScreen(chunk.originX, chunk.originY);
-      const width = chunk.canvas.width * camera.zoom;
-      const height = chunk.canvas.height * camera.zoom;
+      const width = chunk.w * camera.zoom;
+      const height = chunk.h * camera.zoom;
       if (screen.x > camera.viewW || screen.y > camera.viewH || screen.x + width < 0 || screen.y + height < 0) continue;
+      if (chunk.dirty || chunk.bake !== bake) this.rebuildChunk(chunk, bake);
       context.drawImage(chunk.canvas as CanvasImageSource, screen.x, screen.y, width, height);
     }
   }
@@ -78,16 +100,25 @@ export class IsoTerrainLayer {
         const right = project(x1, y0, 0).sx + TILE_W / 2;
         const top = project(x0, y0, maxHeight + 1).sy - TILE_H / 2;
         const bottom = project(x1, y1, 0).sy + TILE_H / 2 + TILE_Z * 1.5;
-        const canvas = this.makeCanvas(Math.ceil(right - left), Math.ceil(bottom - top));
-        this.chunks.push({ cx, cy, canvas, originX: left, originY: top, dirty: true });
+        const w = Math.ceil(right - left), h = Math.ceil(bottom - top);
+        const canvas = this.makeCanvas(w, h);
+        this.chunks.push({ cx, cy, canvas, originX: left, originY: top, w, h, bake: 1, dirty: true });
       }
     }
   }
 
-  private rebuildChunk(chunk: Chunk): void {
+  private rebuildChunk(chunk: Chunk, bake = chunk.bake): void {
     const world = this.world;
+    const cw = Math.ceil(chunk.w * bake), ch = Math.ceil(chunk.h * bake);
+    if (chunk.canvas.width !== cw || chunk.canvas.height !== ch) {
+      chunk.canvas.width = cw;
+      chunk.canvas.height = ch;
+    }
+    chunk.bake = bake;
     const context = chunk.canvas.getContext('2d') as CanvasRenderingContext2D;
-    context.clearRect(0, 0, chunk.canvas.width, chunk.canvas.height);
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, cw, ch);
+    context.setTransform(bake, 0, 0, bake, 0, 0);
     const u0 = chunk.cx * ISO_TERRAIN_CHUNK_SIZE;
     const v0 = chunk.cy * ISO_TERRAIN_CHUNK_SIZE;
     const uN = Math.min(ISO_TERRAIN_CHUNK_SIZE, world.size - u0);

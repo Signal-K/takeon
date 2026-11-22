@@ -281,12 +281,12 @@ export class IsoRenderer implements SceneView {
 
   /**
    * Set the backing-store size from CSS size × effective DPR. The device
-   * pixel ratio is capped at 1.5 (past that the extra pixels cost fill rate
-   * with no visible payoff on a smoothed iso scene) and further scaled by
+   * pixel ratio is capped at 2 (1.5 left phone screens visibly soft; the
+   * terrain chunks are baked at the same density, see IsoTerrainLayer) and further scaled by
    * `renderScale`, which the frame-rate governor tunes down on slow devices.
    */
   private applyBacking(): void {
-    this.dpr = Math.min(this.reqDpr, 1.5) * this.renderScale;
+    this.dpr = Math.min(this.reqDpr, 2) * this.renderScale;
     this.canvas.width = Math.max(1, Math.round(this.cssW * this.dpr));
     this.canvas.height = Math.max(1, Math.round(this.cssH * this.dpr));
   }
@@ -660,7 +660,7 @@ export class IsoRenderer implements SceneView {
     }
 
     // Terrain chunks in painter order.
-    this.terrainLayer.draw(ctx, camera);
+    this.terrainLayer.draw(ctx, camera, this.dpr);
 
     // Power grid: faint energised links from sources out to what they feed.
     this.drawPowerLinks(daylight);
