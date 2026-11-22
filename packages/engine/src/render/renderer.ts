@@ -113,6 +113,20 @@ export type { ViewRotation } from './view.js';
  * Terrain is composited from cached per-chunk canvases (rebuilt only when
  * voxels change). The camera rotates in 90° steps via a rotated view layer.
  */
+/** Light on the cliff face toward the sun (+u), relative to flat ground. */
+const FACE_LIGHT_SUN = 0.86;
+/** Light on the cliff face across from it (+v): about the darkest lit slope. */
+const FACE_LIGHT_SIDE = 0.66;
+/** How far each strata band is pulled toward the surface material's colour (0 = raw strata). */
+const STRATA_TO_SURFACE = 0.85;
+
+function mixHex(a: string, b: string, t: number): string {
+  const x = parseInt(a.slice(1), 16);
+  const y = parseInt(b.slice(1), 16);
+  const c = (s: number) => Math.round(((x >> s) & 255) * (1 - t) + ((y >> s) & 255) * t);
+  return `#${((c(16) << 16) | (c(8) << 8) | c(0)).toString(16).padStart(6, '0')}`;
+}
+
 export class IsoRenderer implements SceneView {
   readonly kind = 'iso' as const;
   readonly camera: Camera;
@@ -341,6 +355,10 @@ export class IsoRenderer implements SceneView {
     const pB = proj(u + 0.5, v + 0.5, cs[2]);
     const pL = proj(u - 0.5, v + 0.5, cs[3]);
 
+    // The column's surface material: its top, and the colour its faces lean to.
+    const m = world.get(w.x, w.y, h) || Material.Regolith;
+    const topColor = this.tinted(m, 0);
+
     // ── Cliff faces first (they sit behind/below the top) ──────────────
     const hSE = this.heightV(u + 1, v);
     const hSW = this.heightV(u, v + 1);
@@ -354,16 +372,14 @@ export class IsoRenderer implements SceneView {
     const swA = nSW ? nSW[1] : hSW;
     const swB = nSW ? nSW[0] : hSW;
     if (cs[1] > seA + 0.01 || cs[2] > seB + 0.01 || hSE < 0) {
-      this.drawFace(g, proj, scale, w.x, w.y, u + 0.5, v - 0.5, cs[1], u + 0.5, v + 0.5, cs[2], hSE, 2, seA, seB);
+      this.drawFace(g, proj, scale, w.x, w.y, u + 0.5, v - 0.5, cs[1], u + 0.5, v + 0.5, cs[2], hSE, 2, topColor, seA, seB);
     }
     if (cs[2] > swA + 0.01 || cs[3] > swB + 0.01 || hSW < 0) {
-      this.drawFace(g, proj, scale, w.x, w.y, u + 0.5, v + 0.5, cs[2], u - 0.5, v + 0.5, cs[3], hSW, 1, swA, swB);
+      this.drawFace(g, proj, scale, w.x, w.y, u + 0.5, v + 0.5, cs[2], u - 0.5, v + 0.5, cs[3], hSW, 1, topColor, swA, swB);
     }
 
     // ── Top polygon ─────────────────────────────────────────────────────
-    const m = world.get(w.x, w.y, h) || Material.Regolith;
     const def = MATERIALS[m];
-    const topColor = this.tinted(m, 0);
     // Lighting: one sun from screen top-left, the same one the entity art uses.
     // Slopes away from it darken more than slopes toward it brighten, so relief
     // reads by its shadow side on dark ground too. Ground tone varies in soft
@@ -553,6 +569,8 @@ export class IsoRenderer implements SceneView {
     zb: number,
     neighbourH: number,
     colorIdx: 1 | 2,
+    /** The column's own top colour: strata bands lean toward it. */
+    surfaceHex: string,
     /** The neighbour's surface height under each end of the edge. */
     footA = neighbourH,
     footB = neighbourH,
@@ -583,11 +601,20 @@ export class IsoRenderer implements SceneView {
     g.save();
     g.clip();
 
-    // Strata bands: each z level filled with that voxel's material colour.
+    // Strata bands: each z level takes that voxel's material colour, pulled
+    // toward the surface material so a step reads as the same ground cut open.
+    // Deep rock on dark worlds is near-black; unblended, steps read as holes.
     for (let z = Math.floor(bottom); z <= Math.ceil(top); z++) {
       const mz = world.get(wx, wy, Math.max(0, Math.min(world.maxHeight - 1, z)));
       const band = 1 + (hash3(wx, wy, z, 0x50a1) - 0.5) * 0.12;
-      g.fillStyle = exposure(this.tinted(mz === Material.Air ? Material.Rock : mz, colorIdx), band);
+      // One sun (KES-547): a face is the ground's own colour under the light it
+      // gets. Terrain slopes are lit from the +u/+v (south-east) side, so the
+      // +u face (colorIdx 2) is nearly as bright as flat ground and the +v face
+      // sits near the darkest slope. Each material's separate side colours
+      // were near-black on dark worlds, so steps read as holes in the ground.
+      const light = colorIdx === 2 ? FACE_LIGHT_SUN : FACE_LIGHT_SIDE;
+      const strata = mixHex(this.tinted(mz === Material.Air ? Material.Rock : mz, 0), surfaceHex, STRATA_TO_SURFACE);
+      g.fillStyle = exposure(strata, band * light);
       const t1 = proj(ua, va, z + 1);
       const t2 = proj(ub, vb, z + 1);
       const b1 = proj(ua, va, z);
@@ -610,7 +637,7 @@ export class IsoRenderer implements SceneView {
     // Contact-shadow gradient toward the base of the cliff.
     const gr = g.createLinearGradient(0, Math.min(pa.y, pb.y), 0, Math.max(pa0.y, pb0.y));
     gr.addColorStop(0, 'rgba(12,8,26,0)');
-    gr.addColorStop(1, 'rgba(12,8,26,0.38)');
+    gr.addColorStop(1, 'rgba(12,8,26,0.18)');
     g.fillStyle = gr;
     g.fillRect(
       Math.min(pa.x, pb.x, pa0.x, pb0.x),
