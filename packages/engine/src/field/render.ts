@@ -233,8 +233,8 @@ void main(){
 }`;
 
 /**
- * Comic pass: navy ink lines where depth creases or normals break, violet
- * shadows and warm lights, hatching in the darkest shade, a paper grain and a
+ * Comic pass: navy ink lines where depth creases or normals break, soft
+ * grading that keeps the ground's hue, hatching in the darkest shade, a paper grain and a
  * vignette. Lines fade with distance so the horizon stays painted.
  */
 const POST_FS = `#version 300 es
@@ -270,12 +270,15 @@ void main(){
   float solid = max(max(nc.a, nl.a), max(max(nr.a, nd.a), nu.a));
   float near = 1.0 - smoothstep(uInkFade.x, uInkFade.y, min(min(zc, zl), min(zr, min(zd, zu))));
   float ink = max(edgeD, edgeN) * near * step(0.01, solid);
-  // Grade: plum shadows, warm lights, a touch more saturation.
+  // Grade: shadows a shade cooler, lights a shade warmer, the ground's own hue
+  // kept. (The old plum grade multiplied every dark pixel by violet and added
+  // 25% saturation, so a dark world like Bennu read purple from edge to edge and
+  // an icy one read neon cyan.)
   float lum = dot(c, vec3(0.299, 0.587, 0.114));
-  c = mix(c, c * vec3(0.82, 0.62, 1.18) + vec3(0.03, 0.0, 0.05), 1.0 - smoothstep(0.08, 0.5, lum));
-  c = mix(c, c * vec3(1.1, 1.0, 0.84), smoothstep(0.45, 0.95, lum));
+  c = mix(c, c * vec3(0.95, 0.96, 1.04), 1.0 - smoothstep(0.08, 0.5, lum));
+  c = mix(c, c * vec3(1.05, 1.0, 0.94), smoothstep(0.45, 0.95, lum));
   float l2 = dot(c, vec3(0.299, 0.587, 0.114));
-  c = mix(vec3(l2), c, 1.25);
+  c = mix(vec3(l2), c, 1.06);
   // Hatching in the deepest shade of solid things.
   float hatch = step(0.62, fract((gl_FragCoord.x - gl_FragCoord.y) / (uW * 4.5)));
   c *= 1.0 - hatch * 0.22 * (1.0 - smoothstep(0.06, 0.2, l2)) * step(0.01, nc.a) * near;

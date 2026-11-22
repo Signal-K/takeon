@@ -1,6 +1,6 @@
 {
   "name": "@takeon/engine",
-  "version": "0.2.5",
+  "version": "0.2.9",
   "description": "Framework-agnostic isometric voxel rover game engine. Zero runtime dependencies.",
   "license": "MIT",
   "type": "module",
