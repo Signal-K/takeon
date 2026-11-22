@@ -302,6 +302,6 @@ The 3D field (KES-541, KES-543) is its own entry point, `import { mountFieldScen
 - The rover is built from blocks on a 1 m grid, Haphazard Martians style: hex nodes, braced girders, wheels on the end columns, a blue Navcam mast at the front, one fitted part per bay. It is 1.8 m over the wheels.
 - `ORE_COLOURS` is mutable; write the host's mineral colours into it before mounting.
 - `terrain.credits` names the real DTM under Mars and Moon fields; show it.
-- Surveyed ore off screen, or hidden under the host's gauge panel (top left) or thumb buttons (bottom right), gets an edge pointer with its distance. Seams that point the same way share one pointer, labelled with the nearest distance and a count of the rest (`70 m +2`), so labels never overlap.
+- Surveyed ore off screen, or hidden under the host's gauge panel (top left) or thumb buttons (bottom right), gets an edge pointer with its distance. Seams that point the same way (within 96 px) share one pointer, and pointers stay below the host's gauge panel and hint (at least 124 px from the top), labelled with the nearest distance and a count of the rest (`70 m +2`), so labels never overlap.
 
 Landnam mounts it in `FieldMiningScreen` for mining contracts (vendored as a 0.2.5 repack).

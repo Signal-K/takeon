@@ -238,7 +238,7 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     // Pointers to surveyed ore off screen, Out There green.
     const at = emitter();
     // Keep pointers clear of the host's gauge panel (top) and thumb buttons (bottom).
-    const pad = 34, top = Math.min(160, cssH * 0.2), bottom = Math.min(210, cssH * 0.26);
+    const pad = 34, top = Math.min(160, Math.max(124, cssH * 0.2)), bottom = Math.min(210, cssH * 0.26);
     const cx = cssW / 2, cy = (top + cssH - bottom) / 2;
     const pointers: { d: (typeof terrain.deposits)[number]; x: number; y: number; a: number; dist: number; more: number }[] = [];
     for (const d of terrain.deposits) {
@@ -246,7 +246,7 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
       const p = renderer.project(d.x, d.y);
       // Ore in view needs no pointer, unless it sits under the gauge panel (top left) or the thumb buttons (bottom right).
       const inView = p.front && p.x > 12 && p.x < cssW - 12 && p.y > 12 && p.y < cssH - 12;
-      const underHud = (p.y < top && p.x < cssW * 0.65) || (p.y > cssH - bottom && p.x > cssW - 190);
+      const underHud = (p.y < top && p.x < Math.min(cssW * 0.65, 480)) || (p.y > cssH - bottom && p.x > cssW - 190);
       if (inView && !underHud) continue;
       let dx = p.x - cx, dy = p.y - cy;
       if (!p.front) { dx = -dx; dy = -dy; }
@@ -257,7 +257,7 @@ export function mountFieldScene(canvas: HTMLCanvasElement, opts: FieldSceneOptio
     pointers.sort((m, n) => m.dist - n.dist);
     const shown: typeof pointers = [];
     for (const q of pointers) {
-      const near = shown.find(s => Math.abs(s.x - q.x) < 64 && Math.abs(s.y - q.y) < 40);
+      const near = shown.find(s => Math.abs(s.x - q.x) < 96 && Math.abs(s.y - q.y) < 40);
       if (near) near.more++;
       else shown.push(q);
     }
