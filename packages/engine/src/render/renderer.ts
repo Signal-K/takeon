@@ -7,7 +7,7 @@ import type { SceneView, ViewRotation } from './view.js';
 import { drawAnomaly, drawLaunch, drawStructure, launchArc } from './entities.js';
 import { drawRover } from './rover.js';
 import { drawSolid, rocketModel, roverModel, structureModel } from './solid.js';
-import { project, TILE_H, TILE_W, TILE_Z, shade } from './sprites.js';
+import { project, TILE_H, TILE_W, TILE_Z, shade, exposure } from './sprites.js';
 import { MATERIALS } from '../world/materials.js';
 import { skinBiome } from '../world/terrain.js';
 import { hash2, hash3 } from '../util/rng.js';
@@ -364,13 +364,17 @@ export class IsoRenderer implements SceneView {
     const m = world.get(w.x, w.y, h) || Material.Regolith;
     const def = MATERIALS[m];
     const topColor = this.tinted(m, 0);
-    // Lighting: sun from screen top-left; slope toward it brightens.
-    // Ground tone varies in smooth organic blobs (low-frequency noise) plus
-    // a whisper of per-tile grain — no checkerboard, Crashlands-style patches.
-    const slope = (cs[0] - cs[2]) * 0.16 + (cs[3] - cs[1]) * 0.07;
-    const blob = (fbm2(w.x * 0.11, w.y * 0.11, this.sim.seed ^ 0x600d, 3) - 0.5) * 0.34;
-    const grain = (hash2(w.x, w.y, 0xf00d) - 0.5) * def.jitter * 0.6;
-    const bright = Math.max(0.62, Math.min(1.36, 1 + slope + blob + grain));
+    // Lighting: one sun from screen top-left, the same one the entity art uses.
+    // Slopes away from it darken more than slopes toward it brighten, so relief
+    // reads by its shadow side on dark ground too. Ground tone varies in soft
+    // organic blobs plus a whisper of per-tile grain, kept small so patches
+    // never read as a second light. `exposure` rolls highlights off, so pale
+    // ground keeps its colour instead of clipping to white.
+    const facing = (cs[0] - cs[2]) * 0.2 + (cs[3] - cs[1]) * 0.09;
+    const slope = facing > 0 ? facing * 0.75 : facing * 1.3;
+    const blob = (fbm2(w.x * 0.11, w.y * 0.11, this.sim.seed ^ 0x600d, 3) - 0.5) * 0.18;
+    const grain = (hash2(w.x, w.y, 0xf00d) - 0.5) * def.jitter * 0.5;
+    const bright = Math.max(0.58, Math.min(1.24, 1 + slope + blob + grain));
 
     g.beginPath();
     g.moveTo(pT.x, pT.y);
@@ -378,7 +382,7 @@ export class IsoRenderer implements SceneView {
     g.lineTo(pB.x, pB.y);
     g.lineTo(pL.x, pL.y);
     g.closePath();
-    g.fillStyle = shade(topColor, bright);
+    g.fillStyle = exposure(topColor, bright);
     g.fill();
     // Faint field grid, re-projected with the tile so the higher camera
     // still reads as a surveyed surface rather than a painted blob.
@@ -407,7 +411,7 @@ export class IsoRenderer implements SceneView {
         const bm = skinBiome(ws.x, ws.y, this.sim.seed);
         if (bm === m) continue;
         const sp = proj(u + du, v + dv, cz);
-        g.fillStyle = shade(this.tinted(bm, 0), bright);
+        g.fillStyle = exposure(this.tinted(bm, 0), bright);
         g.beginPath();
         g.ellipse(sp.x, sp.y, TILE_W * 0.25 * scale, TILE_H * 0.28 * scale, 0, 0, Math.PI * 2);
         g.fill();
@@ -436,17 +440,17 @@ export class IsoRenderer implements SceneView {
         g.beginPath();
         g.ellipse(p.x + pr * 0.3, p.y + pr * 0.35, pr, pr * 0.55, 0, 0, Math.PI * 2);
         g.fill();
-        g.fillStyle = shade(topColor, bright * (r2 > 0.5 ? 1.18 : 0.8));
+        g.fillStyle = exposure(topColor, bright * (r2 > 0.5 ? 1.18 : 0.8));
         g.beginPath();
         g.ellipse(p.x, p.y, pr, pr * 0.6, 0, 0, Math.PI * 2);
         g.fill();
       } else if (r3 < 0.6) {
         // Grain fleck.
-        g.fillStyle = shade(topColor, bright * (r1 > 0.5 ? 1.14 : 0.84));
+        g.fillStyle = exposure(topColor, bright * (r1 > 0.5 ? 1.14 : 0.84));
         g.fillRect(p.x, p.y, 1.4 * scale, 0.9 * scale);
       } else {
         // Wind streak along the diamond axis.
-        g.strokeStyle = shade(topColor, bright * 0.9);
+        g.strokeStyle = exposure(topColor, bright * 0.9);
         g.lineWidth = 0.5 * scale;
         g.beginPath();
         g.moveTo(p.x - 3 * scale, p.y + 1.2 * scale);
@@ -507,7 +511,7 @@ export class IsoRenderer implements SceneView {
       // Ice/crystal shards — pale spires, same soft shading as the terrain.
       const tint = m === Material.Ice ? this.tinted(Material.Ice, 0) : this.tinted(m, 0);
       for (const [dx, h] of [[-3, 6], [0.5, 9], [3.5, 5]] as [number, number][]) {
-        g.fillStyle = shade(tint, 1.15 + h * 0.01);
+        g.fillStyle = exposure(tint, 1.15 + h * 0.01);
         g.strokeStyle = outline;
         g.lineWidth = 0.8 * s;
         g.beginPath();
@@ -522,7 +526,7 @@ export class IsoRenderer implements SceneView {
       // Rounded rock cluster.
       const rockHex = this.tinted(Material.Rock, 0);
       for (const [dx, dy, r] of [[-2.5, 0.5, 3.2], [2, 1, 2.4], [0.2, -1.2, 2.1]] as [number, number, number][]) {
-        g.fillStyle = shade(rockHex, bright * (1.05 - Math.abs(dx) * 0.05));
+        g.fillStyle = exposure(rockHex, bright * (1.05 - Math.abs(dx) * 0.05));
         g.strokeStyle = outline;
         g.lineWidth = 0.9 * s;
         g.beginPath();
@@ -583,7 +587,7 @@ export class IsoRenderer implements SceneView {
     for (let z = Math.floor(bottom); z <= Math.ceil(top); z++) {
       const mz = world.get(wx, wy, Math.max(0, Math.min(world.maxHeight - 1, z)));
       const band = 1 + (hash3(wx, wy, z, 0x50a1) - 0.5) * 0.12;
-      g.fillStyle = shade(this.tinted(mz === Material.Air ? Material.Rock : mz, colorIdx), band);
+      g.fillStyle = exposure(this.tinted(mz === Material.Air ? Material.Rock : mz, colorIdx), band);
       const t1 = proj(ua, va, z + 1);
       const t2 = proj(ub, vb, z + 1);
       const b1 = proj(ua, va, z);

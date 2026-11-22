@@ -42,6 +42,28 @@ export function shade(hex: string, f: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
+/** Channel value where the highlight shoulder starts. */
+const KNEE = 186;
+
+/** Rolls a channel above KNEE off toward 255 instead of clipping it. */
+function shoulder(v: number): number {
+  if (v <= KNEE) return v;
+  const room = 255 - KNEE;
+  return KNEE + room * (1 - Math.exp(-(v - KNEE) / room));
+}
+
+/**
+ * `shade` for lit terrain: the same multiply, with a soft highlight shoulder so
+ * pale ground (ice, salt, snow) keeps its hue and its relief under the sun
+ * instead of clipping to flat white beside dark ground. Dark colours are
+ * unchanged, so one light reads the same on every material.
+ */
+export function exposure(hex: string, f: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const c = (s: number) => Math.max(0, Math.min(255, Math.round(shoulder(((n >> s) & 255) * f))));
+  return `rgb(${c(16)},${c(8)},${c(0)})`;
+}
+
 /**
  * Pre-rendered voxel block sprites: for each material, a few jittered
  * variants of the classic three-face iso cube. Chunk composition then
