@@ -26,4 +26,24 @@ describe('Go boundary adapter', () => {
   it('rejects an incompatible bridge before creating a game', () => {
     expect(() => connectGoCore(() => JSON.stringify({ ok: true, value: { protocolVersion: 2 } }))).toThrow('unsupported bridge protocol');
   });
+  it('passes a versioned landing identity to Go and rejects non-finite inputs', () => {
+    const calls: Record<string, unknown>[] = [];
+    const core = connectGoCore(json => {
+      const request = JSON.parse(json); calls.push(request);
+      if (request.op === 'capabilities') return JSON.stringify({ ok: true, value: { protocolVersion: 1 } });
+      if (request.op === 'solarLanding' && request.solar.styleVersion !== 1)
+        return JSON.stringify({ ok: false, error: 'unsupported solar style version' });
+      return JSON.stringify({ ok: true, value: request.solar });
+    });
+    const landing = { id: 'mars', seed: 42, latitude: 0, longitude: 0, styleVersion: 1, step: 0.08, width: 81, height: 81 };
+    core.solarLanding(landing);
+    expect(calls.at(-1)).toEqual({ op: 'solarLanding', solar: landing });
+    core.styledSolarSample(landing);
+    expect(calls.at(-1)).toMatchObject({ op: 'styledSolarSample', solar: landing });
+    expect(() => core.solarLanding({ ...landing, styleVersion: 2 })).toThrow('unsupported solar style version');
+    for (const invalid of [
+      { seed: NaN }, { seed: -1 }, { seed: 0x100000000 }, { latitude: Infinity },
+      { longitude: NaN }, { step: NaN }, { width: Infinity }, { styleVersion: NaN },
+    ]) expect(() => core.solarLanding({ ...landing, ...invalid })).toThrow('invalid solar');
+  });
 });

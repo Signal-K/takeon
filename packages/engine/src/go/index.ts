@@ -26,6 +26,27 @@ export interface CoreWindow {
   mats: number[];
   ore: number[];
 }
+export interface SolarProfile {
+  id: string; name: string; type: string; parent: string;
+  temperatureC: number; climate: string; relief: number; landable: boolean;
+}
+export interface StyledSolarSample {
+  radius: number; biome: string; observedElevation: boolean;
+}
+export interface SolarPoint {
+  id: string; seed: number; latitude: number; longitude: number;
+}
+export interface SolarLandingRequest extends SolarPoint {
+  /** Persist this version with the seed and coordinates for future restoration. */
+  styleVersion: number;
+  step: number; width: number; height: number;
+}
+export interface SolarLanding {
+  styleVersion: number; bodyId: string; seed: number;
+  latitude: number; longitude: number; center: StyledSolarSample;
+  up: [number, number, number]; east: [number, number, number]; north: [number, number, number];
+  stepDegrees: number; width: number; height: number; patch: StyledSolarSample[];
+}
 export interface GoEngine {
   step(dtSeconds: number): CoreEvent[];
   order(kind: string, arg?: number): boolean;
@@ -45,6 +66,9 @@ export interface GoEngine {
 export interface GoCore {
   readonly capabilities: CoreCapabilities;
   createEngine(seed: number, bodyId: string): GoEngine;
+  solarProfiles(): SolarProfile[];
+  styledSolarSample(point: SolarPoint): StyledSolarSample;
+  solarLanding(request: SolarLandingRequest): SolarLanding;
 }
 export interface GoRuntime {
   importObject: WebAssembly.Imports;
@@ -69,8 +93,27 @@ export function connectGoCore(transport: CoreTransport): GoCore {
   const capabilities = call<CoreCapabilities>('capabilities');
   if (capabilities.protocolVersion !== 1)
     throw new Error('takeon-core: unsupported bridge protocol');
+  // JSON serializes NaN and Infinity as null; reject them before the Go bridge
+  // can interpret null as zero and silently select a different landing site.
+  const validatePoint = (point: SolarPoint) => {
+    if (!Number.isInteger(point.seed) || point.seed < 0 || point.seed > 0xffffffff ||
+        !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude))
+      throw new Error('takeon-core: invalid solar seed or coordinates');
+  };
   return {
     capabilities,
+    solarProfiles: () => call('solarProfiles'),
+    styledSolarSample(point) {
+      validatePoint(point);
+      return call('styledSolarSample', { solar: point });
+    },
+    solarLanding(request) {
+      validatePoint(request);
+      if (!Number.isSafeInteger(request.styleVersion) || !Number.isFinite(request.step) ||
+          !Number.isSafeInteger(request.width) || !Number.isSafeInteger(request.height))
+        throw new Error('takeon-core: invalid solar landing parameters');
+      return call('solarLanding', { solar: request });
+    },
     createEngine(seed, bodyId) {
       if (!Number.isSafeInteger(seed)) throw new Error('takeon-core: seed must be a safe integer');
       const engineId = call<number>('create', { seed: seed >>> 0, bodyId });
