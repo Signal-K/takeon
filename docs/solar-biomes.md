@@ -64,3 +64,29 @@ with the same NASA elevation and colour data. Run from the repository root:
 This does not yet increase the in-game renderer's resolution or connect measured
 terrain to the game's tile-based surface. Data source resolution also caps the
 real detail; extra triangles interpolate the data rather than invent detail.
+
+### Observational maps: Mars and planetary imagery
+
+The solar studio additionally uses NASA/JPL image maps for Mars, Venus, Jupiter,
+Saturn, and Neptune ([NASA 3D image resources](https://science.nasa.gov/3d-resources/mars/)).
+Their native JPEG sizes are 1440×720 for Mars/Venus and 720×360 for the
+others; the mesh does not increase the source image's information content.
+Venus uses a colour image and generated relief, not measured elevations. The
+outer-planet maps represent atmospheric cloud tops, not solid surfaces. These
+maps are illustrative global composites, not current weather or surface surveys.
+
+Mars's surface displacement comes from the [NASA PDS Mars Global Surveyor
+MOLA MEGDR topography](https://pds-geosciences.wustl.edu/missions/mgs/megdr.html),
+`megt90n000eb.img` (16 pixels/degree, 5760×2880, median elevations in metres
+relative to the Mars areoid; unobserved cells interpolated by the dataset).
+The signed big-endian values were rotated from 0–360°E into a map centered on
+0° and losslessly stored as unsigned 16-bit PNG with 32768 added. The studio
+and offline render exaggerate relief 4×. Image credit: NASA/JPL-Caltech; MOLA
+credit: NASA/MGS MOLA science team. The renderer's 1024×512 grid produces
+1,048,576 triangles, 16× the current 256×128 interactive grid; its visual
+resolution is limited by the input maps and image interpolation.
+
+`SampleObservedSurface` exposes imagery and, for Mars only, measured elevation;
+its missing elevation must not be interpreted as zero. Other bodies remain
+procedural, and this observational data is not yet integrated with Landnam's
+scene or voxel generation. The API embeds the images, increasing binary size.
