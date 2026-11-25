@@ -67,6 +67,9 @@ func makeMesh(id string, seed uint32, rows, cols int) (mesh, error) {
 			}
 			radius := s.Radius
 			colour := colours[s.Biome]
+			if id == "uranus" {
+				colour = [3]float32{0.52, 0.77, 0.78}
+			}
 			// Keep observed colour as a geographic cue, blended into the game's palette.
 			if id == "moon" {
 				measured, err := takeon.SampleLunarSurface(lat, lon)

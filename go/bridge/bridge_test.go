@@ -105,6 +105,16 @@ func TestSolarBridge(t *testing.T) {
 	if encoded(sample) != encoded(patch[0]) {
 		t.Fatal("patch and globe bridge samples differ")
 	}
+	styled := success(t, &s, Request{Op: "styledSolarSample", Solar: spec})
+	styledPatch := success(t, &s, Request{Op: "styledSolarPatch", Solar: spec}).([]any)
+	if encoded(styled) != encoded(styledPatch[0]) {
+		t.Fatal("styled patch and globe bridge samples differ")
+	}
+	landingSpec := &SolarRequest{ID: "mars", Seed: 42, Latitude: 10, Longitude: 20, Step: 1, Width: 3, Height: 3}
+	landing := success(t, &s, Request{Op: "solarLanding", Solar: landingSpec}).(map[string]any)
+	if encoded(landing["center"]) != encoded(styled) {
+		t.Fatal("landing center differs from globe")
+	}
 	if request(t, &s, Request{Op: "solarSample"}).OK {
 		t.Fatal("missing solar request accepted")
 	}

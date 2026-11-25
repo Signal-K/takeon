@@ -106,8 +106,8 @@ visual radius, not an elevation measurement: the additional broad forms are
 invented and vary with the seed. Other landable worlds use generated shape;
 observed imagery, where available, does not imply measured height. Gas giants
 stay spherical. The studio blends observed colour into the game's biome palette.
-The visual field is shared with the offline proof, but scene patches still use
-`SampleSolarBody` and are not yet registered to measured terrain.
+The visual field is shared with the offline proof; `SampleStyledSolarPatch`
+provides registered samples for future surface scenes.
 
 For a high-density Mars art proof, from `go/` run `go run ./cmd/solar-style-grid
 -body mars -seed 11 -out /tmp/landnam-style-mars.bin`, then from the repository
@@ -115,3 +115,40 @@ root run `blender -b -t 4 --python tools/solar/render_styled_mars.py --
 /tmp/styled-mars.png`. The render uses the same Go shape at 1024×512 quads;
 its illustrative warm material differs from the studio's biome-colour blend.
 The interactive viewer retains its 256×128 grid.
+
+### Complete location pass and stability
+
+All 24 registered bodies use the same deterministic globe sampler. Phobos,
+Deimos and the six listed asteroids have approximate art-directed ellipsoids;
+these are not spacecraft shape models. The list includes near-Earth asteroids,
+not only main-belt objects. Gas giants represent clouds and have no surface.
+Moon and Mars alone currently include measured elevation; other relief is
+seeded and generated, even when observed colour imagery exists. The existing
+noise shares Takeon's `hash3` primitive, but the voxel engine's `GenerateTerrain`
+uses its own 2D field and is not yet generated from these globe samples.
+
+`SampleStyledSolarPatch` evaluates the same version-1 visual radius as the
+globe, including observed elevation and stylisation. It is available through the
+`styledSolarSample` and `styledSolarPatch` bridge operations and mobile JSON
+functions. Save the body ID, unsigned 32-bit seed and `SolarStyleVersion` with
+content; version 1 is the current contract, and future algorithms need explicit
+migration/version selection before persisted content can safely depend on them.
+This API is a sampling foundation, not yet a voxel-world or playable-scene
+integration. The viewer and these samples have not been wired into Landnam.
+
+Run `python3 tools/solar/contact_sheet.py /tmp/locations.png` while the studio
+is running to make an overview from its meshes. Set `SOLAR_STUDIO_URL` if the
+studio uses a different local address; this image is a simplified offline
+rasterisation and uses the interactive mesh resolution.
+
+### Orbit-to-surface handoff
+
+`PrepareSolarLanding` accepts a body, seed, coordinates and an odd-sized grid.
+It returns a center sample, a matching row-major landing patch, the style
+version and a local up/east/north frame for orienting the camera and scene.
+Longitude wraps at the dateline; patches crossing a pole are rejected, as are
+landings on gas giants. This is available as the `solarLanding` bridge operation
+and mobile `SolarLandingJSON`. A host can select a point in orbit, prepare the
+patch, transition its camera towards the returned local frame, and return to
+the retained orbit view. Streaming, animation, playable terrain conversion,
+mission placement and actual Landnam navigation are not implemented yet.

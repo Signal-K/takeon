@@ -115,11 +115,20 @@ func (s *Session) dispatch(r Request) (any, error) {
 	if r.Op == "solarProfiles" {
 		return takeon.SolarProfiles(), nil
 	}
-	if r.Op == "solarSample" || r.Op == "solarPatch" {
+	if r.Op == "solarSample" || r.Op == "solarPatch" || r.Op == "styledSolarSample" || r.Op == "styledSolarPatch" || r.Op == "solarLanding" {
 		if r.Solar == nil {
 			return nil, fmt.Errorf("takeon: solar request required")
 		}
 		q := r.Solar
+		if r.Op == "solarLanding" {
+			return takeon.PrepareSolarLanding(q.ID, q.Seed, q.Latitude, q.Longitude, q.Step, q.Width, q.Height)
+		}
+		if r.Op == "styledSolarSample" {
+			return takeon.SampleStyledSolarBody(q.ID, q.Seed, q.Latitude, q.Longitude)
+		}
+		if r.Op == "styledSolarPatch" {
+			return takeon.SampleStyledSolarPatch(q.ID, q.Seed, q.Latitude, q.Longitude, q.Step, q.Width, q.Height)
+		}
 		if r.Op == "solarSample" {
 			return takeon.SampleSolarBody(q.ID, q.Seed, q.Latitude, q.Longitude)
 		}

@@ -167,3 +167,42 @@ func SolarPatchJSON(id string, seed int64, latitude, longitude, step float64, wi
 	b, err := json.Marshal(patch)
 	return string(b), err
 }
+
+// StyledSolarSampleJSON returns the same visual radius used by the planet viewer.
+func StyledSolarSampleJSON(id string, seed int64, latitude, longitude float64) (string, error) {
+	if seed < 0 || seed > 4294967295 {
+		return "", fmt.Errorf("takeon: seed must be uint32")
+	}
+	sample, err := takeon.SampleStyledSolarBody(id, uint32(seed), latitude, longitude)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(sample)
+	return string(b), err
+}
+
+// StyledSolarPatchJSON returns globe-matched visual samples for a surface patch.
+func StyledSolarPatchJSON(id string, seed int64, latitude, longitude, step float64, width, height int) (string, error) {
+	if seed < 0 || seed > 4294967295 {
+		return "", fmt.Errorf("takeon: seed must be uint32")
+	}
+	patch, err := takeon.SampleStyledSolarPatch(id, uint32(seed), latitude, longitude, step, width, height)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(patch)
+	return string(b), err
+}
+
+// SolarLandingJSON prepares a globe-matched landing patch and local frame.
+func SolarLandingJSON(id string, seed int64, latitude, longitude, step float64, width, height int) (string, error) {
+	if seed < 0 || seed > 4294967295 {
+		return "", fmt.Errorf("takeon: seed must be uint32")
+	}
+	landing, err := takeon.PrepareSolarLanding(id, uint32(seed), latitude, longitude, step, width, height)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(landing)
+	return string(b), err
+}
