@@ -131,8 +131,8 @@ uses its own 2D field and is not yet generated from these globe samples.
 globe, including observed elevation and stylisation. It is available through the
 `styledSolarSample` and `styledSolarPatch` bridge operations and mobile JSON
 functions. Save the body ID, unsigned 32-bit seed and `SolarStyleVersion` with
-content; version 1 is the current contract, and future algorithms need explicit
-migration/version selection before persisted content can safely depend on them.
+content; version 1 is the current contract. Future styles must retain the version
+1 implementation before persisted content can safely depend on future changes.
 This API is a sampling foundation, not yet a voxel-world or playable-scene
 integration. The viewer and these samples have not been wired into Landnam.
 
@@ -152,3 +152,13 @@ and mobile `SolarLandingJSON`. A host can select a point in orbit, prepare the
 patch, transition its camera towards the returned local frame, and return to
 the retained orbit view. Streaming, animation, playable terrain conversion,
 mission placement and actual Landnam navigation are not implemented yet.
+
+For a saved landing, retain the body ID, seed, coordinates, grid parameters and
+`styleVersion` alongside the existing mission/run identity; restore with
+`PrepareVersionedSolarLanding`, bridge `solarLanding` with `styleVersion`, or
+mobile `VersionedSolarLandingJSON`. An omitted bridge version keeps the old
+current-version behavior; an explicitly unsupported version returns an error.
+Version 1 has regression fixtures, but future styles must keep its sampling
+implementation and underlying data available. A host must retain its existing
+mission state and provide a fallback for old saves without landing metadata;
+these APIs do not migrate, modify or save Landnam progress.

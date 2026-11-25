@@ -28,6 +28,15 @@ type SolarLanding struct {
 // across the dateline and rejects patches crossing a pole, where a lat/lon
 // grid becomes singular. It never creates a surface on a gas giant.
 func PrepareSolarLanding(id string, seed uint32, lat, lon, step float64, width, height int) (SolarLanding, error) {
+	return PrepareVersionedSolarLanding(SolarStyleVersion, id, seed, lat, lon, step, width, height)
+}
+
+// PrepareVersionedSolarLanding restores a landing using its saved style version.
+// Unknown versions must fail rather than silently moving an existing landing.
+func PrepareVersionedSolarLanding(version int, id string, seed uint32, lat, lon, step float64, width, height int) (SolarLanding, error) {
+	if version != 1 {
+		return SolarLanding{}, fmt.Errorf("takeon: unsupported solar style version %d", version)
+	}
 	p, err := SolarProfileByID(id)
 	if err != nil {
 		return SolarLanding{}, err
@@ -47,7 +56,7 @@ func PrepareSolarLanding(id string, seed uint32, lat, lon, step float64, width, 
 	}
 	phi, theta := lat*math.Pi/180, lon*math.Pi/180
 	cp, sp, ct, st := math.Cos(phi), math.Sin(phi), math.Cos(theta), math.Sin(theta)
-	out := SolarLanding{StyleVersion: SolarStyleVersion, BodyID: id, Seed: seed, Latitude: lat, Longitude: lon, Center: center,
+	out := SolarLanding{StyleVersion: version, BodyID: id, Seed: seed, Latitude: lat, Longitude: lon, Center: center,
 		Up: [3]float64{cp * ct, sp, cp * st}, East: [3]float64{-st, 0, ct}, North: [3]float64{-sp * ct, cp, -sp * st},
 		StepDegrees: step, Width: width, Height: height, Patch: make([]StyledSolarSample, 0, width*height)}
 	for y := 0; y < height; y++ {

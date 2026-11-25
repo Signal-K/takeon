@@ -40,6 +40,13 @@ func TestSolarMobile(t *testing.T) {
 	if json.Unmarshal([]byte(landingJSON), &landing) != nil || landing.Center != one {
 		t.Fatal("mobile landing mismatch")
 	}
+	versioned, err := VersionedSolarLandingJSON(1, "mars", 42, 10, 20, 1, 3, 3)
+	if err != nil || versioned != landingJSON {
+		t.Fatal("saved landing differs from current mobile landing")
+	}
+	if _, err = VersionedSolarLandingJSON(2, "mars", 42, 10, 20, 1, 3, 3); err == nil {
+		t.Fatal("unknown style version accepted")
+	}
 	if _, err = SolarSampleJSON("mars", -1, 0, 0); err == nil {
 		t.Fatal("negative seed accepted")
 	}

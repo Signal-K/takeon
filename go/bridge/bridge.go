@@ -9,13 +9,14 @@ import (
 )
 
 type SolarRequest struct {
-	ID        string  `json:"id"`
-	Seed      uint32  `json:"seed"`
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
-	Step      float64 `json:"step"`
-	Width     int     `json:"width"`
-	Height    int     `json:"height"`
+	StyleVersion *int    `json:"styleVersion,omitempty"`
+	ID           string  `json:"id"`
+	Seed         uint32  `json:"seed"`
+	Latitude     float64 `json:"latitude"`
+	Longitude    float64 `json:"longitude"`
+	Step         float64 `json:"step"`
+	Width        int     `json:"width"`
+	Height       int     `json:"height"`
 }
 
 type Request struct {
@@ -121,6 +122,9 @@ func (s *Session) dispatch(r Request) (any, error) {
 		}
 		q := r.Solar
 		if r.Op == "solarLanding" {
+			if q.StyleVersion != nil {
+				return takeon.PrepareVersionedSolarLanding(*q.StyleVersion, q.ID, q.Seed, q.Latitude, q.Longitude, q.Step, q.Width, q.Height)
+			}
 			return takeon.PrepareSolarLanding(q.ID, q.Seed, q.Latitude, q.Longitude, q.Step, q.Width, q.Height)
 		}
 		if r.Op == "styledSolarSample" {

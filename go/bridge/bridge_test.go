@@ -28,6 +28,21 @@ func success(t *testing.T, s *Session, r Request) any {
 }
 func encoded(v any) string { b, _ := json.Marshal(v); return string(b) }
 
+func TestLandingVersionCompatibility(t *testing.T) {
+	var s Session
+	q := &SolarRequest{ID: "mars", Seed: 42, Latitude: 10, Longitude: 20, Step: .1, Width: 3, Height: 3}
+	legacy := success(t, &s, Request{Op: "solarLanding", Solar: q})
+	v := 1
+	q.StyleVersion = &v
+	if encoded(legacy) != encoded(success(t, &s, Request{Op: "solarLanding", Solar: q})) {
+		t.Fatal("versioned landing differs from existing call")
+	}
+	v = 0
+	if request(t, &s, Request{Op: "solarLanding", Solar: q}).OK {
+		t.Fatal("explicit unsupported version accepted")
+	}
+}
+
 func TestIsolatedEnginesAndSnapshot(t *testing.T) {
 	var s Session
 	a := int(success(t, &s, Request{Op: "create", BodyID: "moon", Seed: 4212}).(float64))

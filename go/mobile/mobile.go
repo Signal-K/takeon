@@ -196,10 +196,15 @@ func StyledSolarPatchJSON(id string, seed int64, latitude, longitude, step float
 
 // SolarLandingJSON prepares a globe-matched landing patch and local frame.
 func SolarLandingJSON(id string, seed int64, latitude, longitude, step float64, width, height int) (string, error) {
+	return VersionedSolarLandingJSON(takeon.SolarStyleVersion, id, seed, latitude, longitude, step, width, height)
+}
+
+// VersionedSolarLandingJSON restores a landing using its saved style version.
+func VersionedSolarLandingJSON(version int, id string, seed int64, latitude, longitude, step float64, width, height int) (string, error) {
 	if seed < 0 || seed > 4294967295 {
 		return "", fmt.Errorf("takeon: seed must be uint32")
 	}
-	landing, err := takeon.PrepareSolarLanding(id, uint32(seed), latitude, longitude, step, width, height)
+	landing, err := takeon.PrepareVersionedSolarLanding(version, id, uint32(seed), latitude, longitude, step, width, height)
 	if err != nil {
 		return "", err
 	}
