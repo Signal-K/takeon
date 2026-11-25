@@ -47,7 +47,7 @@ func PrepareVersionedSolarLanding(version int, id string, seed uint32, lat, lon,
 	if width < 1 || width > 255 || height < 1 || height > 255 || width%2 != 1 || height%2 != 1 || math.IsNaN(step) || math.IsInf(step, 0) || step <= 0 || step > 180 {
 		return SolarLanding{}, fmt.Errorf("takeon: landing grid needs odd dimensions up to 255 and a valid step")
 	}
-	center, err := SampleStyledSolarBody(id, seed, lat, lon)
+	center, err := SampleVersionedStyledSolarBody(version, id, seed, lat, lon)
 	if err != nil {
 		return SolarLanding{}, err
 	}
@@ -71,7 +71,7 @@ func PrepareVersionedSolarLanding(version int, id string, seed uint32, lat, lon,
 				out.Patch = append(out.Patch, center)
 				continue
 			}
-			point, err := SampleStyledSolarBody(id, seed, plat, plon)
+			point, err := SampleVersionedStyledSolarBody(version, id, seed, plat, plon)
 			if err != nil {
 				return SolarLanding{}, err
 			}

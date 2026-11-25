@@ -170,10 +170,15 @@ func SolarPatchJSON(id string, seed int64, latitude, longitude, step float64, wi
 
 // StyledSolarSampleJSON returns the same visual radius used by the planet viewer.
 func StyledSolarSampleJSON(id string, seed int64, latitude, longitude float64) (string, error) {
+	return VersionedStyledSolarSampleJSON(takeon.SolarStyleVersion, id, seed, latitude, longitude)
+}
+
+// VersionedStyledSolarSampleJSON restores a saved world's orbital appearance.
+func VersionedStyledSolarSampleJSON(version int, id string, seed int64, latitude, longitude float64) (string, error) {
 	if seed < 0 || seed > 4294967295 {
 		return "", fmt.Errorf("takeon: seed must be uint32")
 	}
-	sample, err := takeon.SampleStyledSolarBody(id, uint32(seed), latitude, longitude)
+	sample, err := takeon.SampleVersionedStyledSolarBody(version, id, uint32(seed), latitude, longitude)
 	if err != nil {
 		return "", err
 	}

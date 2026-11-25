@@ -128,6 +128,9 @@ func (s *Session) dispatch(r Request) (any, error) {
 			return takeon.PrepareSolarLanding(q.ID, q.Seed, q.Latitude, q.Longitude, q.Step, q.Width, q.Height)
 		}
 		if r.Op == "styledSolarSample" {
+			if q.StyleVersion != nil {
+				return takeon.SampleVersionedStyledSolarBody(*q.StyleVersion, q.ID, q.Seed, q.Latitude, q.Longitude)
+			}
 			return takeon.SampleStyledSolarBody(q.ID, q.Seed, q.Latitude, q.Longitude)
 		}
 		if r.Op == "styledSolarPatch" {

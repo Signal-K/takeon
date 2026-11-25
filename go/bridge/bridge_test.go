@@ -37,9 +37,16 @@ func TestLandingVersionCompatibility(t *testing.T) {
 	if encoded(legacy) != encoded(success(t, &s, Request{Op: "solarLanding", Solar: q})) {
 		t.Fatal("versioned landing differs from existing call")
 	}
+	landing := success(t, &s, Request{Op: "solarLanding", Solar: q}).(map[string]any)
+	if encoded(landing["center"]) != encoded(success(t, &s, Request{Op: "styledSolarSample", Solar: q})) {
+		t.Fatal("saved orbital sample differs from landing center")
+	}
 	v = 0
 	if request(t, &s, Request{Op: "solarLanding", Solar: q}).OK {
 		t.Fatal("explicit unsupported version accepted")
+	}
+	if request(t, &s, Request{Op: "styledSolarSample", Solar: q}).OK {
+		t.Fatal("orbital sample accepted unsupported version")
 	}
 }
 

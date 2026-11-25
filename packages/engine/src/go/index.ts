@@ -36,9 +36,11 @@ export interface StyledSolarSample {
 export interface SolarPoint {
   id: string; seed: number; latitude: number; longitude: number;
 }
-export interface SolarLandingRequest extends SolarPoint {
+export interface VersionedSolarPoint extends SolarPoint {
   /** Persist this version with the seed and coordinates for future restoration. */
   styleVersion: number;
+}
+export interface SolarLandingRequest extends VersionedSolarPoint {
   step: number; width: number; height: number;
 }
 export interface SolarLanding {
@@ -67,7 +69,7 @@ export interface GoCore {
   readonly capabilities: CoreCapabilities;
   createEngine(seed: number, bodyId: string): GoEngine;
   solarProfiles(): SolarProfile[];
-  styledSolarSample(point: SolarPoint): StyledSolarSample;
+  styledSolarSample(point: VersionedSolarPoint): StyledSolarSample;
   solarLanding(request: SolarLandingRequest): SolarLanding;
 }
 export interface GoRuntime {
@@ -105,6 +107,8 @@ export function connectGoCore(transport: CoreTransport): GoCore {
     solarProfiles: () => call('solarProfiles'),
     styledSolarSample(point) {
       validatePoint(point);
+      if (!Number.isSafeInteger(point.styleVersion))
+        throw new Error('takeon-core: invalid solar style version');
       return call('styledSolarSample', { solar: point });
     },
     solarLanding(request) {

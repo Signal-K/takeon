@@ -1,6 +1,9 @@
 package takeon
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 // SolarStyleVersion identifies the fixed parameters of the current visual field.
 // Persist this with a seed when using these samples in authored content.
@@ -18,6 +21,14 @@ type StyledSolarSample struct {
 // SampleStyledSolarBody combines the same seeded field used by surface patches
 // with observed topography where available. Gas giants retain spherical clouds.
 func SampleStyledSolarBody(id string, seed uint32, lat, lon float64) (StyledSolarSample, error) {
+	return SampleVersionedStyledSolarBody(SolarStyleVersion, id, seed, lat, lon)
+}
+
+// SampleVersionedStyledSolarBody restores the orbital appearance of a saved world.
+func SampleVersionedStyledSolarBody(version int, id string, seed uint32, lat, lon float64) (StyledSolarSample, error) {
+	if version != 1 {
+		return StyledSolarSample{}, fmt.Errorf("takeon: unsupported solar style version %d", version)
+	}
 	s, err := SampleSolarBody(id, seed, lat, lon)
 	if err != nil {
 		return StyledSolarSample{}, err

@@ -31,7 +31,7 @@ describe('Go boundary adapter', () => {
     const core = connectGoCore(json => {
       const request = JSON.parse(json); calls.push(request);
       if (request.op === 'capabilities') return JSON.stringify({ ok: true, value: { protocolVersion: 1 } });
-      if (request.op === 'solarLanding' && request.solar.styleVersion !== 1)
+      if ((request.op === 'solarLanding' || request.op === 'styledSolarSample') && request.solar.styleVersion !== 1)
         return JSON.stringify({ ok: false, error: 'unsupported solar style version' });
       return JSON.stringify({ ok: true, value: request.solar });
     });
@@ -41,6 +41,8 @@ describe('Go boundary adapter', () => {
     core.styledSolarSample(landing);
     expect(calls.at(-1)).toMatchObject({ op: 'styledSolarSample', solar: landing });
     expect(() => core.solarLanding({ ...landing, styleVersion: 2 })).toThrow('unsupported solar style version');
+    expect(() => core.styledSolarSample({ ...landing, styleVersion: 2 })).toThrow('unsupported solar style version');
+    expect(() => core.styledSolarSample({ ...landing, styleVersion: NaN })).toThrow('invalid solar');
     for (const invalid of [
       { seed: NaN }, { seed: -1 }, { seed: 0x100000000 }, { latitude: Infinity },
       { longitude: NaN }, { step: NaN }, { width: Infinity }, { styleVersion: NaN },
