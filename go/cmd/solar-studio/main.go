@@ -127,6 +127,64 @@ func makeMesh(id string, seed uint32, rows, cols int) (mesh, error) {
 	}
 	return result, nil
 }
+
+// makeLandingMesh visualises the same versioned samples as the globe. The
+// vertical scale is exaggerated for inspection; coordinates are local to the
+// patch and are not a navigable or persisted mission scene.
+func makeLandingMesh(id string, seed uint32) (mesh, error) {
+	const size = 81
+	landing, err := takeon.PrepareSolarLanding(id, seed, 0, 0, 0.08, size, size)
+	if err != nil {
+		return mesh{}, err
+	}
+	type point struct {
+		p, n vec
+		c    [3]float32
+	}
+	grid := make([]point, size*size)
+	at := func(y, x int) int { return y*size + x }
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			sample := landing.Patch[at(y, x)]
+			grid[at(y, x)] = point{p: vec{2*float64(x)/float64(size-1) - 1, (sample.Radius - landing.Center.Radius) * 3, 2*float64(y)/float64(size-1) - 1}, c: colours[sample.Biome]}
+		}
+	}
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			left, right, down, up := x-1, x+1, y-1, y+1
+			if left < 0 {
+				left = 0
+			}
+			if right >= size {
+				right = size - 1
+			}
+			if down < 0 {
+				down = 0
+			}
+			if up >= size {
+				up = size - 1
+			}
+			grid[at(y, x)].n = unit(cross(sub(grid[at(up, x)].p, grid[at(down, x)].p), sub(grid[at(y, right)].p, grid[at(y, left)].p)))
+		}
+	}
+	result := mesh{}
+	tri := func(a, b, c point) {
+		for _, p := range []point{a, b, c} {
+			result.Positions = appendVec(result.Positions, p.p)
+			result.Normals = appendVec(result.Normals, p.n)
+			result.Colors = append(result.Colors, p.c[:]...)
+			result.Count++
+		}
+	}
+	for y := 0; y < size-1; y++ {
+		for x := 0; x < size-1; x++ {
+			a, b, c, d := grid[at(y, x)], grid[at(y+1, x)], grid[at(y, x+1)], grid[at(y+1, x+1)]
+			tri(a, b, c)
+			tri(c, b, d)
+		}
+	}
+	return result, nil
+}
 func main() {
 	addr := flag.String("addr", "127.0.0.1:4343", "listen address")
 	flag.Parse()
@@ -144,6 +202,20 @@ func main() {
 		m, e := makeMesh(id, uint32(s), 128, 256)
 		if e != nil {
 			http.Error(w, e.Error(), 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(m)
+	})
+	http.HandleFunc("/api/landing-mesh", func(w http.ResponseWriter, r *http.Request) {
+		seed, err := strconv.ParseUint(r.URL.Query().Get("seed"), 10, 32)
+		if err != nil {
+			http.Error(w, "invalid seed", http.StatusBadRequest)
+			return
+		}
+		m, err := makeLandingMesh(r.URL.Query().Get("id"), uint32(seed))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
