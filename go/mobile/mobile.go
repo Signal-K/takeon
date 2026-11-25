@@ -7,6 +7,7 @@ package mobile
 
 import (
 	"encoding/json"
+	"fmt"
 
 	takeon "github.com/Signal-K/takeon-go"
 )
@@ -132,5 +133,37 @@ func GenerateLocationJSON(specJSON string) (string, error) {
 		return "", err
 	}
 	b, err := json.Marshal(location)
+	return string(b), err
+}
+
+// SolarProfilesJSON returns the available art-directed solar body profiles.
+func SolarProfilesJSON() (string, error) {
+	b, err := json.Marshal(takeon.SolarProfiles())
+	return string(b), err
+}
+
+// SolarSampleJSON returns one common globe/surface sample.
+func SolarSampleJSON(id string, seed int64, latitude, longitude float64) (string, error) {
+	if seed < 0 || seed > 4294967295 {
+		return "", fmt.Errorf("takeon: seed must be uint32")
+	}
+	sample, err := takeon.SampleSolarBody(id, uint32(seed), latitude, longitude)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(sample)
+	return string(b), err
+}
+
+// SolarPatchJSON returns row-major surface samples.
+func SolarPatchJSON(id string, seed int64, latitude, longitude, step float64, width, height int) (string, error) {
+	if seed < 0 || seed > 4294967295 {
+		return "", fmt.Errorf("takeon: seed must be uint32")
+	}
+	patch, err := takeon.SampleSolarPatch(id, uint32(seed), latitude, longitude, step, width, height)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(patch)
 	return string(b), err
 }

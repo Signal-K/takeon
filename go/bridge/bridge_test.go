@@ -96,3 +96,16 @@ func TestLocationBridge(t *testing.T) {
 		t.Fatal("missing location accepted")
 	}
 }
+
+func TestSolarBridge(t *testing.T) {
+	var s Session
+	spec := &SolarRequest{ID: "mars", Seed: 42, Latitude: 10, Longitude: 20, Step: 1, Width: 2, Height: 2}
+	sample := success(t, &s, Request{Op: "solarSample", Solar: spec})
+	patch := success(t, &s, Request{Op: "solarPatch", Solar: spec}).([]any)
+	if encoded(sample) != encoded(patch[0]) {
+		t.Fatal("patch and globe bridge samples differ")
+	}
+	if request(t, &s, Request{Op: "solarSample"}).OK {
+		t.Fatal("missing solar request accepted")
+	}
+}

@@ -8,7 +8,18 @@ import (
 	"math"
 )
 
+type SolarRequest struct {
+	ID        string  `json:"id"`
+	Seed      uint32  `json:"seed"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Step      float64 `json:"step"`
+	Width     int     `json:"width"`
+	Height    int     `json:"height"`
+}
+
 type Request struct {
+	Solar    *SolarRequest        `json:"solar"`
 	Location *takeon.LocationSpec `json:"location"`
 	Module   *takeon.WorldState   `json:"module"`
 	Mission  *takeon.Mission      `json:"mission"`
@@ -100,6 +111,19 @@ func (s *Session) dispatch(r Request) (any, error) {
 			return r.Module.Serialize()
 		}
 		return nil, fmt.Errorf("takeon: unknown module operation")
+	}
+	if r.Op == "solarProfiles" {
+		return takeon.SolarProfiles(), nil
+	}
+	if r.Op == "solarSample" || r.Op == "solarPatch" {
+		if r.Solar == nil {
+			return nil, fmt.Errorf("takeon: solar request required")
+		}
+		q := r.Solar
+		if r.Op == "solarSample" {
+			return takeon.SampleSolarBody(q.ID, q.Seed, q.Latitude, q.Longitude)
+		}
+		return takeon.SampleSolarPatch(q.ID, q.Seed, q.Latitude, q.Longitude, q.Step, q.Width, q.Height)
 	}
 	if r.Op == "location" {
 		if r.Location == nil {
