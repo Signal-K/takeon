@@ -47,6 +47,7 @@ func makeMesh(id string, seed uint32, rows, cols int) (mesh, error) {
 	}
 	type point struct {
 		p vec
+		n vec
 		c [3]float32
 	}
 	grid := make([]point, (rows+1)*(cols+1))
@@ -61,25 +62,39 @@ func makeMesh(id string, seed uint32, rows, cols int) (mesh, error) {
 			if e != nil {
 				return mesh{}, e
 			}
-			radius := 1 + s.Elevation*1.25
+			radius := 1 + s.Elevation*0.55
 			if s.Biome == "ocean" {
-				radius = 0.98
+				radius = 1 + math.Min(s.Elevation*0.55, 0)
 			}
 			if !profile.Landable {
 				radius = 1
 			}
-			grid[index(y, x)] = point{vec{radius * math.Cos(phi) * math.Cos(theta), radius * math.Sin(phi), radius * math.Cos(phi) * math.Sin(theta)}, colours[s.Biome]}
+			grid[index(y, x)] = point{p: vec{radius * math.Cos(phi) * math.Cos(theta), radius * math.Sin(phi), radius * math.Cos(phi) * math.Sin(theta)}, c: colours[s.Biome]}
+		}
+	}
+	// Share a smooth normal across adjacent triangles, including the seam.
+	for y := 0; y <= rows; y++ {
+		for x := 0; x <= cols; x++ {
+			i := index(y, x)
+			if y == 0 || y == rows {
+				grid[i].n = unit(grid[i].p)
+				continue
+			}
+			left, right := (x+cols-1)%cols, (x+1)%cols
+			tangent := sub(grid[index(y, right)].p, grid[index(y, left)].p)
+			meridian := sub(grid[index(y+1, x)].p, grid[index(y-1, x)].p)
+			normal := unit(cross(meridian, tangent))
+			if normal.x*grid[i].p.x+normal.y*grid[i].p.y+normal.z*grid[i].p.z < 0 {
+				normal = vec{-normal.x, -normal.y, -normal.z}
+			}
+			grid[i].n = normal
 		}
 	}
 	result := mesh{}
 	tri := func(a, b, c point) {
-		n := unit(cross(sub(b.p, a.p), sub(c.p, a.p)))
-		if n.x*a.p.x+n.y*a.p.y+n.z*a.p.z < 0 {
-			n = vec{-n.x, -n.y, -n.z}
-		}
 		for _, p := range []point{a, b, c} {
 			result.Positions = appendVec(result.Positions, p.p)
-			result.Normals = appendVec(result.Normals, n)
+			result.Normals = appendVec(result.Normals, p.n)
 			result.Colors = append(result.Colors, p.c[:]...)
 			result.Count++
 		}
@@ -107,7 +122,7 @@ func main() {
 			http.Error(w, "invalid seed", 400)
 			return
 		}
-		m, e := makeMesh(id, uint32(s), 64, 128)
+		m, e := makeMesh(id, uint32(s), 128, 256)
 		if e != nil {
 			http.Error(w, e.Error(), 400)
 			return

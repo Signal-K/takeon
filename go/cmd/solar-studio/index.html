@@ -24,7 +24,7 @@ function render(){
    const cy=Math.cos(rotation[0]),sy=Math.sin(rotation[0]),cx=Math.cos(rotation[1]),sx=Math.sin(rotation[1]);
    const rotate=(x,y,z)=>{const a=cy*x+sy*z,b=-sy*x+cy*z;return [a,cx*y-sx*b,sx*y+cx*b]};
    for(let i=0;i<p.length;i+=9){const v=[];for(let j=0;j<9;j+=3){const q=rotate(p[i+j],p[i+j+1],p[i+j+2]);const k=3.7/(3.7-q[2]);v.push([w/2+q[0]*h*zoom*.5*k,h/2-q[1]*h*zoom*.5*k,q[2]])}const normal=rotate(n[i],n[i+1],n[i+2]);if(normal[2]<=0)continue;const light=.4+.6*Math.max(0,normal[0]*-.46+normal[1]*.63+normal[2]*.63);triangles.push({v,z:(v[0][2]+v[1][2]+v[2][2])/3,fill:`rgb(${Math.round(c[i]*light*255)},${Math.round(c[i+1]*light*255)},${Math.round(c[i+2]*light*255)})`})}
-   triangles.sort((a,b)=>a.z-b.z);for(const t of triangles){ctx.fillStyle=t.fill;ctx.beginPath();ctx.moveTo(t.v[0][0],t.v[0][1]);ctx.lineTo(t.v[1][0],t.v[1][1]);ctx.lineTo(t.v[2][0],t.v[2][1]);ctx.closePath();ctx.fill()}
+   triangles.sort((a,b)=>a.z-b.z);for(const t of triangles){ctx.fillStyle=t.fill;ctx.beginPath();ctx.moveTo(t.v[0][0],t.v[0][1]);ctx.lineTo(t.v[1][0],t.v[1][1]);ctx.lineTo(t.v[2][0],t.v[2][1]);ctx.closePath();ctx.fill();ctx.strokeStyle=t.fill;ctx.lineWidth=.7;ctx.stroke()}
   }
  }requestAnimationFrame(render)
 }
