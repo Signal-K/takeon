@@ -120,3 +120,17 @@ func (e *Engine) ConfigureJSON(configuration string, seed int64) error {
 	e.g = game
 	return nil
 }
+
+// GenerateLocationJSON resolves a versioned location spec without creating a game.
+func GenerateLocationJSON(specJSON string) (string, error) {
+	var spec takeon.LocationSpec
+	if err := json.Unmarshal([]byte(specJSON), &spec); err != nil {
+		return "", err
+	}
+	location, err := takeon.GenerateLocation(spec)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(location)
+	return string(b), err
+}

@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"encoding/json"
+	takeon "github.com/Signal-K/takeon-go"
 	"testing"
 )
 
@@ -76,5 +77,22 @@ func TestFailuresLeaveSessionUsable(t *testing.T) {
 	}
 	if out := s.Call("{"); out == "" {
 		t.Fatal("malformed request got no response")
+	}
+}
+
+func TestLocationBridge(t *testing.T) {
+	var s Session
+	spec := takeon.LocationSpec{Version: 1, ID: "site-1", ParentID: "system-1", BodyID: "mars", Seed: 42}
+	want, err := takeon.GenerateLocation(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := success(t, &s, Request{Op: "location", Location: &spec})
+	var actual takeon.Location
+	if err := json.Unmarshal([]byte(encoded(got)), &actual); err != nil || actual != want {
+		t.Fatalf("bridge differs from core: %+v != %+v (%v)", actual, want, err)
+	}
+	if request(t, &s, Request{Op: "location"}).OK {
+		t.Fatal("missing location accepted")
 	}
 }

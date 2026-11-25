@@ -9,12 +9,13 @@ import (
 )
 
 type Request struct {
-	Module  *takeon.WorldState `json:"module"`
-	Mission *takeon.Mission    `json:"mission"`
-	Base    takeon.Vec2f       `json:"base"`
-	Tile    takeon.Vec2f       `json:"tile"`
-	Gain    takeon.Gain        `json:"gain"`
-	Raw     json.RawMessage    `json:"raw"`
+	Location *takeon.LocationSpec `json:"location"`
+	Module   *takeon.WorldState   `json:"module"`
+	Mission  *takeon.Mission      `json:"mission"`
+	Base     takeon.Vec2f         `json:"base"`
+	Tile     takeon.Vec2f         `json:"tile"`
+	Gain     takeon.Gain          `json:"gain"`
+	Raw      json.RawMessage      `json:"raw"`
 
 	Voxels   []int              `json:"voxels"`
 	Op       string             `json:"op"`
@@ -99,6 +100,12 @@ func (s *Session) dispatch(r Request) (any, error) {
 			return r.Module.Serialize()
 		}
 		return nil, fmt.Errorf("takeon: unknown module operation")
+	}
+	if r.Op == "location" {
+		if r.Location == nil {
+			return nil, fmt.Errorf("takeon: location spec required")
+		}
+		return takeon.GenerateLocation(*r.Location)
 	}
 	if r.Op == "capabilities" {
 		return takeon.Capabilities(), nil
