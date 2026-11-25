@@ -22,7 +22,7 @@ type ObservedSurfaceSample struct {
 	ElevationMeters *float64 `json:"elevationMeters,omitempty"`
 }
 
-var observedIDs = map[string]bool{"mars": true, "venus": true, "jupiter": true, "saturn": true, "neptune": true}
+var observedIDs = map[string]bool{"earth": true, "mercury": true, "mars": true, "venus": true, "jupiter": true, "saturn": true, "neptune": true}
 var planetaryOnce sync.Once
 var planetaryImages map[string]image.Image
 var planetaryErr error

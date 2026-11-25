@@ -87,6 +87,13 @@ credit: NASA/MGS MOLA science team. The renderer's 1024×512 grid produces
 resolution is limited by the input maps and image interpolation.
 
 `SampleObservedSurface` exposes imagery and, for Mars only, measured elevation;
-its missing elevation must not be interpreted as zero. Other bodies remain
-procedural, and this observational data is not yet integrated with Landnam's
+its missing elevation must not be interpreted as zero. Other bodies may still use procedural terrain or imagery only, and this observational data is not yet integrated with Landnam's
 scene or voxel generation. The API embeds the images, increasing binary size.
+
+### Earth and Mercury imagery
+
+Earth now uses the 2048×1024 NASA SVS [Blue Marble global mosaic](https://svs.gsfc.nasa.gov/2915/), a composite of satellite observations with topographic shading baked into the image. Credit: NASA/Goddard Space Flight Center Scientific Visualization Studio; Blue Marble data courtesy Reto Stöckli (NASA/GSFC) and NASA's Earth Observatory. It is not a current observation or a height map.
+
+Mercury uses the 6132×3066 NASA SVS [MESSENGER global monochrome mosaic](https://svs.gsfc.nasa.gov/11197/), converted to JPEG. The corresponding [PDS catalog](https://pds-rings.seti.org/press_releases/pages/PIA15xxx/PIA15063.html) describes a simple cylindrical projection centered at 0° longitude, with coverage over 99.9%; remaining gaps and inconsistent illumination are visible in the composite. Credit: NASA/Johns Hopkins University Applied Physics Laboratory/Carnegie Institution of Washington. Its brightness is imagery, not measured elevation.
+
+The studio displays both images on smooth spheres, because we do not yet have registered elevation maps for them. `SampleObservedSurface` supplies their image colours but no elevation. The interactive renderer still samples colour at the vertices of its 256×128 grid; it does not display the full source image resolution. For a higher-density offline image, run `blender -b -t 4 --python tools/solar/render_observed.py -- earth /tmp/earth.png` (or replace `earth` with `mercury`); this uses 1024×512 quads, 16× the interactive triangle count, without fabricating relief. The true image detail remains limited to the source maps.

@@ -79,12 +79,16 @@ func makeMesh(id string, seed uint32, rows, cols int) (mesh, error) {
 				radius = 1 + 4*measured.ElevationMeters/1737400
 				colour = [3]float32{float32(measured.Red), float32(measured.Green), float32(measured.Blue)}
 			}
-			if id == "mars" || id == "venus" || id == "jupiter" || id == "saturn" || id == "neptune" {
+			if id == "earth" || id == "mercury" || id == "mars" || id == "venus" || id == "jupiter" || id == "saturn" || id == "neptune" {
 				observed, err := takeon.SampleObservedSurface(id, lat, lon)
 				if err != nil {
 					return mesh{}, err
 				}
 				colour = [3]float32{float32(observed.Red), float32(observed.Green), float32(observed.Blue)}
+				// Avoid suggesting that unrelated procedural relief matches these maps.
+				if id == "earth" || id == "mercury" {
+					radius = 1
+				}
 				if observed.ElevationMeters != nil {
 					radius = 1 + 4**observed.ElevationMeters/3389500
 				}

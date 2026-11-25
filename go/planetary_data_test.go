@@ -32,3 +32,28 @@ func TestObservedMarsTopography(t *testing.T) {
 		t.Fatal("unknown map accepted")
 	}
 }
+
+func TestEarthAndMercuryImagery(t *testing.T) {
+	for _, id := range []string{"earth", "mercury"} {
+		a, err := SampleObservedSurface(id, 0, -180)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := SampleObservedSurface(id, 0, 180)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a != b {
+			t.Fatalf("%s dateline does not wrap", id)
+		}
+		if a.ElevationMeters != nil {
+			t.Fatalf("%s imagery is not elevation", id)
+		}
+	}
+	// The Pacific should be visibly bluer than the Sahara in the Blue Marble map.
+	ocean, _ := SampleObservedSurface("earth", 0, -140)
+	desert, _ := SampleObservedSurface("earth", 24, 15)
+	if ocean.Blue <= ocean.Red || desert.Red <= desert.Blue {
+		t.Fatalf("unexpected Earth map orientation: ocean=%+v desert=%+v", ocean, desert)
+	}
+}
