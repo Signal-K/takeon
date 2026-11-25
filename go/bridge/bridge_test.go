@@ -141,3 +141,20 @@ func TestSolarBridge(t *testing.T) {
 		t.Fatal("missing solar request accepted")
 	}
 }
+
+func TestGasOrbitBridgeDoesNotAllowLanding(t *testing.T) {
+	var s Session
+	version := 1
+	q := &SolarRequest{ID: "jupiter", Seed: 42, Step: 3, Width: 3, Height: 3, StyleVersion: &version}
+	orbit := success(t, &s, Request{Op: "solarOrbit", Solar: q}).(map[string]any)
+	if orbit["bodyId"] != "jupiter" || len(orbit["patch"].([]any)) != 9 {
+		t.Fatal("invalid gas orbit")
+	}
+	if request(t, &s, Request{Op: "solarLanding", Solar: q}).OK {
+		t.Fatal("gas landing was accepted")
+	}
+	version = 99
+	if request(t, &s, Request{Op: "solarOrbit", Solar: q}).OK {
+		t.Fatal("unsupported orbit version was accepted")
+	}
+}

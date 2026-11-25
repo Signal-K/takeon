@@ -18,6 +18,8 @@ export interface DemPatch {
   size: number;
   /** Row-major normalised heights, length size*size, 0..1. */
   heights: number[];
+  /** Optional row-major material ids for the same footprint, sampled without interpolation. */
+  surfaceMaterials?: number[];
 }
 
 import { GENERATED_DEMS } from './generated.js';

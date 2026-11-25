@@ -2,7 +2,6 @@ package takeon
 
 import (
 	"bytes"
-	"embed"
 	"fmt"
 	"image"
 	"math"
@@ -12,9 +11,6 @@ import (
 // NASA/JPL planetary image textures and the NASA PDS MOLA MEGDR topography.
 // See docs/solar-biomes.md for provenance and limitations.
 //
-//go:embed data/planetary/*
-var planetaryFiles embed.FS
-
 type ObservedSurfaceSample struct {
 	Red             float64  `json:"red"`
 	Green           float64  `json:"green"`

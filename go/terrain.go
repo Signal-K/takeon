@@ -96,6 +96,11 @@ func pickMaterial(body *Body, x, y, z, surface int, icy, sulfurous bool, seed in
 	depth := surface - z
 	t := body.Terrain
 	fx, fy, fz := float64(x), float64(y), float64(z)
+	if depth == 0 {
+		if material, ok := sampleSurfaceMaterial(body.CoreDEM, fx/float64(body.Size-1), fy/float64(body.Size-1)); ok {
+			return material
+		}
+	}
 
 	if depth >= 1 {
 		v := hash3(float64(x>>1), float64(y>>1), fz, seed+17)

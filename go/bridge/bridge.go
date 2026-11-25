@@ -113,14 +113,28 @@ func (s *Session) dispatch(r Request) (any, error) {
 		}
 		return nil, fmt.Errorf("takeon: unknown module operation")
 	}
-	if r.Op == "solarProfiles" {
-		return takeon.SolarProfiles(), nil
-	}
-	if r.Op == "solarSample" || r.Op == "solarPatch" || r.Op == "styledSolarSample" || r.Op == "styledSolarPatch" || r.Op == "solarLanding" {
+	if r.Op == "observedSolarPatch" {
 		if r.Solar == nil {
 			return nil, fmt.Errorf("takeon: solar request required")
 		}
 		q := r.Solar
+		return takeon.SampleObservedPatch(q.ID, q.Latitude, q.Longitude, q.Step, q.Width, q.Height)
+	}
+	if r.Op == "solarProfiles" {
+		return takeon.SolarProfiles(), nil
+	}
+	if r.Op == "solarSample" || r.Op == "solarPatch" || r.Op == "styledSolarSample" || r.Op == "styledSolarPatch" || r.Op == "solarLanding" || r.Op == "solarOrbit" {
+		if r.Solar == nil {
+			return nil, fmt.Errorf("takeon: solar request required")
+		}
+		q := r.Solar
+		if r.Op == "solarOrbit" {
+			version := takeon.SolarStyleVersion
+			if q.StyleVersion != nil {
+				version = *q.StyleVersion
+			}
+			return takeon.PrepareVersionedSolarOrbit(version, q.ID, q.Seed, q.Latitude, q.Longitude, q.Step, q.Width, q.Height)
+		}
 		if r.Op == "solarLanding" {
 			if q.StyleVersion != nil {
 				return takeon.PrepareVersionedSolarLanding(*q.StyleVersion, q.ID, q.Seed, q.Latitude, q.Longitude, q.Step, q.Width, q.Height)

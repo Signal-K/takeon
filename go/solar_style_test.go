@@ -65,3 +65,23 @@ func TestIrregularBodyOrientation(t *testing.T) {
 		t.Fatal("Eros shape lacks elongated silhouette")
 	}
 }
+
+func TestOrbitSupportsGasWithoutLanding(t *testing.T) {
+	for _, id := range []string{"jupiter", "saturn", "uranus", "neptune"} {
+		orbit, err := PrepareVersionedSolarOrbit(1, id, 7, 0, 0, 3, 3, 3)
+		if err != nil || len(orbit.Patch) != 9 || orbit.Center != orbit.Patch[4] {
+			t.Fatalf("%s orbit: %+v %v", id, orbit, err)
+		}
+		if _, err := PrepareVersionedSolarLanding(1, id, 7, 0, 0, 3, 3, 3); err == nil {
+			t.Fatalf("%s incorrectly allows landing", id)
+		}
+	}
+	land, err := PrepareVersionedSolarLanding(1, "mars", 7, 0, 0, 3, 3, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orbit, err := PrepareVersionedSolarOrbit(1, "mars", 7, 0, 0, 3, 3, 3)
+	if err != nil || land.Center != orbit.Center {
+		t.Fatal("orbit and landing disagree")
+	}
+}

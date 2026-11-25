@@ -12,8 +12,21 @@ type OreBand struct {
 	Minerals map[string]float64 `json:"minerals"`
 }
 type DEM struct {
-	Size    int       `json:"size"`
-	Heights []float64 `json:"heights"`
+	Size             int       `json:"size"`
+	Heights          []float64 `json:"heights"`
+	SurfaceMaterials []int     `json:"surfaceMaterials,omitempty"`
+}
+
+// sampleSurfaceMaterial uses nearest-neighbour sampling: material ids are
+// categorical, unlike the continuous heights sampled by sampleDEM.
+func sampleSurfaceMaterial(p *DEM, u, v float64) (int, bool) {
+	if p == nil || p.Size < 2 || len(p.SurfaceMaterials) != p.Size*p.Size {
+		return 0, false
+	}
+	x := int(math.Round(fmin(float64(p.Size-1), fmax(0, u*float64(p.Size-1)))))
+	y := int(math.Round(fmin(float64(p.Size-1), fmax(0, v*float64(p.Size-1)))))
+	m := p.SurfaceMaterials[y*p.Size+x]
+	return m, m > 0 && m <= 255
 }
 
 func sampleDEM(p *DEM, u, v float64) float64 {

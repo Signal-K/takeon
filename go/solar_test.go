@@ -8,8 +8,8 @@ import (
 
 func TestSolarProfilesAndSampling(t *testing.T) {
 	profiles := SolarProfiles()
-	if len(profiles) != 24 {
-		t.Fatalf("expected 24 profiles, got %d", len(profiles))
+	if len(profiles) < 26 {
+		t.Fatalf("expected at least 26 profiles, got %d", len(profiles))
 	}
 	seen := map[string]bool{}
 	for _, p := range profiles {

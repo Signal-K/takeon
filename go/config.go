@@ -34,6 +34,16 @@ func NewConfiguredGame(seed int64, data HostData) (*Game, error) {
 	if b.CoreDEM != nil && (b.CoreDEM.Size < 2 || len(b.CoreDEM.Heights) != b.CoreDEM.Size*b.CoreDEM.Size) {
 		return nil, fmt.Errorf("takeon: invalid DEM grid")
 	}
+	if b.CoreDEM != nil && len(b.CoreDEM.SurfaceMaterials) > 0 {
+		if len(b.CoreDEM.SurfaceMaterials) != b.CoreDEM.Size*b.CoreDEM.Size {
+			return nil, fmt.Errorf("takeon: invalid DEM surface grid")
+		}
+		for _, material := range b.CoreDEM.SurfaceMaterials {
+			if material < 1 || material > 255 {
+				return nil, fmt.Errorf("takeon: invalid DEM surface material")
+			}
+		}
+	}
 	if data.Rules != nil {
 		resolved := *data.Rules
 		if resolved.Structures == nil {

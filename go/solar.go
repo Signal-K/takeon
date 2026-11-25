@@ -46,6 +46,8 @@ var solarProfiles = []SolarProfile{
 	{"ryugu", "Ryugu", "asteroid", "sun", -50, "carbon", 0.8, true},
 	{"psyche", "Psyche", "asteroid", "sun", -100, "metallic", 0.7, true},
 	{"bennu", "Bennu", "asteroid", "sun", -35, "carbon", 0.85, true},
+	{"ceres", "Ceres", "asteroid", "sun", -105, "carbon", 0.55, true},
+	{"lutetia", "Lutetia", "asteroid", "sun", -75, "stony", 0.75, true},
 }
 
 func SolarProfiles() []SolarProfile { return append([]SolarProfile(nil), solarProfiles...) }

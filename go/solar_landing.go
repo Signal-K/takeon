@@ -34,6 +34,15 @@ func PrepareSolarLanding(id string, seed uint32, lat, lon, step float64, width, 
 // PrepareVersionedSolarLanding restores a landing using its saved style version.
 // Unknown versions must fail rather than silently moving an existing landing.
 func PrepareVersionedSolarLanding(version int, id string, seed uint32, lat, lon, step float64, width, height int) (SolarLanding, error) {
+	return prepareVersionedSolarPatch(version, id, seed, lat, lon, step, width, height, false)
+}
+
+// PrepareVersionedSolarOrbit samples the same field without claiming a landable surface.
+func PrepareVersionedSolarOrbit(version int, id string, seed uint32, lat, lon, step float64, width, height int) (SolarLanding, error) {
+	return prepareVersionedSolarPatch(version, id, seed, lat, lon, step, width, height, true)
+}
+
+func prepareVersionedSolarPatch(version int, id string, seed uint32, lat, lon, step float64, width, height int, allowGas bool) (SolarLanding, error) {
 	if version != 1 {
 		return SolarLanding{}, fmt.Errorf("takeon: unsupported solar style version %d", version)
 	}
@@ -41,7 +50,7 @@ func PrepareVersionedSolarLanding(version int, id string, seed uint32, lat, lon,
 	if err != nil {
 		return SolarLanding{}, err
 	}
-	if !p.Landable {
+	if !p.Landable && !allowGas {
 		return SolarLanding{}, fmt.Errorf("takeon: %s has no landable surface", id)
 	}
 	if width < 1 || width > 255 || height < 1 || height > 255 || width%2 != 1 || height%2 != 1 || math.IsNaN(step) || math.IsInf(step, 0) || step <= 0 || step > 180 {
