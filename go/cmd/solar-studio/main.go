@@ -40,6 +40,9 @@ func unit(a vec) vec {
 func appendVec(a []float32, v vec) []float32 {
 	return append(a, float32(v.x), float32(v.y), float32(v.z))
 }
+func blend(a, b [3]float32, weight float32) [3]float32 {
+	return [3]float32{a[0]*(1-weight) + b[0]*weight, a[1]*(1-weight) + b[1]*weight, a[2]*(1-weight) + b[2]*weight}
+}
 func makeMesh(id string, seed uint32, rows, cols int) (mesh, error) {
 	profile, err := takeon.SolarProfileByID(id)
 	if err != nil {
@@ -58,40 +61,29 @@ func makeMesh(id string, seed uint32, rows, cols int) (mesh, error) {
 		for x := 0; x <= cols; x++ {
 			lon := -180 + 360*float64(x)/float64(cols)
 			theta := lon * math.Pi / 180
-			s, e := takeon.SampleSolarBody(id, seed, lat, lon)
+			s, e := takeon.SampleStyledSolarBody(id, seed, lat, lon)
 			if e != nil {
 				return mesh{}, e
 			}
-			radius := 1 + s.Elevation*0.55
-			if s.Biome == "ocean" {
-				radius = 1 + math.Min(s.Elevation*0.55, 0)
-			}
-			if !profile.Landable {
-				radius = 1
-			}
+			radius := s.Radius
 			colour := colours[s.Biome]
+			// Keep observed colour as a geographic cue, blended into the game's palette.
 			if id == "moon" {
 				measured, err := takeon.SampleLunarSurface(lat, lon)
 				if err != nil {
 					return mesh{}, err
 				}
-				// Exaggerate measured height fourfold so relief reads on a globe.
-				radius = 1 + 4*measured.ElevationMeters/1737400
-				colour = [3]float32{float32(measured.Red), float32(measured.Green), float32(measured.Blue)}
-			}
-			if id == "earth" || id == "mercury" || id == "mars" || id == "venus" || id == "jupiter" || id == "saturn" || id == "neptune" {
+				colour = blend(colour, [3]float32{float32(measured.Red), float32(measured.Green), float32(measured.Blue)}, 0.3)
+			} else if id == "earth" || id == "mercury" || id == "mars" || id == "venus" || id == "jupiter" || id == "saturn" || id == "neptune" {
 				observed, err := takeon.SampleObservedSurface(id, lat, lon)
 				if err != nil {
 					return mesh{}, err
 				}
-				colour = [3]float32{float32(observed.Red), float32(observed.Green), float32(observed.Blue)}
-				// Avoid suggesting that unrelated procedural relief matches these maps.
-				if id == "earth" || id == "mercury" {
-					radius = 1
+				weight := float32(0.3)
+				if !profile.Landable {
+					weight = 0.8
 				}
-				if observed.ElevationMeters != nil {
-					radius = 1 + 4**observed.ElevationMeters/3389500
-				}
+				colour = blend(colour, [3]float32{float32(observed.Red), float32(observed.Green), float32(observed.Blue)}, weight)
 			}
 			grid[index(y, x)] = point{p: vec{radius * math.Cos(phi) * math.Cos(theta), radius * math.Sin(phi), radius * math.Cos(phi) * math.Sin(theta)}, c: colour}
 		}

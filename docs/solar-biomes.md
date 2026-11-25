@@ -97,3 +97,21 @@ Earth now uses the 2048×1024 NASA SVS [Blue Marble global mosaic](https://svs.g
 Mercury uses the 6132×3066 NASA SVS [MESSENGER global monochrome mosaic](https://svs.gsfc.nasa.gov/11197/), converted to JPEG. The corresponding [PDS catalog](https://pds-rings.seti.org/press_releases/pages/PIA15xxx/PIA15063.html) describes a simple cylindrical projection centered at 0° longitude, with coverage over 99.9%; remaining gaps and inconsistent illumination are visible in the composite. Credit: NASA/Johns Hopkins University Applied Physics Laboratory/Carnegie Institution of Washington. Its brightness is imagery, not measured elevation.
 
 The studio displays both images on smooth spheres, because we do not yet have registered elevation maps for them. `SampleObservedSurface` supplies their image colours but no elevation. The interactive renderer still samples colour at the vertices of its 256×128 grid; it does not display the full source image resolution. For a higher-density offline image, run `blender -b -t 4 --python tools/solar/render_observed.py -- earth /tmp/earth.png` (or replace `earth` with `mercury`); this uses 1024×512 quads, 16× the interactive triangle count, without fabricating relief. The true image detail remains limited to the source maps.
+
+### Stylised terrain experiment
+
+`SampleStyledSolarBody` combines the existing seeded `SampleSolarBody` field
+with measured Moon or Mars elevation, exaggerated sevenfold. The result is a
+visual radius, not an elevation measurement: the additional broad forms are
+invented and vary with the seed. Other landable worlds use generated shape;
+observed imagery, where available, does not imply measured height. Gas giants
+stay spherical. The studio blends observed colour into the game's biome palette.
+The visual field is shared with the offline proof, but scene patches still use
+`SampleSolarBody` and are not yet registered to measured terrain.
+
+For a high-density Mars art proof, from `go/` run `go run ./cmd/solar-style-grid
+-body mars -seed 11 -out /tmp/landnam-style-mars.bin`, then from the repository
+root run `blender -b -t 4 --python tools/solar/render_styled_mars.py --
+/tmp/styled-mars.png`. The render uses the same Go shape at 1024×512 quads;
+its illustrative warm material differs from the studio's biome-colour blend.
+The interactive viewer retains its 256×128 grid.
