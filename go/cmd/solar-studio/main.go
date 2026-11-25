@@ -69,7 +69,17 @@ func makeMesh(id string, seed uint32, rows, cols int) (mesh, error) {
 			if !profile.Landable {
 				radius = 1
 			}
-			grid[index(y, x)] = point{p: vec{radius * math.Cos(phi) * math.Cos(theta), radius * math.Sin(phi), radius * math.Cos(phi) * math.Sin(theta)}, c: colours[s.Biome]}
+			colour := colours[s.Biome]
+			if id == "moon" {
+				measured, err := takeon.SampleLunarSurface(lat, lon)
+				if err != nil {
+					return mesh{}, err
+				}
+				// Exaggerate measured height fourfold so relief reads on a globe.
+				radius = 1 + 4*measured.ElevationMeters/1737400
+				colour = [3]float32{float32(measured.Red), float32(measured.Green), float32(measured.Blue)}
+			}
+			grid[index(y, x)] = point{p: vec{radius * math.Cos(phi) * math.Cos(theta), radius * math.Sin(phi), radius * math.Cos(phi) * math.Sin(theta)}, c: colour}
 		}
 	}
 	// Share a smooth normal across adjacent triangles, including the seam.

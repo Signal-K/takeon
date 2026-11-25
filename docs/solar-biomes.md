@@ -47,3 +47,20 @@ from `go/` and open `http://127.0.0.1:4343`. The preview triangulates the
 spherical samples into a displaced, lit mesh and offers body, seed, rotation
 and zoom controls. It does not yet implement the playable scene, realistic
 planetary shapes, surface assets or the final art direction.
+
+## Moon: measured terrain
+
+The Moon now uses NASA LRO LOLA global elevation and the LROC colour mosaic in
+the studio. The maps and their limits are documented in `go/data/lunar/README.md`.
+The elevation is exaggerated fourfold for visual legibility; temperature and
+biomes for other bodies are still procedural and must not be presented as
+measurement. The interactive studio currently keeps its 128 × 256 mesh; its
+software renderer would struggle with the requested 16× mesh.
+
+The high-resolution offline proof uses `tools/solar/render_moon.py`: a
+1024 × 512 sphere (16× as many triangles as the 256 × 128 studio sphere)
+with the same NASA elevation and colour data. Run from the repository root:
+`blender -b -t 4 --python tools/solar/render_moon.py -- /tmp/moon.png`.
+This does not yet increase the in-game renderer's resolution or connect measured
+terrain to the game's tile-based surface. Data source resolution also caps the
+real detail; extra triangles interpolate the data rather than invent detail.
