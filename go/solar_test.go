@@ -58,6 +58,27 @@ func TestSolarPatchMatchesGlobe(t *testing.T) {
 		}
 	}
 }
+
+func TestMajorMoonProfilesMatchTheirLandingPatches(t *testing.T) {
+	parents := map[string]string{
+		"mimas": "saturn", "tethys": "saturn", "dione": "saturn", "rhea": "saturn", "iapetus": "saturn",
+		"miranda": "uranus", "ariel": "uranus", "umbriel": "uranus", "titania": "uranus", "oberon": "uranus",
+	}
+	for id, parent := range parents {
+		profile, err := SolarProfileByID(id)
+		if err != nil || profile.Parent != parent || !profile.Landable {
+			t.Fatalf("%s has incorrect moon profile: %+v (%v)", id, profile, err)
+		}
+		patch, err := SampleStyledSolarPatch(id, 42, 0, 0, 0.25, 2, 2)
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		globe, err := SampleStyledSolarBody(id, 42, 0, 0)
+		if err != nil || patch[0] != globe {
+			t.Fatalf("%s: surface and orbit samples differ", id)
+		}
+	}
+}
 func TestSolarBodyIdentityChangesTerrain(t *testing.T) {
 	a, _ := SampleSolarBody("moon", 42, 20, 40)
 	b, _ := SampleSolarBody("phobos", 42, 20, 40)
